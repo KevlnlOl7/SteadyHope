@@ -3,18 +3,24 @@ import SwiftData
 
 @Model
 class UserData {
-    var userID: Int
-    var userName: String
-    var email: String
-    var token: String
-    var gender: Bool
     
-    init(userID: Int, userName: String, email: String, token: String, gender: Bool) {
+    /// 使用者ID
+    var userID: Int?
+    
+    /// 使用者姓名
+    var userName: String?
+    
+    /// 使用者信箱
+    var email: String
+    
+    /// 使用者密碼
+    var password: String
+    
+    init(userID: Int? = nil, userName: String? = nil, email: String, password: String) {
         self.userID = userID
         self.userName = userName
         self.email = email
-        self.token = token
-        self.gender = gender
-    }
+        self.password = password
+        }
 }
 
