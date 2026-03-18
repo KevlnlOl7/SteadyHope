@@ -4,23 +4,39 @@ import SwiftData
 @Model
 class UserData {
     
-    /// 使用者ID
-    var userID: Int?
+    /// 用戶ID
+    var userID: Int
     
-    /// 使用者姓名
-    var userName: String?
+    /// 用戶姓名
+    var userName: String
     
-    /// 使用者信箱
+    /// 用戶信箱
     var email: String
     
-    /// 使用者密碼
+    /// 用戶密碼
     var password: String
     
-    init(userID: Int? = nil, userName: String? = nil, email: String, password: String) {
+    /// 用戶性別
+    var gender: Bool
+    
+    /// 用戶生日
+    var birthday: Date
+    
+    /// 疾病階段
+    var diseaseStage: String
+    
+    /// 用戶創建日期
+    var CreatedAt: Date
+    
+    init(userID: Int, userName: String, email: String, password: String, gender: Bool, birthday: Date, diseaseStage: String, CreatedAt: Date) {
         self.userID = userID
         self.userName = userName
         self.email = email
         self.password = password
-        }
+        self.gender = gender
+        self.birthday = birthday
+        self.diseaseStage = diseaseStage
+        self.CreatedAt = CreatedAt
+    }
 }
 

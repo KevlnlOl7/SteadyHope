@@ -15,11 +15,14 @@ class LoginViewModel: ObservableObject {
     @Published var isAuthenticated = false
     
     /// 暫存登入成功的用戶資訊
-    @Published var currentUser: UserData?
-
-    private let mockUser = UserData(
+    @Published var currentUser: Account?
+    
+    /// 用戶資料
+    @Published var userData: UserData?
+    
+    // TODO:連資料庫 取得用戶資料
+    private let mockUser = Account(
         userID: 1,
-        userName: "Admin",
         email: "test@test.com",
         password: "password123",
     )
@@ -32,10 +35,22 @@ class LoginViewModel: ObservableObject {
     func login(email: String, password: String) async {
         isLoading = true
         loginError = ""
-
+        
         // 先這樣模擬後端驗證邏輯 還沒連資料庫
         if email == mockUser.email && password == mockUser.password {
             self.currentUser = mockUser
+            
+            // 模擬登入後，去抓此用戶的UserData(這邊先暫時這樣給)
+            self.userData = UserData(
+                userID: 1,
+                userName: "Admin",
+                email: email,
+                password: password,
+                gender: true,
+                birthday: Date(),
+                diseaseStage: "初期",
+                CreatedAt: Date()
+            )
             self.isAuthenticated = true
         } else {
             self.loginError = "帳號或密碼錯誤"
@@ -50,6 +65,7 @@ class LoginViewModel: ObservableObject {
     func logout() {
         self.isAuthenticated = false
         self.currentUser = nil
+        self.userData = nil
         self.loginError = ""
     }
 }

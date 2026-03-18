@@ -4,10 +4,12 @@ struct IndexView: View {
     
     var body: some View {
         VStack(spacing: 20) {
-            if let user = loginVM.currentUser {
-                Text("歡迎回來，\(user.userName ?? "使用者")")
-                    .font(.title2)
-                    .bold()
+            if let user = loginVM.userData {
+                    Text("哈囉，\(user.userName)")
+                        .font(.title2)
+                        .bold()
+                
+                    Text("目前的階段：\(user.diseaseStage)")
             }
             Spacer()
             
