@@ -3,6 +3,7 @@ import SwiftData
 
 @main
 struct GloveApp: App {
+    /// 建立資料的實體儲存庫
     var sharedModelContainer: ModelContainer = {
         let schema = Schema([
             UserData.self,

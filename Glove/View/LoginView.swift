@@ -8,17 +8,17 @@ struct LoginView: View {
     @State private var password = ""
 
     @StateObject private var loginVM = LoginViewModel()
-    
+    @Environment(\.modelContext) private var modelContext
     /// 驗證信箱格式
     private var isEmailValid: Bool {
-        let emailStr = "^[A-Z0-9a-z._%+-]+@[A-Za-z0-9.-]+\\.[A-Z|a-z]{2,}$"
-        return email.range(of: emailStr, options: .regularExpression) != nil
+        Validator.validateEmail(email) == nil
     }
     
     /// 驗證密碼格式
     private var isPasswordValid: Bool {
-        password.count >= 8
+        Validator.validatePassword(password) == nil
     }
+    
     
     // 若格式對，且目前不在讀取狀態
     private var canSubmit: Bool {
@@ -46,12 +46,17 @@ struct LoginView: View {
                 
                 // 驗證訊息顯示區
                 VStack(alignment: .leading, spacing: 5) {
-                    if !email.isEmpty && !isEmailValid {
-                        Text("請輸入有效的 Email 格式").font(.caption).foregroundColor(.red)
+                    
+                    if !email.isEmpty, let error = Validator.validateEmail(email) {
+                        Text(error.message)
+                            .font(.caption)
+                            .foregroundColor(.red)
                     }
                     
-                    if !password.isEmpty && !isPasswordValid {
-                        Text("密碼長度至少需要 8 位挑戰").font(.caption).foregroundColor(.red)
+                    if !password.isEmpty, let error = Validator.validatePassword(password) {
+                        Text(error.message)
+                            .font(.caption)
+                            .foregroundColor(.red)
                     }
                     
                     if !loginVM.loginError.isEmpty {
@@ -66,8 +71,12 @@ struct LoginView: View {
                 
                 Button(action: {
                     Task {
-                        await loginVM.login(email: email, password: password)
-                    }
+                        await loginVM.login(
+                                            email: email,
+                                            password: password,
+                                            modelContext: modelContext
+                                        )
+                            }
                 }) {
                     HStack {
                         if loginVM.isLoading {

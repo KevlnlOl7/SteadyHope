@@ -3,7 +3,7 @@ import Foundation
 import SwiftData
 
 @Model
-class Account {
+class Account{
     
     /// 用戶ID
     var userID: Int?
