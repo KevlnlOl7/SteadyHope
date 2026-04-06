@@ -41,7 +41,7 @@ class LoginViewModel: ObservableObject {
             } catch let error as Validation {
                 self.loginError = error.message
             } catch {
-                self.loginError = "原始錯誤：\(error.localizedDescription)"
+                self.loginError = "登入發生錯誤，請稍後再試"
             }
         isLoading = false
     }

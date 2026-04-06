@@ -14,7 +14,7 @@ class UserData {
     var email: String
     
     /// 用戶性別
-    var gender: String
+    var gender: Int
     
     /// 用戶生日
     var birthday: Date
@@ -22,7 +22,7 @@ class UserData {
     /// 疾病階段
     var diseaseStage: String
     
-    init(userID: Int, userName: String, email: String, gender: String, birthday: Date, diseaseStage: String) {
+    init(userID: Int, userName: String, email: String, gender: Int, birthday: Date, diseaseStage: String) {
         self.userID = userID
         self.userName = userName
         self.email = email

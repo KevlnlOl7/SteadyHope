@@ -5,7 +5,7 @@ struct UserDataDTO: Codable {
     let userID: Int?
     let userName: String?
     let email: String
-    let gender: String?
+    let gender: Int
     let birthday: Date?
     let diseaseStage: String?
     
@@ -25,9 +25,24 @@ struct UserDataDTO: Codable {
                 userID: self.userID ?? 0,
                 userName: self.userName ?? "未知用戶",
                 email: self.email,
-                gender: self.gender ?? "",
+                gender: self.gender,
                 birthday: self.birthday ?? Date(),
                 diseaseStage: self.diseaseStage ?? "尚未設定",
             )
         }
+}
+enum Gender: Int, Codable {
+    case unknown = 0
+    case male = 1
+    case female = 2
+    case other = 3
+    
+    var label: String {
+        switch self {
+        case .male: return "男"
+        case .female: return "女"
+        case .other: return "其他"
+        case .unknown: return "未設定"
+        }
+    }
 }
