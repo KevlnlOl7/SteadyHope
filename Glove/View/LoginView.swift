@@ -9,6 +9,8 @@ struct LoginView: View {
 
     @StateObject private var loginVM = LoginViewModel()
     @Environment(\.modelContext) private var modelContext
+    @State private var hasAttemptedLogin = false
+    
     /// 驗證信箱格式
     private var isEmailValid: Bool {
         Validator.validateEmail(email) == nil
@@ -20,9 +22,9 @@ struct LoginView: View {
     }
     
     
-    // 若格式對，且目前不在讀取狀態
+    // 若不為空，且目前不在讀取狀態
     private var canSubmit: Bool {
-        isEmailValid && isPasswordValid && !loginVM.isLoading
+        !email.isEmpty && !password.isEmpty && !loginVM.isLoading
     }
     
     var body: some View {
@@ -47,16 +49,18 @@ struct LoginView: View {
                 // 驗證訊息顯示區
                 VStack(alignment: .leading, spacing: 5) {
                     
-                    if !email.isEmpty, let error = Validator.validateEmail(email) {
-                        Text(error.message)
-                            .font(.caption)
-                            .foregroundColor(.red)
-                    }
-                    
-                    if !password.isEmpty, let error = Validator.validatePassword(password) {
-                        Text(error.message)
-                            .font(.caption)
-                            .foregroundColor(.red)
+                    if hasAttemptedLogin {
+                        if let error = Validator.validateEmail(email) {
+                            Text(error.message)
+                                .font(.caption)
+                                .foregroundColor(.red)
+                        }
+                        
+                        if let error = Validator.validatePassword(password) {
+                            Text(error.message)
+                                .font(.caption)
+                                .foregroundColor(.red)
+                        }
                     }
                     
                     if !loginVM.loginError.isEmpty {
@@ -70,13 +74,16 @@ struct LoginView: View {
                 .padding(.horizontal, 5)
                 
                 Button(action: {
-                    Task {
-                        await loginVM.login(
-                                            email: email,
-                                            password: password,
-                                            modelContext: modelContext
-                                        )
-                            }
+                    hasAttemptedLogin = true
+                    if isEmailValid && isPasswordValid {
+                        Task {
+                            await loginVM.login(
+                                email: email,
+                                password: password,
+                                modelContext: modelContext
+                            )
+                        }
+                    }
                 }) {
                     HStack {
                         if loginVM.isLoading {
@@ -92,7 +99,7 @@ struct LoginView: View {
                     .foregroundColor(.white)
                     .cornerRadius(10)
                 }
-                .disabled(!canSubmit)
+                .disabled(loginVM.isLoading)
                 
                 Spacer()
             }
@@ -102,6 +109,19 @@ struct LoginView: View {
             .navigationDestination(isPresented: $loginVM.isAuthenticated) {
                 IndexView(loginVM:loginVM)
             }
+            HStack {
+                Text("還沒有帳號嗎？")
+                    .foregroundColor(.secondary)
+                
+                // 跳轉至註冊頁面
+                NavigationLink(destination: RegisterView()) {
+                    Text("立即註冊")
+                        .bold()
+                        .foregroundColor(.blue)
+                }
+            }
+            .font(.subheadline)
+            .padding(.top, 10)
         }
     }
 }
