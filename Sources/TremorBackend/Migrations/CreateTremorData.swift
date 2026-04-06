@@ -4,7 +4,7 @@ struct CreateTremorData: AsyncMigration {
     func prepare(on database: any Database) async throws {
         try await database.schema("tremor_data")
             // 修正這行，改為 Int 且自動遞增
-            .field("id", .int, .identifier(autoIncrement: true))
+            .field("id", .int, .identifier(auto: true))
             .field("user_id", .int, .required)
             .field("timestamp", .datetime)
             .field("acc_x", .double, .required)
