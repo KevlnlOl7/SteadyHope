@@ -1,7 +1,7 @@
 import Fluent
 
 struct CreateTremorData: AsyncMigration {
-    func prepare(on database: Database) async throws {
+    func prepare(on database: any Database) async throws {
         try await database.schema("tremor_data")
             .id()
             .field("user_id", .int, .required)
@@ -17,7 +17,7 @@ struct CreateTremorData: AsyncMigration {
             .create()
     }
 
-    func revert(on database: Database) async throws {
+    func revert(on database: any Database) async throws {
         try await database.schema("tremor_data").delete()
     }
 }

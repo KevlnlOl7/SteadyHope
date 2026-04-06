@@ -1,7 +1,7 @@
 import Fluent
 
 struct CreateUser: AsyncMigration {
-    func prepare(on database: Database) async throws {
+    func prepare(on database: any Database) async throws {
         try await database.schema("users")
             .id() // 預設使用 UUID，但如果你 Model 用 Int，建議改為 .field("id", .int, .identifier(autoIncrement: true))
             .field("email", .string, .required)
@@ -14,7 +14,7 @@ struct CreateUser: AsyncMigration {
             .create()
     }
 
-    func revert(on database: Database) async throws {
+    func revert(on database: any Database) async throws {
         try await database.schema("users").delete()
     }
 }
