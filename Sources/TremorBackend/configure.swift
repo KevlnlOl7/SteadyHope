@@ -30,8 +30,8 @@ public func configure(_ app: Application) async throws {
         ContentConfiguration.global.use(encoder: encoder, for: .json)
         ContentConfiguration.global.use(decoder: decoder, for: .json)
 
-    app.migrations.add(CreateTodo())
-
+    app.migrations.add(CreateUser())
+    app.migrations.add(CreateTremorData())
     // register routes
     try routes(app)
 }
