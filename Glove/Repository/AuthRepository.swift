@@ -17,4 +17,13 @@ class AuthRepository {
         // 呼叫底層 Service 獲取資料
         return try await authService.login(email: email, password: password)
     }
+    
+    /// 執行註冊邏輯
+    /// - Parameter request: 註冊用的數據傳輸物件 (RegisterData)
+    /// - Returns: 註冊成功後的 UserData 物件
+    func register(request: RegisterData) async throws -> UserData {
+        
+        // 呼叫底層 Service 獲取資料
+        return try await authService.register(request: request)
+    }
 }
