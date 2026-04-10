@@ -6,16 +6,17 @@
 ## 📌 專案簡介
 SteadyHope 是一款專為帕金森氏症患者設計的智慧型避震手套。透過感測器捕捉手部震顫頻率，並利用演算法控制致動器產生補償力量，藉此減緩手部抖動，協助患者重拾日常生活品質。
 
----
 
+---
 ## 📂 專案架構 (Project Structure)
 為了避免開發衝突，請組員將程式碼放置於對應的資料夾：
 
+```
 SteadyHope/
-├── firmware/                # 【嵌入式系統】ESP32 核心程式
+├── firmware/                # 【嵌入式系統】STM32 核心程式
 │   ├── src/                 # 原始碼 (.cpp, .ino)
 │   │   ├── main.cpp         # 程式入口與多執行緒排程
-│   │   ├── IMU_Handler.cpp  # MPU6050 數據讀取與校準
+│   │   ├── IMU_Handler.cpp  # BNO055 數據讀取與校準
 │   │   └── Motor_Control.cpp# PWM 致動器控制邏輯
 │   ├── lib/                 # 第三方或自定義函式庫 (如 KalmanFilter)
 │   └── include/             # 標頭檔 (定義引腳、PID 參數常數)
@@ -46,9 +47,21 @@ SteadyHope/
 ├── docs/                    # 【專案文件】
 │   ├── api_spec.md          # RESTful API 規範說明
 │   ├── ble_protocol.md      # 藍牙封包傳輸協議定義
-│   └── reports/             # 畢業專題進度報告與補助申請書
+│   └── reports/             # 畢業專題進度報告
 ├── .gitignore               # 排除 Xcode 暫存檔、OS 系統檔、環境變數
 └── README.md                # 專案總入口文件
+```
+
+---
+## 團隊組成 (Team Members)
+| 學號 | 中文姓名 | 英文姓名 | 負責項目|
+| :--- | :--- | :--- | :--- |
+| 412630153 | 張傢寧 | Kevin | 專案負責人、演算法 |
+| 412631508 | 許方彥 | Ian |  | 機構設計 (3D 列印)、電路整合
+| 412630781 | 陳韋恩 | Wilson | Oracle Cloud 部署 |
+| 412631532 | 樊柔妤 | Fan | iOS App 開發 (Swift)、UI/UX 設計 |
+| 412631474 | 范瑋哲 | Ryan |  |
+| 412630906 | 李冠廷 | Eric |  | 
 
 ---
 
@@ -64,7 +77,7 @@ SteadyHope/
 
 ### 2. 提交紀錄 (Commit Message)
 請使用簡單明確的標籤開頭，方便追蹤進度：
-* `feat`: 新增功能 (例如：`feat: 加入 MPU6050 讀取功能`)
+* `feat`: 新增功能 (例如：`feat: 加入 BNO055 讀取功能`)
 * `fix`: 修復錯誤 (例如：`fix: 修正濾波器參數偏差`)
 * `docs`: 修改文件 (例如：`docs: 更新 README 開發流程`)
 * `cad`: 3D 模型更新 (例如：`cad: 手套掌心殼體 v2`)
@@ -77,9 +90,9 @@ SteadyHope/
 ---
 
 ## 🛠️ 環境配置
-* **Hardware:** ESP32, MPU6050, 震動致動器。
-* **Firmware:** Arduino IDE / PlatformIO。
-* **Software:** Python 3.x (數據分析), Flutter (App)。
+* **Hardware:** STM32, BNO055, 震動致動器。
+* **Firmware:** STM32CubeIDE、MATLAB。
+* **Software:** Python 3.x (數據分析), Swift (App)。
 
 ---
 
