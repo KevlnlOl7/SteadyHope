@@ -1,12 +1,12 @@
 import Foundation
 
-enum Validation: Error {
+enum Validation: LocalizedError {
     case empty(field: String)
     case email
     case password
     case server(message: String)
     
-    var message: String {
+    var errorDescription: String? {
             switch self {
             case .empty(let field):
                 return "\(field)不可為空"

@@ -50,11 +50,7 @@ class RegisterViewModel: ObservableObject {
             try? modelContext.save()
             self.showSuccessAlert = true
         } catch {
-            if error.localizedDescription.contains("409") || error.localizedDescription.contains("已註冊") {
-                self.errorMessage = "此信箱已被註冊，請直接登入或更換信箱。"
-            } else {
-                self.errorMessage = error.localizedDescription
-            }
+            self.errorMessage = error.localizedDescription
         }
         isLoading = false
     }

@@ -67,8 +67,8 @@ struct RegisterView: View {
                         VStack(alignment: .leading, spacing: 10) {
                             Group {
                                 if hasAttemptedRegister {
-                                    if let error = Validator.validateEmail(viewModel.email) { Text(error.message) }
-                                    if let error = Validator.validatePassword(viewModel.password) { Text(error.message) }
+                                    if let error = Validator.validateEmail(viewModel.email) { Text(error.localizedDescription) }
+                                    if let error = Validator.validatePassword(viewModel.password) { Text(error.localizedDescription) }
                                     if viewModel.password != viewModel.confirmPassword { Text("兩次輸入的密碼不一致") }
                                 }
                                 if !viewModel.errorMessage.isEmpty {

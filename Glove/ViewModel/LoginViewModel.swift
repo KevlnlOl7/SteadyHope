@@ -39,7 +39,7 @@ class LoginViewModel: ObservableObject {
             self.userData = fetchedData
             self.isAuthenticated = true
             } catch let error as Validation {
-                self.loginError = error.message
+                self.loginError = error.localizedDescription
             } catch {
                 self.loginError = "登入發生錯誤，請稍後再試"
             }

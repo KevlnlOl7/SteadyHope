@@ -51,13 +51,13 @@ struct LoginView: View {
                     
                     if hasAttemptedLogin {
                         if let error = Validator.validateEmail(email) {
-                            Text(error.message)
+                            Text(error.localizedDescription)
                                 .font(.caption)
                                 .foregroundColor(.red)
                         }
                         
                         if let error = Validator.validatePassword(password) {
-                            Text(error.message)
+                            Text(error.localizedDescription)
                                 .font(.caption)
                                 .foregroundColor(.red)
                         }
