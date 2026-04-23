@@ -22,7 +22,16 @@ struct UserController: RouteCollection {
         }
 
         let data = try req.content.decode(RegisterRequest.self)
-        // 使用非同步雜湊更安全且不阻塞
+        
+        // 查資料庫，如果存在就噴 409 錯誤
+        if let existingUser = try await User.query(on: req.db)
+            .filter(\.$email == data.email)
+            .first() {
+            throw Abort(.conflict, reason: "此電子郵件已被註冊")
+        }
+        // ----------------------------
+
+        // 使用非同步雜湊（放在檢查之後省資源）
         let hash = try await req.password.async.hash(data.password)
 
         let user = User(
@@ -35,7 +44,7 @@ struct UserController: RouteCollection {
         )
 
         try await user.save(on: req.db)
-        return user.toResponse() // 建議在 User Model 寫個轉型 function
+        return user.toResponse()
     }
 
     // 登入邏輯
