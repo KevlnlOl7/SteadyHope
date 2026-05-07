@@ -19,8 +19,22 @@ struct GloveApp: App {
 
     var body: some Scene {
         WindowGroup {
-            LoginView()
+            RootView()
         }
         .modelContainer(sharedModelContainer)
+    }
+}
+struct RootView: View {
+    @StateObject private var loginVM = LoginViewModel()
+    @StateObject private var dataVM = DataViewModel()
+    var body: some View {
+        Group {
+            if loginVM.isAuthenticated {
+                NavigationBarView(loginVM: loginVM,dataVM:dataVM)
+            } else {
+                LoginView(loginVM: loginVM)
+            }
+        }
+        .animation(.easeInOut(duration: 0.8), value: loginVM.isAuthenticated)
     }
 }

@@ -1,28 +1,22 @@
 import SwiftUI
+
 struct LoginView: View {
     
-    /// 使用者輸入信箱
-    @State private var email = ""
-    
-    /// 使用者輸入密碼
-    @State private var password = ""
-
-    @StateObject private var loginVM = LoginViewModel()
+    @ObservedObject var loginVM: LoginViewModel
     @Environment(\.modelContext) private var modelContext
+    
+    @State private var email = ""
+    @State private var password = ""
     @State private var hasAttemptedLogin = false
     
-    /// 驗證信箱格式
     private var isEmailValid: Bool {
         Validator.validateEmail(email) == nil
     }
     
-    /// 驗證密碼格式
     private var isPasswordValid: Bool {
         Validator.validatePassword(password) == nil
     }
     
-    
-    // 若不為空，且目前不在讀取狀態
     private var canSubmit: Bool {
         !email.isEmpty && !password.isEmpty && !loginVM.isLoading
     }
@@ -31,6 +25,8 @@ struct LoginView: View {
         NavigationStack {
             VStack(spacing: 15) {
                 Text("歡迎使用＾-＾")
+                    .font(.title2)
+                    .padding(.bottom, 10)
                 
                 TextField("帳號", text: $email)
                     .padding()
@@ -46,9 +42,7 @@ struct LoginView: View {
                     .cornerRadius(8)
                     .disabled(loginVM.isLoading)
                 
-                // 驗證訊息顯示區
                 VStack(alignment: .leading, spacing: 5) {
-                    
                     if hasAttemptedLogin {
                         if let error = Validator.validateEmail(email) {
                             Text(error.localizedDescription)
@@ -74,9 +68,11 @@ struct LoginView: View {
                 .padding(.horizontal, 5)
                 
                 Button(action: {
+                    UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
                     hasAttemptedLogin = true
                     if isEmailValid && isPasswordValid {
                         Task {
+                            try? await Task.sleep(nanoseconds: 300_000_000)
                             await loginVM.login(
                                 email: email,
                                 password: password,
@@ -102,30 +98,22 @@ struct LoginView: View {
                 .disabled(loginVM.isLoading)
                 
                 Spacer()
+                
+                HStack {
+                    Text("還沒有帳號嗎？")
+                        .foregroundColor(.secondary)
+                    
+                    NavigationLink(destination: RegisterView()) {
+                        Text("立即註冊")
+                            .bold()
+                            .foregroundColor(.blue)
+                    }
+                }
+                .font(.subheadline)
+                .padding(.bottom, 20)
             }
             .padding()
             .navigationTitle("登入")
-            .navigationBarBackButtonHidden(true)
-            .navigationDestination(isPresented: $loginVM.isAuthenticated) {
-                IndexView(loginVM:loginVM)
-            }
-            HStack {
-                Text("還沒有帳號嗎？")
-                    .foregroundColor(.secondary)
-                
-                // 跳轉至註冊頁面
-                NavigationLink(destination: RegisterView()) {
-                    Text("立即註冊")
-                        .bold()
-                        .foregroundColor(.blue)
-                }
-            }
-            .font(.subheadline)
-            .padding(.top, 10)
         }
     }
-}
-
-#Preview {
-    LoginView()
 }
