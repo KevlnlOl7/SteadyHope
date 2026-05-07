@@ -3,7 +3,7 @@ import Charts
 
 struct DataView: View {
     @ObservedObject var loginVM: LoginViewModel
-    @StateObject private var dataVM = DataViewModel()
+    @ObservedObject var dataVM = DataViewModel()
     @State private var selectedDate = Date()
 
         var body: some View {
@@ -101,7 +101,3 @@ struct DataView: View {
             }
         }
     }
-
-#Preview {
-    DataView(loginVM: LoginViewModel())
-}
