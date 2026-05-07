@@ -1,0 +1,103 @@
+import SwiftUI
+
+struct ProfileView: View {
+    @ObservedObject var loginVM: LoginViewModel
+    
+    var body: some View {
+        ZStack {
+            Color(red: 0.97, green: 0.97, blue: 0.97)
+                .ignoresSafeArea()
+            
+            VStack(spacing: 0) {
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("使用者個人資料")
+                            .font(.system(size: 24, weight: .bold))
+                    }
+                    Spacer()
+                }
+                .padding(.horizontal, 25)
+                .padding(.top, 20)
+                .padding(.bottom, 10)
+
+                ScrollView {
+                    VStack(spacing: 20) {
+                        
+                        HStack {
+                            Text(loginVM.userData?.userName ?? "用戶")
+                                .font(.system(size: 50, weight: .bold))
+                                .foregroundColor(.primary.opacity(0.7))
+                            Spacer()
+                        }
+                        .padding(.horizontal, 30)
+                        .frame(height: 100)
+
+                        VStack(spacing: 0) {
+                            ProfileDataRow(title: "個人資料", showEdit: true)
+                            ProfileDataRow(title: "帳號設定", showEdit: true)
+                        }
+                        .background(Color.white)
+                        .cornerRadius(15)
+                        .padding(.horizontal, 20)
+                        .shadow(color: Color.black.opacity(0.05), radius: 10, y: 5)
+
+                        Button(action: {
+                            loginVM.logout()
+                        }) {
+                            Text("登出")
+                                .font(.system(size: 17, weight: .bold))
+                                .foregroundColor(.white)
+                                .frame(width: 120, height: 48)
+                                .background(Color.black.opacity(0.8))
+                                .cornerRadius(24)
+                                .shadow(color: Color.black.opacity(0.2), radius: 10, y: 5)
+                        }
+                        .padding(.top, 30)
+
+                        Color.clear.frame(height: 100)
+                    }
+                }
+            }
+        }
+    }
+}
+
+// 列表行組件
+struct ProfileDataRow: View {
+    var title: String
+    var subtitle: String? = nil
+    var showEdit: Bool
+    
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(title)
+                        .font(.system(size: 18, weight: .medium))
+                    if let sub = subtitle {
+                        Text(sub)
+                            .font(.system(size: 14))
+                            .foregroundColor(.secondary)
+                    }
+                }
+                
+                Spacer()
+                
+                if showEdit {
+                    Text("修改")
+                        .font(.system(size: 15))
+                        .foregroundColor(.gray.opacity(0.6))
+                }
+                
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(.gray.opacity(0.3))
+            }
+            .padding(.vertical, 20)
+            .padding(.horizontal, 20)
+            
+            Divider()
+                .padding(.leading, 20)
+        }
+    }
+}
