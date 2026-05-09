@@ -2,6 +2,8 @@ import SwiftUI
 
 struct ProfileView: View {
     @ObservedObject var loginVM: LoginViewModel
+    @ObservedObject var medVM: MedicationViewModel
+    @State private var isPresentingMedication = false
     
     var body: some View {
         ZStack {
@@ -34,6 +36,9 @@ struct ProfileView: View {
 
                         VStack(spacing: 0) {
                             DataRow(title: "個人資料")
+                            NavigationLink(destination: MedicationView(medVM: medVM)) {
+                                    DataRow(title: "用藥資料", text: "查看")
+                                }
                             DataRow(title: "帳號設定",showDivider: false)
                         }
                         .background(Color.white)
