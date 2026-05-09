@@ -68,7 +68,7 @@ struct LoginView: View {
                 .padding(.horizontal, 5)
                 
                 Button(action: {
-                    UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+                    self.hideKeyboard()
                     hasAttemptedLogin = true
                     if isEmailValid && isPasswordValid {
                         Task {
