@@ -3,8 +3,6 @@ import SwiftUI
 import Combine
 import SwiftData
 
-import Foundation
-
 class LoginViewModel: ObservableObject {
     
     /// 控制讀取狀態 防重送
@@ -31,7 +29,8 @@ class LoginViewModel: ObservableObject {
         isLoading = true
         loginError = ""
         do {
-            let fetchedData = try await authRepository.login(email: email, password: password)
+            let loginAccount = Account(email: email, password: password)
+            let fetchedData = try await authRepository.login(request: loginAccount)
             
             modelContext.insert(fetchedData)
             try? modelContext.save()

@@ -12,7 +12,7 @@ class AuthService {
     ///   - password: 使用者輸入的明文密碼
     /// - Returns: 登入成功的 UserData 物件
     /// - Throws: Validation 類型的錯誤
-    func login(email: String, password: String) async throws -> UserData {
+    func login(email: String, password: String) async throws -> Data {
         guard let url = URL(string: "\(baseURL)/users/login") else {
             throw Validation.server(message: "URL 格式錯誤")
         }
@@ -50,14 +50,7 @@ class AuthService {
         dateFormatter.dateFormat = "yyyy-MM-dd"
         decoder.dateDecodingStrategy = .formatted(dateFormatter)
         
-        do {
-            let dto = try decoder.decode(UserDataDTO.self, from: data)
-            return dto.toModel()
-        } catch {
-            // 在 Console 印出錯誤
-            print("解析失敗原因: \(error)")
-            throw Validation.server(message: "使用者資料格式異常，請聯繫管理員")
-        }
+        return data
     }
     
     /// 向伺服器發送註冊請求 (使用包含密碼的 Request)
