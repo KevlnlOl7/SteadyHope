@@ -27,10 +27,11 @@ struct GloveApp: App {
 struct RootView: View {
     @StateObject private var loginVM = LoginViewModel()
     @StateObject private var dataVM = DataViewModel()
+    @StateObject private var medVM = MedicationViewModel()
     var body: some View {
         Group {
             if loginVM.isAuthenticated {
-                NavigationBarView(loginVM: loginVM,dataVM:dataVM)
+                NavigationBarView(loginVM: loginVM,dataVM:dataVM,medVM:medVM)
             } else {
                 LoginView(loginVM: loginVM)
             }
