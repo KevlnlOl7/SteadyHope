@@ -33,8 +33,8 @@ struct ProfileView: View {
                         .frame(height: 100)
 
                         VStack(spacing: 0) {
-                            ProfileDataRow(title: "個人資料", showEdit: true)
-                            ProfileDataRow(title: "帳號設定", showEdit: true)
+                            DataRow(title: "個人資料")
+                            DataRow(title: "帳號設定",showDivider: false)
                         }
                         .background(Color.white)
                         .cornerRadius(15)
@@ -58,46 +58,6 @@ struct ProfileView: View {
                     }
                 }
             }
-        }
-    }
-}
-
-// 列表行組件
-struct ProfileDataRow: View {
-    var title: String
-    var subtitle: String? = nil
-    var showEdit: Bool
-    
-    var body: some View {
-        VStack(spacing: 0) {
-            HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(title)
-                        .font(.system(size: 18, weight: .medium))
-                    if let sub = subtitle {
-                        Text(sub)
-                            .font(.system(size: 14))
-                            .foregroundColor(.secondary)
-                    }
-                }
-                
-                Spacer()
-                
-                if showEdit {
-                    Text("修改")
-                        .font(.system(size: 15))
-                        .foregroundColor(.gray.opacity(0.6))
-                }
-                
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(.gray.opacity(0.3))
-            }
-            .padding(.vertical, 20)
-            .padding(.horizontal, 20)
-            
-            Divider()
-                .padding(.leading, 20)
         }
     }
 }

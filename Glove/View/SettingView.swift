@@ -42,7 +42,7 @@ struct SettingView: View {
 
                 // 功能設定列表
                 VStack(spacing: 0) {
-                    SettingRow(icon: "bolt.fill", title: "連線狀態", value: "已連線", showDivider: true)
+                    DataRow(icon: "bolt.fill", title: "連線狀態", text: "已連線")
                 }
                 .background(Color.white)
                 .cornerRadius(15)
@@ -76,37 +76,6 @@ struct SettingView: View {
                 .padding(.horizontal, 25)
 
                 Spacer()
-            }
-        }
-    }
-}
-
-// 列表行組件
-struct SettingRow: View {
-    var icon: String
-    var title: String
-    var value: String
-    var showDivider: Bool
-    
-    var body: some View {
-        VStack(spacing: 0) {
-            HStack {
-                Image(systemName: icon)
-                    .foregroundColor(.blue)
-                    .frame(width: 30)
-                Text(title)
-                    .foregroundColor(.primary)
-                Spacer()
-                Text(value)
-                    .foregroundColor(.secondary)
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 14))
-                    .foregroundColor(.gray)
-            }
-            .padding()
-            
-            if showDivider {
-                Divider().padding(.leading, 50)
             }
         }
     }
