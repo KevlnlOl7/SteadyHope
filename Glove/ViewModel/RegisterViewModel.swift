@@ -10,6 +10,7 @@ class RegisterViewModel: ObservableObject {
     @Published var confirmPassword = ""
     @Published var gender: Gender = .unknown
     @Published var birthday = Calendar.current.date(byAdding: .year, value: -60, to: Date()) ?? Date()
+    @Published var diseaseStage = ""
     
     /// 控制讀取狀態 防重送
     @Published var isLoading = false
@@ -34,7 +35,8 @@ class RegisterViewModel: ObservableObject {
             email: email,
             password: password,
             gender: gender.rawValue,
-            birth: birthString
+            birth: birthString,
+            diseaseStage: diseaseStage
         )
         
         do {

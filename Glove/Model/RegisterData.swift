@@ -17,4 +17,7 @@ struct RegisterData: Codable {
     
     /// 用戶生日
     let birth: String // 格式：yyyy-MM-dd
+    
+    /// 疾病階段
+    var diseaseStage: String
 }

@@ -58,6 +58,13 @@ struct RegisterView: View {
                         }
                         .pickerStyle(.segmented)
                         
+                        Picker("疾病階段", selection: $viewModel.diseaseStage) {
+                                Text("未知").tag("未知")
+                                Text("初期").tag("初期")
+                                Text("中期").tag("中期")
+                                Text("後期").tag("後期")
+                            }
+                        
                         DatePicker("生日", selection: $viewModel.birthday, displayedComponents: .date)
                             .disabled(viewModel.isLoading)
                     }                    
@@ -115,7 +122,3 @@ struct RegisterView: View {
         }
         
     }
-
-#Preview {
-    RegisterView()
-}
