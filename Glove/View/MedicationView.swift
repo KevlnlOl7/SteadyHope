@@ -1,6 +1,8 @@
 import SwiftUI
 
 struct MedicationView: View {
+
+    @ObservedObject var loginVM: LoginViewModel
     @ObservedObject var medVM: MedicationViewModel
     @FocusState private var isInputFocused: Bool
     @State private var filterDate = Date()
@@ -24,39 +26,59 @@ struct MedicationView: View {
 
                     VStack(spacing: 12) {
                         HStack {
-                            DatePicker("選擇時間", selection: $medVM.inputDate,in: ...Date())
-                                .labelsHidden()
-                                .scaleEffect(0.9)
+                            DatePicker(
+                                "選擇時間",
+                                selection: $medVM.inputDate,
+                                in: ...Date()
+                            )
+                            .labelsHidden()
+                            .scaleEffect(0.9)
                             Spacer()
                         }
-                        
+
                         HStack(spacing: 10) {
                             TextField("藥品名稱", text: $medVM.inputName)
                                 .focused($isInputFocused)
                                 .textFieldStyle(.roundedBorder)
-                            
+
                             TextField("用量", text: $medVM.inputDose)
                                 .focused($isInputFocused)
                                 .textFieldStyle(.roundedBorder)
                                 .frame(width: 50)
-                            
+
                             TextField("單位", text: $medVM.inputUnit)
                                 .focused($isInputFocused)
                                 .textFieldStyle(.roundedBorder)
                                 .frame(width: 50)
-                            
+
                             Button(action: {
                                 isInputFocused = false
                                 hideKeyboard()
                                 if !medVM.inputName.isEmpty {
-                                    medVM.addRecord()
+                                    if let uid = loginVM.userData?.userID,
+                                        let token = AuthManager.shared
+                                            .getToken()
+                                    {
+                                        medVM.addRecord(
+                                            currentUserID: uid,
+                                            token: token
+                                        )
+                                    }
                                 }
                             }) {
                                 Image(systemName: "plus.circle.fill")
                                     .font(.system(size: 30))
-                                    .foregroundColor(medVM.inputName.trimmingCharacters(in: .whitespaces).isEmpty ? .gray : .blue)
+                                    .foregroundColor(
+                                        medVM.inputName.trimmingCharacters(
+                                            in: .whitespaces
+                                        ).isEmpty ? .gray : .blue
+                                    )
                             }
-                            .disabled(medVM.inputName.trimmingCharacters(in: .whitespaces).isEmpty)
+                            .disabled(
+                                medVM.inputName.trimmingCharacters(
+                                    in: .whitespaces
+                                ).isEmpty
+                            )
                         }
                     }
                     .padding([.horizontal, .bottom])
@@ -65,35 +87,40 @@ struct MedicationView: View {
                 .cornerRadius(15)
                 .padding()
                 .shadow(color: Color.black.opacity(0.05), radius: 5, y: 2)
-                
+
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
                         Text("依日期查詢")
                             .font(.subheadline)
                             .foregroundColor(.secondary)
-                        
-                        DatePicker("", selection: $filterDate,in: ...Date(), displayedComponents: .date)
-                            .labelsHidden()
-                            .onChange(of: filterDate) { oldValue,newValue in
-                                withAnimation {
-                                            isShowingAll = false
-                                        }
-                                print("篩選日期改為: \(newValue)")
+
+                        DatePicker(
+                            "",
+                            selection: $filterDate,
+                            in: ...Date(),
+                            displayedComponents: .date
+                        )
+                        .labelsHidden()
+                        .onChange(of: filterDate) { oldValue, newValue in
+                            withAnimation {
+                                isShowingAll = false
                             }
-                        
+                            print("篩選日期改為: \(newValue)")
+                        }
+
                         Spacer()
-                        
+
                         Button("顯示全部") {
                             withAnimation {
-                                    isShowingAll.toggle()
-                                }
+                                isShowingAll.toggle()
+                            }
                         }
                         .font(.caption)
                     }
                     .padding(.horizontal, 20)
                     .padding(.top, 10)
                 }
-                
+
                 List {
                     Section(header: Text(dateSectionTitle)) {
                         if medVM.medicationList.isEmpty {
@@ -104,15 +131,24 @@ struct MedicationView: View {
                         } else {
                             ForEach(filteredRecords) { med in
                                 medicationRow(
-                                    date: medVM.formatDate(med.date, format: "M/d"),
-                                    time: medVM.formatDate(med.date, format: "HH:mm"),
+                                    date: medVM.formatDate(
+                                        med.date,
+                                        format: "M/d"
+                                    ),
+                                    time: medVM.formatDate(
+                                        med.date,
+                                        format: "HH:mm"
+                                    ),
                                     name: med.name,
                                     dose: med.dose
                                 )
                                 .listRowBackground(Color.white)
                             }
                             .onDelete { offsets in
-                                medVM.deleteRecord(records: filteredRecords, at: offsets)
+                                medVM.deleteRecord(
+                                    records: filteredRecords,
+                                    at: offsets
+                                )
                             }
                         }
                     }
@@ -122,8 +158,21 @@ struct MedicationView: View {
         }
         .navigationTitle("用藥資料")
         .navigationBarTitleDisplayMode(.inline)
+        .task {
+            let today = medVM.formatDate(Date(), format: "yyyy-MM-dd")
+            await medVM.loadRecords(for: today)
+        }
+        .onChange(of: filterDate) { _, newValue in
+            Task {
+                let dateString = medVM.formatDate(
+                    newValue,
+                    format: "yyyy-MM-dd"
+                )
+                await medVM.loadRecords(for: dateString)
+            }
+        }
     }
-    
+
     private var filteredRecords: [MedicationRecord] {
         if isShowingAll {
             return medVM.medicationList
@@ -133,13 +182,14 @@ struct MedicationView: View {
             }
         }
     }
-    
+
     private var dateSectionTitle: String {
         if isShowingAll {
             return "歷史紀錄"
         } else {
             // 如果選的是今天，顯示今日紀錄，否則顯示選取的日期
-            return Calendar.current.isDateInToday(filterDate) ? "今日紀錄" : medVM.formatDate(filterDate, format: "M/d 紀錄")
+            return Calendar.current.isDateInToday(filterDate)
+                ? "今日紀錄" : medVM.formatDate(filterDate, format: "M/d 紀錄")
         }
     }
 }
