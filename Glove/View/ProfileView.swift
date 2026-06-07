@@ -4,12 +4,12 @@ struct ProfileView: View {
     @ObservedObject var loginVM: LoginViewModel
     @ObservedObject var medVM: MedicationViewModel
     @State private var isPresentingMedication = false
-    
+
     var body: some View {
         ZStack {
             Color(red: 0.97, green: 0.97, blue: 0.97)
                 .ignoresSafeArea()
-            
+
             VStack(spacing: 0) {
                 HStack {
                     VStack(alignment: .leading, spacing: 4) {
@@ -24,7 +24,7 @@ struct ProfileView: View {
 
                 ScrollView {
                     VStack(spacing: 20) {
-                        
+
                         HStack {
                             Text(loginVM.userData?.userName ?? "用戶")
                                 .font(.system(size: 50, weight: .bold))
@@ -36,15 +36,24 @@ struct ProfileView: View {
 
                         VStack(spacing: 0) {
                             DataRow(title: "個人資料")
-                            NavigationLink(destination: MedicationView(medVM: medVM)) {
-                                    DataRow(title: "用藥資料", text: "查看")
-                                }
-                            DataRow(title: "帳號設定",showDivider: false)
+                            NavigationLink(
+                                destination: MedicationView(
+                                    loginVM: loginVM,
+                                    medVM: medVM
+                                )
+                            ) {
+                                DataRow(title: "用藥資料", text: "查看")
+                            }
+                            DataRow(title: "帳號設定", showDivider: false)
                         }
                         .background(Color.white)
                         .cornerRadius(15)
                         .padding(.horizontal, 20)
-                        .shadow(color: Color.black.opacity(0.05), radius: 10, y: 5)
+                        .shadow(
+                            color: Color.black.opacity(0.05),
+                            radius: 10,
+                            y: 5
+                        )
 
                         Button(action: {
                             loginVM.logout()
@@ -55,7 +64,11 @@ struct ProfileView: View {
                                 .frame(width: 120, height: 48)
                                 .background(Color.black.opacity(0.8))
                                 .cornerRadius(24)
-                                .shadow(color: Color.black.opacity(0.2), radius: 10, y: 5)
+                                .shadow(
+                                    color: Color.black.opacity(0.2),
+                                    radius: 10,
+                                    y: 5
+                                )
                         }
                         .padding(.top, 30)
 

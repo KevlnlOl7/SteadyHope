@@ -8,7 +8,7 @@ struct SettingView: View {
         ZStack {
             Color(red: 0.97, green: 0.97, blue: 0.97)
                 .ignoresSafeArea()
-            
+
             VStack(spacing: 25) {
                 Text("手套設定與狀態")
                     .font(.system(size: 24, weight: .bold))
@@ -25,7 +25,7 @@ struct SettingView: View {
                         Spacer()
                         BatteryIcon(level: batteryLevel)
                     }
-                    
+
                     HStack(alignment: .bottom, spacing: 2) {
                         Text("\(batteryLevel)")
                             .font(.system(size: 60, weight: .medium))
@@ -47,7 +47,7 @@ struct SettingView: View {
                 .background(Color.white)
                 .cornerRadius(15)
                 .padding(.horizontal, 25)
-                
+
                 // 強度 Slider
                 VStack(alignment: .leading, spacing: 15) {
                     HStack {
@@ -60,10 +60,10 @@ struct SettingView: View {
                             .foregroundColor(.blue)
                             .fontWeight(.bold)
                     }
-                    
+
                     Slider(value: $intensity, in: 0...1)
                         .accentColor(.blue)
-                    
+
                     HStack {
                         Text("弱").font(.caption).foregroundColor(.secondary)
                         Spacer()
