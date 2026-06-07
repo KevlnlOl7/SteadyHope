@@ -8,28 +8,31 @@ struct UserDataDTO: Codable {
     let gender: Int
     let birthday: Date?
     let diseaseStage: String?
+    let role:String
     
-    // 處理後端 JSON 欄位命名不一致 
+    // 處理後端 JSON 欄位命名不一致
     enum CodingKeys: String, CodingKey {
-            case userID = "id"
-            case userName = "name"
-            case email = "email"
-            case gender = "gender"
-            case birthday = "birth"
-            case diseaseStage = "diseaseStage"
-        }
+        case userID = "id"
+        case userName = "name"
+        case email = "email"
+        case gender = "gender"
+        case birthday = "birth"
+        case diseaseStage = "diseaseStage"
+        case role = "role"
+    }
     
     /// 將 DTO 轉換為可存入 SwiftData 的 UserData 模型
     func toModel() -> UserData {
-            return UserData(
-                userID: self.userID ?? 0,
-                userName: self.userName ?? "未知用戶",
-                email: self.email,
-                gender: self.gender,
-                birthday: self.birthday ?? Date(),
-                diseaseStage: self.diseaseStage ?? "尚未設定",
-            )
-        }
+        return UserData(
+            userID: self.userID ?? 0,
+            userName: self.userName ?? "未知用戶",
+            email: self.email,
+            gender: self.gender,
+            birthday: self.birthday ?? Date(),
+            diseaseStage: self.diseaseStage ?? "尚未設定",
+            role:self.role
+        )
+    }
 }
 enum Gender: Int, Codable {
     case unknown = 0

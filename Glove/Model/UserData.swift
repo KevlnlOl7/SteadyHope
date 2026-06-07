@@ -22,13 +22,17 @@ class UserData {
     /// 疾病階段
     var diseaseStage: String
     
-    init(userID: Int, userName: String, email: String, gender: Int, birthday: Date, diseaseStage: String) {
+    /// 登入身份
+    var role: String
+    
+    init(userID: Int, userName: String, email: String, gender: Int, birthday: Date, diseaseStage: String,role: String) {
         self.userID = userID
         self.userName = userName
         self.email = email
         self.gender = gender
         self.birthday = birthday
         self.diseaseStage = diseaseStage
+        self.role = role
     }
 }
 
