@@ -23,7 +23,7 @@ class MedicationService {
 
         request.httpBody = try encoder.encode(record)
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (_, response) = try await URLSession.shared.data(for: request)
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw Validation.server(message: "伺服器回應異常")
