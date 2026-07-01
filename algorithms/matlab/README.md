@@ -18,6 +18,8 @@
 | `test_simulated_tremor.m` / `test_patient_tremor.m` | 額外測試腳本。 |
 | `utils/` | `generate_synthetic_tremor.m`、`compute_tremor_power.m`、`butter_lowpass.m`。 |
 | **`codegen_arm.m`** | ★ 一鍵：以 ARM 為目標重產生 C，並覆蓋到 `../handoff/src/`。 |
+| **`control_sim.m`** | 抑震「控制律」閉迴路模擬：PID / 半主動阻尼 / 延遲敏感度（TPSR、ETVM + 圖）。plant 為標稱值，待硬體實測校調。 |
+| **`dtw_features.m`** | DTW 動作偏離特徵擷取（辨識/gating 用）：RAM 軌跡 vs 健康模板 → DTW 距離。驗證速度不變性與嚴重度可分。需 Signal Processing Toolbox。 |
 
 ## 產生 STM32 用的 C（給韌體組）
 
