@@ -14,3 +14,11 @@ __pycache__/
 # Hardware
 *.bak
 *.tmp
+
+# MATLAB / MATLAB Coder (建置產物，可再生，不入庫)
+codegen/
+slprj/
+*.asv
+*.autosave
+*.slxc
+*.mex*
