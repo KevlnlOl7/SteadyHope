@@ -33,10 +33,9 @@ SteadyHope/
 │       ├── db/              # Oracle DB Schema 與 SQL 腳本
 │       ├── Dockerfile       # 容器化部署設定
 │       └── .env.example     # 環境變數範本 (防止密碼外洩)
-├── algorithms/              # 【演算法】研究與數據模擬
-│   ├── datasets/            # 震顫測試原始數據 (CSV/JSON)
-│   ├── notebooks/           # Jupyter Notebooks (演算法驗證與圖表)
-│   └── filter_logic/        # 核心濾波演算法實作
+├── algorithms/              # 【演算法】MATLAB 原始碼與交付 C
+│   ├── matlab/              # 權威 MATLAB 原始碼 (BMFLC / eHWFLC-KF) + codegen_arm.m
+│   └── handoff/             # 交給韌體組的交付包 (ARM-safe C + 介面契約 + golden 測試 + 整合教學)
 ├── hardware/                # 【硬體設計】機構與電路
 │   ├── mechanical/          # 3D 列印相關
 │   │   ├── stl/             # 最終輸出列印檔 (預覽用)
