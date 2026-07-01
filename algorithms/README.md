@@ -4,7 +4,8 @@
 
 ```
 algorithms/
-├── matlab/     權威 MATLAB 原始碼（source of truth）+ 一鍵 codegen 腳本
+├── matlab/     權威 MATLAB 原始碼（估測 / 控制 / DTW）+ 一鍵 codegen 腳本
+├── ml/         Python 資料分析：真實 PD 資料的嚴重度 Random Forest（+ 不平衡擴增）
 └── handoff/    交給 STM32 韌體組的交付包（C + 介面契約 + golden 測試 + 整合教學）
 ```
 
