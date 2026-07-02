@@ -24,7 +24,9 @@ P.ctrl_dec = 10;        % 每 10 個 sim-sample 更新一次控制 => 100 Hz
 P.dt_ctrl  = P.ctrl_dec/P.fs_sim;
 P.K_act    = 1.0;       % 致動器等效增益 (命令->量測角速度)
 P.tau_act  = 0.005;     % 致動器一階時間常數 5 ms
-% fs=100Hz 的 2-20Hz 帶通 (DF-II Transposed), 與交付演算法前處理一致
+% fs=100Hz 的 2-20Hz 帶通 (DF-II Transposed)。
+% ⚠ 這組係數與 BMFLC_step.m / eHWFLC_KF_step.m 的內聯係數是同一份(codegen 要求 step 函式自含,
+%    無法共用)。若重新設計帶通,三處都要一起改,否則閉迴路 sim 會用到舊前處理。
 P.bp_b = [0.17508764367210086, 0, -0.3501752873442017, 0, 0.17508764367210086];
 P.bp_a = [1.0, -2.299055356038497, 1.9674977599844512, -0.874805556449481, 0.21965398391369484];
 
@@ -93,7 +95,7 @@ function r = run_case(P, delay_ms, opt)
     a_lag = P.dt/P.tau_act;
 
     u_hist = zeros(1,P.N); measured = zeros(1,P.N);
-    y_act = 0; bp_z = [0 0 0 0]; e_prev = 0; u_cmd = 0;
+    y_act = 0; bp_z = [0 0 0 0]; u_cmd = 0;
 
     for n = 1:P.N
         if n-D >= 1, u_del = u_hist(n-D); else, u_del = 0; end
@@ -107,8 +109,8 @@ function r = run_case(P, delay_ms, opt)
                 case 'pid'
                     [z,bp_z] = df2t(measured(n), P.bp_b, P.bp_a, bp_z);   % 帶通隔離顫抖
                     e = -z;
-                    u_cmd = opt.gain*opt.Kp*e;               % 純 P (Kd/Ki 對窄頻會發散)
-                    e_prev = e; %#ok<NASGU>
+                    % 純 P (Kd/Ki 對窄頻會發散); opt.gain = gating 的增益倍率 hook (見 gating_classifier / severity_rf)
+                    u_cmd = opt.gain*opt.Kp*e;
                 case 'damping'
                     [z,bp_z] = df2t(measured(n), P.bp_b, P.bp_a, bp_z);
                     u_cmd = -opt.gain*opt.b*z;               % 張力 ∝ 顫抖速度

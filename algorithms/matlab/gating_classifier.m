@@ -16,6 +16,7 @@
 %  需求: Statistics and Machine Learning Toolbox (TreeBagger)。
 %  ------------------------------------------------------------
 clear; clc; close all;
+addpath(fileparts(mfilename('fullpath')));   % 確保同資料夾的 gen_ram / dtw_dist 找得到
 FS = 100; WIN = 3; N = WIN*FS;
 states = {'自主意圖','靜止震顫','精細動作'};
 featNames = {'rms','低頻能量','震顫帶比','主頻','DTW偏離'};
@@ -94,20 +95,4 @@ function fv = features(x, template, FS)
     fv = [std(x), var(low), tremor_ratio, dom, dtw_dist(template,x)];
 end
 
-function d = dtw_dist(x, y)
-    x = (x-mean(x))/max(std(x),1e-9);
-    y = (y-mean(y))/max(std(y),1e-9);
-    [dc,ix,~] = dtw(x, y); d = dc/numel(ix);
-end
-
-function x = gen_ram(n_cycles, f_ram, amp, tremor_amp, decrement, rhythm_jit, speed, seed)
-    rng(seed); FS = 100; f_inst = f_ram*speed;
-    n = round(n_cycles/f_inst*FS); t = (0:n-1)/FS; dur = n/FS;
-    phi = 0; x = zeros(1,n);
-    for k = 1:n
-        f = f_inst*(1 + rhythm_jit*sin(2*pi*0.7*t(k)) + rhythm_jit*0.3*randn);
-        phi = phi + 2*pi*f/FS;
-        a = amp*(1 - decrement*t(k)/dur);
-        x(k) = a*sin(phi) + tremor_amp*sin(2*pi*5*t(k));
-    end
-end
+% dtw_dist / gen_ram 已抽成共用函式檔: dtw_dist.m, gen_ram.m (同資料夾)
