@@ -23,9 +23,10 @@ severity_rf.py — 震顫嚴重度 Random Forest (真實 PD 資料)
 資料路徑見 BASE (預設指向專案根目錄 Copy/; dataset 未入庫, 見 README)。
 ================================================================
 """
-import numpy as np, glob, os, warnings
+import numpy as np, glob, os, sys, warnings
 warnings.filterwarnings('ignore')
 from numpy.fft import rfft, rfftfreq
+from scipy.spatial.distance import cdist
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import GroupShuffleSplit
 from sklearn.metrics import balanced_accuracy_score, accuracy_score, confusion_matrix, recall_score
@@ -36,23 +37,25 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 BASE = os.path.join(_HERE, '..', '..', '..', 'Copy', 'Parkinson-s-Disease-Tremor-Dataset-main')
 DSETS = ['Tim-Tremor', 'PdAssist', 'IMU-Wild', 'PD-BioStamp']
 FEAT_NAMES = ['rms','r3-8','r4-6','dom_f','sp_ent','axX','axY','axZ','r8-15']
-# gating: 嚴重度 -> control_sim 的 PID gain_scale
-GATING = {0: 0.0, 1: 0.7, 2: 1.0, 3: 1.4}   # 0=不出力 … 3=高增益(精細支撐)
+# gating(部署策略): 嚴重度 -> 餵給 control_sim.m 的 opt.gain (增益倍率)
+# 0=不出力(不干擾自主動作) … 3=高增益(精細支撐)。這是「真實資料/嚴重度」版的 gating;
+# gating_classifier.m 另有「合成/三狀態」版 [0,1.0,1.5],兩者是不同輸入的不同策略,不需一致。
+GATING = {0: 0.0, 1: 0.7, 2: 1.0, 3: 1.4}
 
 
 def feat_window(w):
     """w:[128,3] 加速度 -> 9 維震顫帶頻譜特徵."""
-    w = w - w.mean(0)
+    w = w - w.mean(0)                       # 逐軸去重力/DC
     mag = np.sqrt((w**2).sum(1)); mag = mag - mag.mean()
     X = np.abs(rfft(mag)); f = rfftfreq(NW, 1/FS); P = X**2; tot = P.sum() + 1e-12
-    band = (f >= 3) & (f <= 8)
-    dom = float(f[band][np.argmax(X[band])]) if band.any() else 0.0
+    b38 = (f >= 3) & (f < 8)                # 震顫帶: 全檔統一用這條 (dom / r3-8 / 各軸一致)
+    dom = float(f[b38][np.argmax(X[b38])]) if b38.any() else 0.0
     p = P/tot; ent = float(-(p[p > 0]*np.log(p[p > 0])).sum())
     ax = []
-    for a in range(3):
-        s = w[:, a] - w[:, a].mean(); Pa = np.abs(rfft(s))**2
-        ax.append(Pa[(f >= 3) & (f <= 8)].sum()/(Pa.sum()+1e-12))
-    return [mag.std(), P[(f >= 3) & (f < 8)].sum()/tot, P[(f >= 4) & (f < 6)].sum()/tot,
+    for a in range(3):                      # w 已逐軸去均值, 不再重複去均值
+        Pa = np.abs(rfft(w[:, a]))**2
+        ax.append(Pa[b38].sum()/(Pa.sum()+1e-12))
+    return [mag.std(), P[b38].sum()/tot, P[(f >= 4) & (f < 6)].sum()/tot,
             dom, ent, *ax, P[(f >= 8) & (f < 15)].sum()/tot]
 
 
@@ -75,7 +78,7 @@ def smote(X, y, target):
         Xc = X[y == c]; need = target - len(Xc)
         if need <= 0 or len(Xc) < 2:
             continue
-        d = ((Xc[:, None, :] - Xc[None, :, :])**2).sum(-1); np.fill_diagonal(d, np.inf)
+        d = cdist(Xc, Xc, 'sqeuclidean'); np.fill_diagonal(d, np.inf)   # n×n (非 n×n×9), 省記憶體
         knn = np.argsort(d, 1)[:, :min(5, len(Xc)-1)]
         idx = rng.integers(0, len(Xc), need)
         nb = knn[idx, rng.integers(0, knn.shape[1], need)]
@@ -144,10 +147,14 @@ if __name__ == "__main__":
     print("\n=== 不平衡擴增比較 (segment-level split; 測試集不擴增) ===")
     eval_rf(Xtr, ytr, Xte, yte, '無擴增')
     Xs, ys2 = smote(Xtr, ytr, tgt); rf = eval_rf(Xs, ys2, Xte, yte, 'SMOTE(推薦)')
-    try:
-        Xg, yg = gan_augment(Xtr, ytr, tgt); eval_rf(Xg, yg, Xte, yte, 'GAN(特徵)')
-    except ImportError:
-        print("GAN(特徵)    | (未裝 torch, 略過)")
+    # GAN 每次要訓 1500 epoch 且實測未勝過 SMOTE, 預設不跑; 加 --gan 才比較
+    if '--gan' in sys.argv:
+        try:
+            Xg, yg = gan_augment(Xtr, ytr, tgt); eval_rf(Xg, yg, Xte, yte, 'GAN(特徵)')
+        except ImportError:
+            print("GAN(特徵)    | (未裝 torch, 略過)")
+    else:
+        print("GAN(特徵)    | (預設略過; 加 --gan 可跑, 實測 ~= 無擴增)")
 
     print("\n混淆矩陣 (SMOTE 版, 列=真實 0-3):")
     C = confusion_matrix(yte, rf.predict(Xte), labels=[0, 1, 2, 3])

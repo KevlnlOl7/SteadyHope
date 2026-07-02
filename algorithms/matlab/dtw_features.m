@@ -14,6 +14,7 @@
 %        後半段接真實 RAM 錄製資料 + GAN 擴增 + Random Forest。
 %  ------------------------------------------------------------
 clear; clc; close all;
+addpath(fileparts(mfilename('fullpath')));   % 確保同資料夾的 gen_ram / dtw_dist 找得到
 
 % 健康模板: 平順、等幅、無震顫 (6 個來回 @ 2 Hz)
 template = gen_ram(6, 2.0, 30, 0, 0, 0, 1.0, 0);
@@ -70,27 +71,7 @@ xlabel('模板 index'); ylabel('測試 index'); title('DTW 對齊路徑 (重度)
 fprintf('\n完成. 合成訊號僅供開發; 後半段接真實 RAM + GAN + Random Forest。\n');
 
 %% ================= 本地函式 =================
-function x = gen_ram(n_cycles, f_ram, amp, tremor_amp, decrement, rhythm_jit, speed, seed)
-% 合成 RAM 角速度 (以固定週期數產生, speed 只改快慢不改來回次數)
-    rng(seed); FS = 100;
-    f_inst = f_ram*speed;
-    n = round(n_cycles/f_inst*FS); t = (0:n-1)/FS; dur = n/FS;
-    phi = 0; x = zeros(1,n);
-    for k = 1:n
-        f = f_inst*(1 + rhythm_jit*sin(2*pi*0.7*t(k)) + rhythm_jit*0.3*randn);
-        phi = phi + 2*pi*f/FS;
-        a = amp*(1 - decrement*t(k)/dur);          % 振幅衰減 (bradykinesia)
-        x(k) = a*sin(phi) + tremor_amp*sin(2*pi*5*t(k));  % 輪替 + 靜止性震顫
-    end
-end
-
-function d = dtw_dist(x, y)
-% z-score 正規化後用內建 dtw, 距離除以路徑長度 (可比較)
-    x = (x-mean(x))/max(std(x),1e-9);
-    y = (y-mean(y))/max(std(y),1e-9);
-    [dc,ix,~] = dtw(x, y);
-    d = dc/numel(ix);
-end
+% gen_ram / dtw_dist 已抽成共用函式檔: gen_ram.m, dtw_dist.m (同資料夾)
 
 function d = euclid_norm(x, y)
 % 對齊長度後的歐氏距離 (無時間校正, 當對照)
