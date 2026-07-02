@@ -3,8 +3,8 @@
 給 STM32 組。目標：把 [src/](src/) 的 C 接進 CubeIDE 專案、在 100 Hz 呼叫、餵對輸入。
 先讀本檔照著放，再照 [README.md](README.md) §5 的三階段驗證。
 
-> 前置提醒：`src/ehwflc/` 目前是 x86 版（含 SSE2），**上板前要先照 [README.md](README.md) §4 重產生**。
-> BMFLC 那份可直接用。以下步驟兩者相同。
+> `src/` 的 C 已是 **ARM-safe 版**（以 ARM 目標重產生、無 x86 SSE2），BMFLC 與 eHWFLC 都可直接編。
+> 日後改演算法/參數要重新產生時，見 [README.md](README.md) §4（`../matlab/codegen_arm.m` 一鍵）。
 
 ---
 
@@ -23,7 +23,7 @@ STM32H745 是雙核，CubeIDE 會生 `*_CM7` 與 `*_CM4` 兩個子專案。
 ## 1. 把檔案加進專案
 
 1. 在 CM7 專案下建一個資料夾，例如 `Core/Algo/`。
-2. 把這三個資料夾整包複製進去：`src/bmflc/`、`src/ehwflc/`、`src/common/`。
+2. 把這兩個資料夾整包複製進去：`src/bmflc/`、`src/ehwflc/`（各自已含 `rtwtypes.h`，自含型別，不需 common/）。
    （CubeIDE：直接把資料夾拖進 Project Explorer，選 **Copy files**。）
 3. 確認這些 `.c` 會被編譯（在 Project Explorer 裡不是灰色/被 exclude）：
    - `bmflc/`：`BMFLC_step.c`、`BMFLC_step_data.c`、`BMFLC_step_initialize.c`
@@ -36,7 +36,6 @@ Project 上右鍵 → **Properties** → **C/C++ General → Paths and Symbols**
 **Add…** 把三個資料夾加進來（勾 *Add to all configurations*、可勾 *Is a workspace path*）：
 
 ```
-Core/Algo/common
 Core/Algo/bmflc
 Core/Algo/ehwflc
 ```

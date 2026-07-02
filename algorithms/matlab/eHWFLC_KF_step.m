@@ -1,14 +1,15 @@
 function [tremor_est, freq_hz] = eHWFLC_KF_step(signal_sample, fs_in)
 %#codegen
-% eHWFLC_KF_STEP 單樣本 eHWFLC-KF 震顫估測（即時版本 v6）
+% eHWFLC_KF_STEP 單樣本 eHWFLC-KF 震顫估測（即時版本）
 %
-%   [tremor_est, freq_hz] = eHWFLC_KF_step(signal_sample, fs_in)
+%   [tremor_est, freq_hz] = eHWFLC_KF_step(signal_sample[, fs_in])
 %
-%   v6 改進：支援動態 fs_in 輸入，預設為 100 Hz，並預存 50 Hz 與 100 Hz 
-%   之 2-20 Hz 帶通濾波器係數，維持 C-codegen 相容性。
+%   前處理為 2-20 Hz 帶通。fs_in 只在「本 session 第一次呼叫」時決定係數與 dt
+%   (預設 100 Hz; 內建 50/100 Hz 兩組係數)。之後要改取樣率必須先 `clear eHWFLC_KF_step`,
+%   否則沿用第一次的係數 (不會報錯)。部署 codegen 以單參數固定 fs=100 產生。
 %
-%   輸入:  signal_sample - 單一 IMU 樣本
-%          fs_in         - (可選) 取樣率 (預設 100 Hz)
+%   輸入:  signal_sample - 單一 IMU 角速度樣本 (°/s)
+%          fs_in         - (可選) 取樣率, 僅首次呼叫生效 (預設 100 Hz)
 %   輸出:  tremor_est    - 估測震顫值
 %          freq_hz       - 估測基頻 (Hz)
 

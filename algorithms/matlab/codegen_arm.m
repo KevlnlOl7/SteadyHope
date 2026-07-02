@@ -45,18 +45,24 @@ srcEH = fullfile(here, 'codegen', 'lib', 'eHWFLC_KF_step');
 dstBM = fullfile(here, '..', 'handoff', 'src', 'bmflc');
 dstEH = fullfile(here, '..', 'handoff', 'src', 'ehwflc');
 
+%% ---- 先檢查 ARM 安全性 (掃兩個檔的多種 x86 SIMD 標記; 有就擋下, 不覆蓋 handoff) ----
+simd = 'emmintrin|xmmintrin|pmmintrin|tmmintrin|smmintrin|immintrin|__m128|__m256|_mm_';
+bad = {};
+for f = {fullfile(srcBM,'BMFLC_step.c'), fullfile(srcEH,'eHWFLC_KF_step.c')}
+    if ~isempty(regexp(fileread(f{1}), simd, 'once')), bad{end+1} = f{1}; end %#ok<AGROW>
+end
+if ~isempty(bad)
+    error(['產生的 C 仍含 x86 SIMD (%s)。請設 ARM 目標 + InstructionSetExtensions=''None'' ' ...
+           '後重跑 (未覆蓋 handoff)。'], strjoin(bad, ', '));
+end
+
+%% ---- 清掉舊產物再覆蓋 (copyfile 不刪, 避免殘留 stale .c/.h 被編譯) ----
+delete(fullfile(dstBM,'*.c')); delete(fullfile(dstBM,'*.h'));
+delete(fullfile(dstEH,'*.c')); delete(fullfile(dstEH,'*.h'));
 copyfile(fullfile(srcBM, '*.c'), dstBM);  copyfile(fullfile(srcBM, '*.h'), dstBM);
 copyfile(fullfile(srcEH, '*.c'), dstEH);  copyfile(fullfile(srcEH, '*.h'), dstEH);
 
-%% ---- 檢查 & 提示 ----
-ehc = fileread(fullfile(dstEH, 'eHWFLC_KF_step.c'));
-if contains(ehc, 'emmintrin')
-    warning('eHWFLC_KF_step.c 仍含 emmintrin！請確認 ARM 目標與 InstructionSetExtensions 設定。');
-else
-    fprintf('OK：eHWFLC_KF_step.c 已無 x86 SSE2。\n');
-end
-
-fprintf('\n完成：已覆蓋 handoff/src/bmflc 與 handoff/src/ehwflc。\n');
+fprintf('OK：BMFLC / eHWFLC 產生的 C 皆無 x86 SIMD, 已覆蓋 handoff/src。\n');
 fprintf('下一步：跑 ../handoff/test/build_and_run.sh (或 .bat)，應為 ALL PASS。\n');
 
 % 備註：若 MATLAB 不認 'ARM Compatible->ARM Cortex-M' 字串，

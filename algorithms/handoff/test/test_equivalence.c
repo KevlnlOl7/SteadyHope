@@ -71,9 +71,10 @@ int main(int argc, char **argv) {
         double bm = BMFLC_step(in[k]);
         double tr, fr;
         eHWFLC_KF_step(in[k], &tr, &fr);
-        double e1 = fabs(bm - gb[k]);   if (e1 > mb)  mb  = e1;
-        double e2 = fabs(tr - ge_t[k]); if (e2 > met) met = e2;
-        double e3 = fabs(fr - ge_f[k]); if (e3 > mef) mef = e3;
+        /* 用 !(e<=max) 而非 (e>max): 讓 NaN 也傳進 max -> 後面判定 FAIL (NaN>max 恆 false 會漏抓) */
+        double e1 = fabs(bm - gb[k]);   if (!(e1 <= mb))  mb  = e1;
+        double e2 = fabs(tr - ge_t[k]); if (!(e2 <= met)) met = e2;
+        double e3 = fabs(fr - ge_f[k]); if (!(e3 <= mef)) mef = e3;
     }
 
     int pb = mb  < ABS_TOL, pet = met < ABS_TOL, pef = mef < ABS_TOL;

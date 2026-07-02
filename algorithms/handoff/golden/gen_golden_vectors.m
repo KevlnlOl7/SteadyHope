@@ -17,8 +17,9 @@ clear BMFLC_step eHWFLC_KF_step      % ★ 重置 persistent 狀態(務必, 否�
 
 here = fileparts(mfilename('fullpath'));
 
-% --- 模型 .m 所在資料夾 (預設指向專題根目錄下的 Copy/; 若搬移請自行修改) ---
-ALGO_DIR = fullfile(here, '..', '..', '..', '..', 'Copy');
+% --- 模型 .m 所在資料夾 = repo 內權威來源 ../../matlab (與 codegen_arm.m 同一份,
+%     避免「golden 用一份、codegen 用另一份」的兩個 source-of-truth 陷阱) ---
+ALGO_DIR = fullfile(here, '..', '..', 'matlab');
 if isfolder(ALGO_DIR)
     addpath(ALGO_DIR);
 else
