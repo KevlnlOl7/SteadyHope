@@ -21,6 +21,7 @@
 | **`control_sim.m`** | 抑震「控制律」閉迴路模擬：PID / 半主動阻尼 / 延遲敏感度（TPSR、ETVM + 圖）。plant 為標稱值，待硬體實測校調。 |
 | **`dtw_features.m`** | DTW 動作偏離特徵擷取（辨識/gating 用）：RAM 軌跡 vs 健康模板 → DTW 距離。驗證速度不變性與嚴重度可分。需 Signal Processing Toolbox。 |
 | **`gating_classifier.m`** | 辨識→gating 骨架：特徵(DTW+震顫帶)→ Random Forest 判定狀態 → 選 PID 模式。合成資料驗證(~94%)，後半段接真實 RAM + GAN。需 Statistics and ML Toolbox。 |
+| **`gating_sim.m`** | 馬達 gating（何時作動）驗證：V1 freqEstimate 頻率窗 vs V2 雙頻帶能量比。V1 被情境 C 實證推翻（omega 卡 clamp 地板），V2 為建議方案。與 `../validation/gating_check.py` 逐行對應。需 Signal Processing Toolbox。 |
 
 ## 產生 STM32 用的 C（給韌體組）
 
