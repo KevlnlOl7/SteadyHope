@@ -310,7 +310,35 @@ def main():
         out.append(f"  {name} b = {{{', '.join(f'{v:.17g}' for v in b)}}}")
         out.append(f"  {'':>15} a = {{{', '.join(f'{v:.17g}' for v in a)}}}")
 
+    out += check_estimator_quality(C)
     print("\n".join(out))
+
+
+def check_estimator_quality(C):
+    """omega 卡地板時 tremorEstimate 的重建品質是否劣化？（答：不會）
+
+    KF 權重 (Q=0.01 相對大) 會快速旋轉補償基底頻率失配，因此 omega 卡在
+    3 Hz 地板時 tremor 重建品質幾乎不變——只有 freqEstimate 壞掉。
+    含意：V2 gating + 原內層驅動不需動估測器；但 freqEstimate 也不可
+    用於 App 端震顫頻率記錄 (digital biomarkers)，需另算穩健頻率
+    (如 4-6 Hz 帶通輸出的過零率)。
+    """
+    t = C["t"]
+    true_tremor = np.zeros(len(t))
+    for lo, hi in ((2, 7), (10, 16)):
+        m = (t >= lo) & (t < hi)
+        drift = 0.3 * np.sin(2 * np.pi * 0.1 * t[m])
+        phase = 2 * np.pi * np.cumsum(5.0 + drift) * DT
+        true_tremor[m] = 15.0 * np.sin(phase) + 4.5 * np.sin(2 * phase)
+    lines = ["--- 估測器重建品質 (omega 鎖定 vs 卡地板) ---"]
+    for lab, lo, hi in (("第一段顫抖 (omega 鎖 5Hz)  ", 2.5, 6.5),
+                        ("第二段顫抖 (omega 卡 3Hz 地板)", 10.5, 15.5)):
+        m = (t >= lo) & (t < hi)
+        corr = np.corrcoef(C["trem"][m], true_tremor[m])[0, 1]
+        ar = C["trem"][m].std() / true_tremor[m].std()
+        lines.append(f"  {lab} corr={corr:.3f} 振幅比={ar:.2f} "
+                     f"freq=[{C['freq'][m].min():.2f},{C['freq'][m].max():.2f}]Hz")
+    return lines
 
 
 if __name__ == "__main__":
