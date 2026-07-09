@@ -5,7 +5,8 @@ struct CreateTremorData: AsyncMigration {
         try await database.schema("tremor_data")
             // 修正這行，改為 Int 且自動遞增
             .field("id", .int, .identifier(auto: true))
-            .field("user_id", .int, .required)
+            // 修改這一行，加入 references 指向 users 表的 id
+            .field("user_id", .int, .required, .references("users", "id", onDelete: .cascade))
             .field("timestamp", .datetime)
             .field("acc_x", .double, .required)
             .field("acc_y", .double, .required)
