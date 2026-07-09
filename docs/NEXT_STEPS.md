@@ -12,7 +12,7 @@
 |---|---|---|---|---|
 | 1 | **修 main.c 絕對路徑 include**（阻斷項） | 硬體組 | 10 分鐘 | L27-28 指向 `C:/Users/banny/...`，其他人無法編譯。演算法標頭已在 `CM7/Core/Algo/`，改相對路徑 + include path。 |
 | 2 | **實作 V2 gating（只在病徵頻率作動）** | 硬體組＋演算法組支援 | 0.5–1 天 | 照 GATING_DESIGN.md §5 貼 C、§6 板上驗證。合成訊號已驗證：自主動作誤觸發 89% → 0%。 |
-| 3 | **實測取樣率**：確認真 100 Hz 且樣本不重複 | 硬體組 | 半天 | 連續樣本 diff==0 的比例應 ≈0；或 GPIO toggle 量 tick。這是所有演算法數字成立的前提（交接包 fs 寫死 100 Hz）。 |
+| 3 | ~~實測取樣率~~ **已確認**（2026-07-09 韌體組實測擔保 100 Hz） | 硬體組 | — | 建議補一份量化紀錄留檔供發表引用（對錶 20 s counter 增量 ≈2000，或連續 raw 樣本 diff==0 比例 ≈0），口頭確認 → 書面證據。 |
 | 4 | **開 I-Cache / D-Cache** | 硬體組 | 半天 | `SCB_EnableICache(); SCB_EnableDCache();` 後量 `algo_time_us`（現 1440 µs @ HSI 64 MHz，預期大幅下降）。注意 DMA 一致性目前不影響（I2C 讀取是 blocking）。 |
 | 5 | Ryan 把含 debug counters 的本地版 main.c commit 上來 | 硬體組 | — | 截圖韌體比 branch 上的新（多了 `tim6_irq_count` 等儀器），先入庫再改 gating，保留可回退點。 |
 
