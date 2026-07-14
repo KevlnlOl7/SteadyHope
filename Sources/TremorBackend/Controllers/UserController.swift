@@ -4,13 +4,19 @@ import JWT
 
 struct UserController: RouteCollection {
     func boot(routes: any RoutesBuilder) throws {
-        // 將路徑分群，所有這裏的路由都會以 /users 開頭
         let users = routes.grouped("users")
         users.post("register", use: register)
         users.post("login", use: login)
+        
+        let protected = users.grouped(UserPayload.authenticator(), UserPayload.guardMiddleware())
+        protected.post("bonds", "generate-code", use: generatePairingCode)
+        protected.post("bonds", "link", use: linkPatient)
+        
+        // 🔥 將原本的 my-patient 改名為 partner，因為現在雙方都能查
+        protected.get("bonds", "partner", use: getMyPartner)
     }
     
-    // 註冊邏輯
+    // MARK: - 註冊邏輯
     @Sendable
     func register(req: Request) async throws -> UserResponse {
         struct RegisterRequest: Content {
@@ -20,11 +26,11 @@ struct UserController: RouteCollection {
             let birth: Date?
             let gender: Int?
             let diseaseStage: String?
+            let role: Int
         }
         
         let data = try req.content.decode(RegisterRequest.self)
         
-        // 查資料庫，如果存在就噴 409 錯誤
         let exists = try await User.query(on: req.db)
             .filter(\.$email == data.email)
             .first() != nil
@@ -32,9 +38,7 @@ struct UserController: RouteCollection {
         if exists {
             throw Abort(.conflict, reason: "此電子郵件已被註冊")
         }
-        // ----------------------------
         
-        // 使用非同步雜湊（放在檢查之後省資源）
         let hash = try await req.password.async.hash(data.password)
         
         let user = User(
@@ -43,16 +47,17 @@ struct UserController: RouteCollection {
             birth: data.birth,
             name: data.name,
             gender: data.gender,
-            diseaseStage: data.diseaseStage
+            diseaseStage: data.diseaseStage,
+            role: data.role
         )
         
         try await user.save(on: req.db)
         return user.toResponse()
     }
     
-    // 登入邏輯
+    // MARK: - 登入邏輯
     @Sendable
-    func login(req: Request) async throws -> LoginResponse {
+    func login(req: Request) async throws -> Response {
         struct LoginRequest: Content {
             let email: String
             let password: String
@@ -70,14 +75,149 @@ struct UserController: RouteCollection {
             throw Abort(.unauthorized, reason: "帳號或密碼錯誤")
         }
         
-        // 在 login 函式最後修改[cite: 5]
-        // 2. 產製 JWT Payload
-        let payload = UserPayload(userID: user.id!, exp: .init(value: Date().addingTimeInterval(3600 * 24))) // 建議設個期限，例如24小時
-        
-        // 3. 簽署 Token
+        let payload = UserPayload(userID: user.id!, exp: .init(value: Date().addingTimeInterval(3600 * 24)))
         let token = try req.jwt.sign(payload)
         
-        // 4. 最後才 Return 整體內容
-        return LoginResponse(token: token, user: user.toResponse())
+        let loginResponse = LoginResponse(token: token, user: user.toResponse())
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        let body = try encoder.encode(loginResponse)
+        
+        return Response(status: .ok, headers: ["Content-Type": "application/json"], body: .init(data: body))
+    }
+    
+    // MARK: - 🔥 實作一：產生 6 位數安全隨機配對碼
+    @Sendable
+    func generatePairingCode(req: Request) async throws -> Response {
+        let payload = try req.auth.require(UserPayload.self)
+        
+        guard let user = try await User.find(payload.userID, on: req.db) else {
+            throw Abort(.notFound)
+        }
+        
+        guard user.role == 0 else {
+            throw Abort(.forbidden, reason: "只有被照護者（患者）有權限生成配對碼")
+        }
+        
+        let randomCode = String(Int.random(in: 100000...999999))
+        let expiryDate = Date().addingTimeInterval(600)
+        
+        user.pairingCode = randomCode
+        user.pairingCodeExpiresAt = expiryDate
+        try await user.update(on: req.db)
+        
+        let dtoList = PairingCodeResponseDTO(pairingCode: randomCode, expiresAt: expiryDate)
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        let body = try encoder.encode(dtoList)
+        
+        return Response(status: .ok, headers: ["Content-Type": "application/json"], body: .init(data: body))
+    }
+    
+    // MARK: - 🔥 實作二：安全綁定（同步更新回傳型別為通用 DTO）
+    @Sendable
+    func linkPatient(req: Request) async throws -> LinkedPartnerResponseDTO {
+        let caregiverPayload = try req.auth.require(UserPayload.self)
+        let linkData = try req.content.decode(LinkPatientRequestDTO.self)
+        
+        let currentCaregiver = try await User.find(caregiverPayload.userID, on: req.db)
+        guard currentCaregiver?.role == 1 else {
+            throw Abort(.forbidden, reason: "只有照護者帳號才能發起綁定")
+        }
+        
+        if currentCaregiver?.email == linkData.patientEmail {
+            throw Abort(.badRequest, reason: "您不能將自己綁定為被照護者")
+        }
+        
+        guard let patientUser = try await User.query(on: req.db)
+            .filter(\.$email == linkData.patientEmail)
+            .first() else {
+            throw Abort(.notFound, reason: "找不到該病患帳號，請確認輸入是否有誤")
+        }
+        
+        guard patientUser.role == 0 else {
+            throw Abort(.badRequest, reason: "該帳號註冊身份為照護者，無法被綁定")
+        }
+        
+        guard let dbCode = patientUser.pairingCode, dbCode == linkData.pairingCode else {
+            throw Abort(.unauthorized, reason: "配對驗證碼錯誤，請重新確認")
+        }
+        
+        guard let expiryDate = patientUser.pairingCodeExpiresAt, expiryDate > Date() else {
+            throw Abort(.badRequest, reason: "配對碼已過期，請請病患重新生成一組")
+        }
+        
+        let bond = UserBond(caregiverID: caregiverPayload.userID, patientID: patientUser.id!)
+        
+        do {
+            try await bond.save(on: req.db)
+        } catch {
+            throw Abort(.conflict, reason: "您與該病患早已處於綁定狀態")
+        }
+        
+        patientUser.pairingCode = nil
+        patientUser.pairingCodeExpiresAt = nil
+        try await patientUser.update(on: req.db)
+        
+        // 💡 改用通用 DTO 回傳
+        return LinkedPartnerResponseDTO(
+            bondID: bond.id!,
+            partnerID: patientUser.id!,
+            partnerName: patientUser.name ?? "未具名病患",
+            partnerEmail: patientUser.email,
+            partnerRole: patientUser.role
+        )
+    }
+    
+    // MARK: - 🔥 實作三：獲取目前綁定的對象資訊（雙向通用）
+    @Sendable
+    func getMyPartner(req: Request) async throws -> LinkedPartnerResponseDTO {
+        let payload = try req.auth.require(UserPayload.self)
+        
+        // 1. 查出目前發出請求的使用者，確認他的身分角色
+        guard let currentUser = try await User.find(payload.userID, on: req.db) else {
+            throw Abort(.notFound, reason: "找不到您的帳號")
+        }
+        
+        let bond: UserBond?
+        let partnerID: Int
+        
+        // 2. 根據身分動態查詢 UserBond
+        if currentUser.role == 1 {
+            // 若為照護者，找自己發起的綁定，目標是 patient
+            bond = try await UserBond.query(on: req.db)
+                .filter(\.$caregiverID == payload.userID)
+                .first()
+            
+            guard let foundBond = bond else {
+                throw Abort(.notFound, reason: "目前尚未綁定任何被照護者")
+            }
+            partnerID = foundBond.patientID
+            
+        } else {
+            // 若為被照護者 (患者)，找指向自己的綁定，目標是 caregiver
+            bond = try await UserBond.query(on: req.db)
+                .filter(\.$patientID == payload.userID)
+                .first()
+            
+            guard let foundBond = bond else {
+                throw Abort(.notFound, reason: "目前尚未被任何照護者綁定")
+            }
+            partnerID = foundBond.caregiverID
+        }
+        
+        // 3. 查出對方的詳細資訊
+        guard let partner = try await User.find(partnerID, on: req.db) else {
+            throw Abort(.notFound, reason: "關聯的帳號已不存在")
+        }
+        
+        // 4. 回傳通用資料
+        return LinkedPartnerResponseDTO(
+            bondID: bond!.id!,
+            partnerID: partner.id!,
+            partnerName: partner.name ?? "未具名使用者",
+            partnerEmail: partner.email,
+            partnerRole: partner.role
+        )
     }
 }

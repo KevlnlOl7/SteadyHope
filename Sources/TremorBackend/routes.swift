@@ -7,5 +7,7 @@ func routes(_ app: Application) throws {
     // 使用 JWT 中介軟體保護 tremor 路由
     let protected = app.grouped(UserPayload.authenticator(), UserPayload.guardMiddleware())
     try protected.register(collection: TremorController())
-    try protected.register(collection: MedicationController()) 
+    try protected.register(collection: MedicationController())
+    try protected.register(collection: DailyController())
+    try protected.register(collection: AIController())
 }

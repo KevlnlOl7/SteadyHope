@@ -11,6 +11,10 @@ struct CreateUser: AsyncMigration {
             .field("birth", .date)
             .field("gender", .int)
             .field("disease_stage", .string)
+            // 🔥 新增這兩行：儲存配對驗證資訊
+            .field("pairing_code", .string)
+            .field("pairing_code_expires_at", .datetime)
+            .field("role", .int, .required)
             .unique(on: "email")
             .create()
     }

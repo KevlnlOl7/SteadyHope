@@ -34,6 +34,8 @@ public func configure(_ app: Application) async throws {
     app.migrations.add(CreateUser())
     app.migrations.add(CreateTremorData())
     app.migrations.add(CreateMedicationRecord())
+    app.migrations.add(CreateDailyRecord())
+    app.migrations.add(CreateUserBond()) // 🔥 加上這行
     app.jwt.signers.use(.hs256(key: "MI3C_nice_team"))
     // register routes
     try routes(app)

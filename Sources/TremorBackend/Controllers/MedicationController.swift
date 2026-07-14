@@ -41,30 +41,40 @@ struct MedicationController: RouteCollection {
         return .ok
     }
     
-    // 2. 按日期查詢
+    // 2. 查詢用藥紀錄（支援單日查詢或全部查詢）
     @Sendable
-    func getRecordsByDate(req: Request) async throws -> Response { // 改回傳 Response 物件
+    func getRecordsByDate(req: Request) async throws -> Response {
         let payload = try req.auth.require(UserPayload.self)
         
-        guard let searchDateString = req.query[String.self, at: "date"] else {
-            throw Abort(.badRequest, reason: "請提供查詢日期")
-        }
+        // 取得前端傳來的 date 參數（改為 Optional，不再強制要求）
+        let searchDateString = req.query[String.self, at: "date"]
         
-        // 這裡維持用 yyyy-MM-dd 解析「搜尋參數」，因為搜尋通常只給日期
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd"
-        guard let dayStart = formatter.date(from: searchDateString) else {
-            throw Abort(.badRequest, reason: "日期格式錯誤，請使用 yyyy-MM-dd")
-        }
-        let dayEnd = dayStart.addingTimeInterval(24 * 3600)
+        let records: [MedicationRecord]
         
-        // 查詢當天所有紀錄
-        let records = try await MedicationRecord.query(on: req.db)
-            .filter(\.$userID == payload.userID)
-            .filter(\.$date >= dayStart)
-            .filter(\.$date < dayEnd)
-            .sort(\.$date, .ascending)
-            .all()
+        // 判斷：如果沒傳 date，或者是空字串，就回傳該使用者「全部」的紀錄
+        if searchDateString == nil || searchDateString?.isEmpty == true {
+            records = try await MedicationRecord.query(on: req.db)
+                .filter(\.$userID == payload.userID) // 只抓自己的
+                .sort(\.$date, .ascending)           // 依時間排序
+                .all()
+        } else {
+            // 如果有傳入特定日期，就走原本的單日區間過濾邏輯
+            let formatter = DateFormatter()
+            formatter.dateFormat = "yyyy-MM-dd"
+            
+            // 安全解包
+            guard let dateString = searchDateString, let dayStart = formatter.date(from: dateString) else {
+                throw Abort(.badRequest, reason: "日期格式錯誤，請使用 yyyy-MM-dd")
+            }
+            let dayEnd = dayStart.addingTimeInterval(24 * 3600)
+            
+            records = try await MedicationRecord.query(on: req.db)
+                .filter(\.$userID == payload.userID)
+                .filter(\.$date >= dayStart)
+                .filter(\.$date < dayEnd)
+                .sort(\.$date, .ascending)
+                .all()
+        }
         
         // 關鍵點：手動建立帶有 ISO8601 策略的 Encoder
         let encoder = JSONEncoder()
