@@ -5,7 +5,7 @@
 
 > 🔧 **要動手把程式碼放進 STM32CubeIDE 專案，看 [INTEGRATION.md](INTEGRATION.md)**（加檔案、include path、CM7/FPU、BNO055 raw gyro 讀法、100 Hz 時序、常見坑）。本檔是介面契約與驗證流程。
 
-兩個演算法：
+兩個顫抖估測器，加上一個獨立的馬達啟用判斷模組：
 
 | | BMFLC | eHWFLC-KF |
 |---|---|---|
@@ -15,6 +15,11 @@
 | 輸出 | `tremor_est` | `tremor_est` + `freq_hz` |
 
 > 兩者可同時跑、各自獨立，韌體可先用其中一個驗證流程，再比較。
+
+`src/gating/tremor_gate.c/.h` 是 V2 雙頻帶 gating：直接讀同一筆 raw gyro，
+比較 4–6 Hz 顫抖帶與 1–3 Hz 自主動作帶，輸出 `enabled`。它只決定馬達
+「能不能動」；馬達方向與輸出大小仍由 `tremor_est` 決定。設計與上板驗收見
+[GATING_DESIGN.md](GATING_DESIGN.md)。
 
 ---
 
@@ -28,6 +33,11 @@ void   BMFLC_step_init(void);
 /* src/ehwflc/eHWFLC_KF_step.h */
 void   eHWFLC_KF_step(double signal_sample, double *tremor_est, double *freq_hz);
 void   eHWFLC_KF_step_init(void);
+
+/* src/gating/tremor_gate.h */
+TremorGateConfig TremorGate_DefaultConfig(void);
+void TremorGate_Init(TremorGate *gate, const TremorGateConfig *config);
+uint8_t TremorGate_Update(TremorGate *gate, double raw_gyro_dps);
 ```
 
 | 項目 | 契約 |
@@ -37,7 +47,8 @@ void   eHWFLC_KF_step_init(void);
 | **初始化** | 首次呼叫 `*_step` 會自動 init；要重置狀態（換使用者、重新開始）才需顯式呼叫 `*_init()`。 |
 | **狀態** | file-scope `static` → **單例，只能跑一軸**。多軸需多份實例或以 reentrant 模式重產生。 |
 | **輸出** `tremor_est` | 估測出的**顫抖分量**（°/s），即「要被抵銷的東西」。`voluntary = signal − tremor_est` 是要保留的自主動作。 |
-| **輸出** `freq_hz` | eHWFLC-KF 當前估測基頻（Hz），可用於監測/除錯。 |
+| **輸出** `freq_hz` | **已知不可靠，禁止用於 gating 或 App biomarker。**它可能被自主動作拖到 3 Hz 下限後無法追回顫抖頻率；保留此輸出只為相容既有 Coder API。頻率回報改用 raw gyro 的短窗 FFT 或 4–6 Hz 帶通過零率。 |
+| **gating 輸出** `enabled` | `uint8_t`；0 表示馬達必須停止，1 表示允許抑震控制。它不是 PWM duty，也不代表馬達方向。 |
 | 型別 / 記憶體 | 全程 `double`（M7 有 DP FPU）。無動態配置、無遞迴、堆疊用量小（< 1 KB）。 |
 
 ### 致動器接法（控制律由硬體組校）
@@ -160,9 +171,11 @@ handoff/
 ├── README.md                  ← 本檔（介面契約 + 驗證流程）
 ├── INTEGRATION.md             ← STM32CubeIDE 整合步驟教學（怎麼把 code 放進去）
 ├── BNO055_GYRO_SETUP.md       ← 感測器端專屬：切 raw gyro、設 400kHz、跑穩 100Hz、除錯表
+├── GATING_DESIGN.md           ← V2 gating 設計、限制與板上驗收流程
 ├── src/
 │   ├── bmflc/                  BMFLC C（ARM-safe，純 scalar；含自含 rtwtypes.h）
 │   ├── ehwflc/                 eHWFLC-KF C（ARM-safe，已重產生無 SSE2）
+│   ├── gating/                 V2 雙頻帶 gating C（不依賴 HAL、instance-based）
 │   └── README.md
 ├── golden/
 │   ├── input.csv              確定性輸入（10 s @ 100 Hz）
@@ -172,6 +185,7 @@ handoff/
 │   └── README.md
 └── test/
     ├── test_equivalence.c     等價性測試（讀 golden、跑 C、印 PASS/FAIL）
+    ├── test_tremor_gate.c     gating 基本行為測試（2 Hz 拒絕、5 Hz 啟動、停止）
     ├── build_and_run.sh       PC build（gcc/clang）
     └── build_and_run.bat      PC build（MinGW）
 ```

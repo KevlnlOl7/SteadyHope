@@ -105,6 +105,16 @@ ratio = env_t / (env_t + env_v)
 
 ## 5. C 程式碼（可直接整合進 main.c）
 
+交付包現已提供可直接加入 CubeIDE 的獨立模組：
+
+- `src/gating/tremor_gate.h`
+- `src/gating/tremor_gate.c`
+- `test/test_tremor_gate.c`（PC 端基本行為測試）
+
+正式整合請優先使用上述模組；下方程式保留作為設計說明。模組採 instance-based
+`TremorGate` 狀態，不依賴 STM32 HAL，也不修改 eHWFLC-KF。每個 100 Hz tick 將同一筆
+raw gyro（`double`、°/s）分別送入 `TremorGate_Update()` 與估測器即可。
+
 不動 `eHWFLC_KF_step` 的任何檔案。估測器照跑（`tremorEstimate` 仍决定馬達方向），
 gate 只決定「何時允許作動」。**濾波器狀態請保持 `double`**：這兩個窄帶 IIR 的
 極點離單位圓很近（|z|≈0.915），float 累積誤差有數值風險；CM7 有雙精度 FPU，
