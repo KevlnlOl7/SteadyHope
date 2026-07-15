@@ -200,3 +200,14 @@ function [y, z] = df2t(x, b, a, z)   % 4 階 IIR, DF-II Transposed, 單樣本
     z(3) = b(4)*x - a(4)*y + z(4);
     z(4) = b(5)*x - a(5)*y;
 end
+
+function delay = ft(enabled, t0, FS)
+    % 回傳 t0 之後首次符合條件的延遲（秒）；找不到則為 NaN。
+    i0 = round(t0*FS) + 1;
+    hit = find(enabled(i0:end), 1, 'first');
+    if isempty(hit), delay = NaN; else, delay = (hit-1)/FS; end
+end
+
+function s = fmtd(delay)
+    if isnan(delay), s = 'never'; else, s = sprintf('%.0f ms', 1000*delay); end
+end
