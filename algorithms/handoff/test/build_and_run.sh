@@ -16,3 +16,10 @@ CC="${CC:-gcc}"
   -lm -o "$HERE/test_equivalence"
 
 "$HERE/test_equivalence" "$ROOT/golden"
+
+"$CC" -O2 -std=c11 -Wall -Wextra \
+  -I"$SRC/gating" \
+  "$HERE/test_tremor_gate.c" "$SRC/gating/tremor_gate.c" \
+  -lm -o "$HERE/test_tremor_gate"
+
+"$HERE/test_tremor_gate"

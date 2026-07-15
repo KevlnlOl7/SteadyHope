@@ -17,4 +17,13 @@ if "%CC%"=="" set CC=gcc
 if errorlevel 1 exit /b 1
 
 "%HERE%test_equivalence.exe" "%ROOT%\golden"
+if errorlevel 1 exit /b 1
+
+%CC% -O2 -std=c11 -Wall -Wextra ^
+  -I"%SRC%\gating" ^
+  "%HERE%test_tremor_gate.c" "%SRC%\gating\tremor_gate.c" ^
+  -lm -o "%HERE%test_tremor_gate.exe"
+if errorlevel 1 exit /b 1
+
+"%HERE%test_tremor_gate.exe"
 endlocal
