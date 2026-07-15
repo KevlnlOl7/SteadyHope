@@ -17,9 +17,12 @@
   （bench 抑震量測）需要一隻「能戴、線纜拉得動、壓得住抖動」的實體手套，從圖到
   可穿戴實體整條沒開始：列印 PETG 框體 → 裝 STM32/IMU/馬達/電池 → 接線纜牽引 →
   調到能穩定傳力。**這是 M4 的硬前置，且電子端所有工作最終都要在這隻實體上跑。**
-- **L2 採購第二顆 IMU**（獨立量測用，BNO055 或 MPU6050）：bench 量測必須用一顆
+- **L2 採購第二顆 IMU**（獨立量測用）：bench 量測必須用一顆
   **不在控制迴路裡**的 IMU 貼在被抑震的手指/手掌端，否則就是拿演算法的殘差自己
   證明自己（球員兼裁判），TPSR 不可信。幾百元、幾天到貨，全隊投報率最高的採購。
+  控制端 BNO055 已在 GYROONLY 100 Hz 實測成立，9 月前保留；第二顆可沿用 BNO055，
+  若重新採購並重視低 noise、明確 ODR／latency，可評估 ICM-42688-P 或 BMI270 breakout，
+  但須先確認電壓、介面、driver 成熟度與交期，不把換 sensor 併入控制主線。
   掛法兩選項：(A) 由 STM32H745 目前閒置的 **M4 核心**讀（給獨立 I2C 匯流排、
   CubeMX 把該周邊分配給 CM4），用上雙核架構；(B) 完全獨立的擷取系統（另一顆
   MCU 或直接接電腦），量測工具與受測系統物理隔離、不動現有韌體。**關鍵不在掛哪，
@@ -38,7 +41,7 @@
 |---|---|---|---|---|
 | M1 | 修 main.c 絕對路徑 include（阻斷項） | 硬體組 | 10 分鐘 | L27-28 指向 `C:/Users/banny/...`，其他人無法編譯。標頭已在 `CM7/Core/Algo/`，改相對 include。擋全隊，先清。 |
 | M2 | V2 gating 上板 + 手測 | 硬體組＋演算法組 | 0.5–1 天 | 照 GATING_DESIGN.md §5 貼 C、§6 驗收（慢揮不動、快抖才動）。合成訊號已驗證誤觸發 89%→0%。 |
-| M3 | **GPIO→PWM 比例控制 + 接 PID** | 硬體組＋演算法組 | 數天–1.5 週 | ★「精準抑震」靠這個。bang-bang 只決定「何時/往哪」，PWM 才能「抖多大壓多少」，接 `control_sim.m` 的 PID 參數。 |
+| M3 | **N20 loaded bandwidth test → PWM/P control** | 硬體組＋演算法組 | 數天–1.5 週 | ★ 先補齊 N20 型號、gear ratio、供電、H-bridge、spool/線纜規格；裝實際負載測 4/5/6 Hz gain、phase、延遲、backlash、電流與溫升。通過才調 PWM/P gain；失敗先換 actuator/transmission。`control_sim.m` 目前是 P-only，實測 plant 前不直接加 Ki/Kd。詳見 `algorithms/handoff/ACTUATOR_CONTROL.md`。 |
 | M4 | **bench 抑震量測 protocol + 執行** | 演算法組＋機構組 | 1–2 週 | ★**9 月主證據**。見下方「量測 protocol」。前置：L1 實體手套、L2 第二顆 IMU。 |
 | M5 | 機構手套實體（承 L1） | 機構組 | 持續 | 列印→組裝→線纜牽引可動→調校。9 月 demo 硬體本體，關鍵路徑。 |
 | M6 | 建 integration 分支 + 鎖 BLE 封包格式 | 全隊 | 本週起 | main 凍結三個月、5 分支零 merge，需終結孤島開發；先鎖韌體↔App 最小欄位契約。 |
@@ -50,6 +53,20 @@
 | M7 | device→App 最小資料流 | 硬體＋軟體組 | 單向上傳一個數字、畫一條即時波形線，展示醫病資料橋雛形。 |
 | M8 | 開 I/D cache | 硬體組 | `SCB_EnableICache/DCache()` 後重量 `algo_time_us`（現 1440 µs @ HSI 64 MHz，預期大降），回收裕度給 PWM/PID。 |
 | M9 | Ryan 本地 debug 版 main.c 入庫 | 硬體組 | 截圖韌體含 `tim6_irq_count` 等儀器、比 branch 新，先入庫保留回退點。 |
+
+### M3 actuator/PWM 驗收門檻
+
+- 「N20」不是完整型號；PWM 調參前必須記錄額定／供電電壓、gear ratio、空載 rpm、
+  continuous torque、stall current、encoder、H-bridge current rating、spool 半徑與線纜預張力。
+- loaded test 必須包含實際 spool、線纜與代表性手套負載，不接受只測空載 rpm／stall torque。
+- 4–6 Hz 要能穩定換向，無 missed reversal／明顯 cable slack，gain/phase 可重複，且不超過
+  continuous current／temperature。`≤15 ms` 是現有模擬設計目標，須量測後回填模型，
+  不是 N20 已達成的規格。
+- 控制第一版為 `gate → command=-tremor_est → P gain → saturation → PWM/H-bridge`；
+  sensor timeout、gate off 或 driver fault 時 CCR 必須立即歸零。PWM carrier 與 100 Hz control
+  update 是兩個不同頻率。
+- 若 actuator 物理頻寬不足，停止堆 PID；優先評估低減速比、帶 encoder 的 coreless DC，
+  第二代再考慮 voice-coil 或低減速比 BLDC/direct drive。
 
 ### 9 月 bench 抑震量測 protocol（M4 細節）
 

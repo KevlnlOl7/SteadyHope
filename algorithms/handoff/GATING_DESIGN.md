@@ -218,8 +218,8 @@ return MOTOR_STOP;
   不干擾自主動作、守住 ETVM < 10 deg/s）。action/postural tremor 的處理屬
   `gating_classifier.m`（RF 三狀態）後續工作。
 - **單軸限制**：目前只餵 gyroX，顫抖投影量隨配戴朝向變化，門檻與朝向相關。
-- **bang-bang 未解決「出多少力」**：gate 只管「何時作動」。比例控制（PWM）
-  見 NEXT_STEPS。
+- **bang-bang 未解決「出多少力」**：gate 只管「何時作動」。PWM/P control、N20
+  loaded bandwidth test 與 actuator 選型門檻見 [ACTUATOR_CONTROL.md](ACTUATOR_CONTROL.md)。
 - 4–6 Hz 帶通對 4 Hz 自主諧波仍有部分響應，靠 ratio 條件壓制（情境 A 已驗證 0%）。
 
 ## 8. 設計驗證紀錄

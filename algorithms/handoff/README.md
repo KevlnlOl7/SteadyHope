@@ -21,6 +21,10 @@
 「能不能動」；馬達方向與輸出大小仍由 `tremor_est` 決定。設計與上板驗收見
 [GATING_DESIGN.md](GATING_DESIGN.md)。
 
+PWM 比例控制、N20 loaded bandwidth test、actuator 選型門檻與實測紀錄格式見
+[ACTUATOR_CONTROL.md](ACTUATOR_CONTROL.md)。目前 `control_sim.m` 實作是 P-only；取得
+真實 actuator gain／頻寬／延遲前，不應直接加入 `Ki/Kd` 或照抄模擬 `Kp`。
+
 ---
 
 ## 1. 介面契約（API）
@@ -172,6 +176,7 @@ handoff/
 ├── INTEGRATION.md             ← STM32CubeIDE 整合步驟教學（怎麼把 code 放進去）
 ├── BNO055_GYRO_SETUP.md       ← 感測器端專屬：切 raw gyro、設 400kHz、跑穩 100Hz、除錯表
 ├── GATING_DESIGN.md           ← V2 gating 設計、限制與板上驗收流程
+├── ACTUATOR_CONTROL.md        ← PWM/P control、N20 頻寬驗證、actuator/第二顆 IMU 選型門檻
 ├── src/
 │   ├── bmflc/                  BMFLC C（ARM-safe，純 scalar；含自含 rtwtypes.h）
 │   ├── ehwflc/                 eHWFLC-KF C（ARM-safe，已重產生無 SSE2）

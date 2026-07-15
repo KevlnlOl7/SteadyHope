@@ -23,11 +23,13 @@ STM32H745 是雙核，CubeIDE 會生 `*_CM7` 與 `*_CM4` 兩個子專案。
 ## 1. 把檔案加進專案
 
 1. 在 CM7 專案下建一個資料夾，例如 `Core/Algo/`。
-2. 把這兩個資料夾整包複製進去：`src/bmflc/`、`src/ehwflc/`（各自已含 `rtwtypes.h`，自含型別，不需 common/）。
+2. 把需要的估測器資料夾（`src/bmflc/`、`src/ehwflc/`）與 `src/gating/` 整包複製進去
+   （兩個估測器各自已含 `rtwtypes.h`，自含型別，不需 common/）。
    （CubeIDE：直接把資料夾拖進 Project Explorer，選 **Copy files**。）
 3. 確認這些 `.c` 會被編譯（在 Project Explorer 裡不是灰色/被 exclude）：
    - `bmflc/`：`BMFLC_step.c`、`BMFLC_step_data.c`、`BMFLC_step_initialize.c`
    - `ehwflc/`：`eHWFLC_KF_step.c`、`eHWFLC_KF_step_data.c`、`eHWFLC_KF_step_initialize.c`、`eye.c`
+   - `gating/`：`tremor_gate.c`
    - `_terminate.c` 用不到，可留著不影響。
 
 ## 2. 設 include path
@@ -38,6 +40,7 @@ Project 上右鍵 → **Properties** → **C/C++ General → Paths and Symbols**
 ```
 Core/Algo/bmflc
 Core/Algo/ehwflc
+Core/Algo/gating
 ```
 
 存檔後 Clean + Build 一次，確認 `#include "BMFLC_step.h"` 找得到。
@@ -51,23 +54,44 @@ Core/Algo/ehwflc
 - `sin`/`cos`（double）來自 newlib 的 `libm`，CubeIDE 預設會連，不用額外設定。
 - 演算法本身不需 `printf`；若你要用 `printf("%f")` 除錯，才需在 Linker flags 加 `-u _printf_float`。
 
-## 4. 呼叫演算法
+## 4. 呼叫估測器與 V2 gating
 
 ```c
 #include "BMFLC_step.h"
 #include "eHWFLC_KF_step.h"
+#include "tremor_gate.h"
 
-/* 開機時（可選；首次呼叫 *_step 也會自動 init）——換使用者/重來才需要顯式呼叫 */
-eHWFLC_KF_step_init();
-/* BMFLC_step_init();  // 若也要用 BMFLC */
+static TremorGate tremor_gate;
 
-/* 每個 100 Hz tick 呼叫一次： */
+void tremor_control_init(void) {
+    TremorGateConfig cfg = TremorGate_DefaultConfig();
+    eHWFLC_KF_step_init();
+    TremorGate_Init(&tremor_gate, &cfg);
+    motor_pwm_init_and_start();       /* PWM timer 開機 start 一次 */
+    motor_pwm_stop();
+}
+
+/* 每個 100 Hz tick 呼叫一次；sensor_stale/driver_fault 由韌體層維護。 */
 void tremor_tick(double gyro_dps_one_axis) {
-    double tremor, freq;
-    eHWFLC_KF_step(gyro_dps_one_axis, &tremor, &freq);  /* 或 BMFLC_step(...) */
-    actuator_drive(-(float)(GAIN * tremor));            /* 反相抵銷；GAIN/極性硬體校 */
+    double tremor_est, freq_hz;
+    uint8_t enabled;
+
+    eHWFLC_KF_step(gyro_dps_one_axis, &tremor_est, &freq_hz);
+    enabled = TremorGate_Update(&tremor_gate, gyro_dps_one_axis);
+
+    if (!enabled || sensor_stale || driver_fault) {
+        motor_pwm_stop();
+        return;
+    }
+
+    motor_pwm_apply(-tremor_est);     /* K_PWM 只在 motor_pwm_apply() 內乘一次 */
 }
 ```
+
+`freq_hz` 僅為相容既有 Coder API 保留，**不可用於 gating、PWM 或 App biomarker**。
+`motor_pwm_*()`、N20 loaded bandwidth test、P gain／deadband／saturation 與替代 actuator
+選型見 [ACTUATOR_CONTROL.md](ACTUATOR_CONTROL.md)。目前 `control_sim.m` 是 P-only，未取得
+actuator 實測模型前不要直接照抄 `Kp`，也不要先加 `Ki/Kd`。
 
 > **單例**：`eHWFLC_KF_step` / `BMFLC_step` 內部是 file-scope `static` 狀態，
 > **只能餵一軸**。不要同一顆同時對 X 和 Y 呼叫同一個 step，狀態會互相污染。
