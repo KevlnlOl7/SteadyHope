@@ -4,8 +4,11 @@ class MedicationService {
 
     private let baseURL = APIConfig.baseURL
 
-    /// 新增用藥紀錄
-    func addMedication(record: MedicationRecord) async throws -> Bool {
+    /// 新增用藥紀錄至伺服器
+    /// - Parameter record: 包含用藥詳細資訊的 MedicationRecordDTO
+    /// - Returns: 新增成功與否（HTTP 200 或 201 時回傳 true）
+    /// - Throws: Validation.server 網路連線錯誤、URL 格式錯誤或權限不足
+    func addMedication(record: MedicationRecordDTO) async throws -> Bool {
         guard let url = URL(string: "\(baseURL)/medication/add") else {
             throw Validation.server(message: "URL 格式錯誤")
         }
@@ -32,8 +35,11 @@ class MedicationService {
         return httpResponse.statusCode == 200 || httpResponse.statusCode == 201
     }
 
-    /// 依日期查詢用藥紀錄
-    func fetchMedications(for date: String) async throws -> [MedicationRecord] {
+    /// 依指定日期查詢伺服器上的用藥紀錄
+    /// - Parameter date: 查詢日期字串 (格式: yyyy-MM-dd)
+    /// - Returns: 解碼後的 MedicationRecordDTO 陣列
+    /// - Throws: Validation.server 網路錯誤、權限不足，或 DecodingError 日期解析失敗
+    func fetchMedications(for date: String) async throws -> [MedicationRecordDTO] {
         guard let url = URL(string: "\(baseURL)/medication/search?date=\(date)")
         else {
             throw Validation.server(message: "URL 格式錯誤")
@@ -84,10 +90,13 @@ class MedicationService {
             )
         }
 
-        return try decoder.decode([MedicationRecord].self, from: data)
+        return try decoder.decode([MedicationRecordDTO].self, from: data)
     }
 
-    /// 刪除用藥紀錄
+    /// 根據用藥紀錄 ID 刪除伺服器上的紀錄
+    /// - Parameter id: 用藥紀錄唯一識別碼
+    /// - Returns: 刪除成功與否（HTTP 200 或 204 時回傳 true）
+    /// - Throws: Validation.server 網路連線錯誤、URL 格式錯誤或權限不足
     func deleteMedication(id: Int) async throws -> Bool {
         guard let url = URL(string: "\(baseURL)/medication/\(id)") else {
             throw Validation.server(message: "URL 格式錯誤")

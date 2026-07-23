@@ -5,13 +5,16 @@ struct IndexView: View {
     @ObservedObject var dataVM: DataViewModel
     @ObservedObject var medVM: MedicationViewModel
     @State private var batteryLevel: Int = 80
+    
+    /// 控制輸入框焦點狀態，用以在鍵盤彈起時位移畫面
     @FocusState private var isInputFocused: Bool
 
     var body: some View {
         ZStack {
             Color(red: 0.97, green: 0.97, blue: 0.97)
                 .ignoresSafeArea()
-                .onTapGesture {  // 點擊背景自動取消焦點
+                .onTapGesture {
+                    // 點擊背景自動取消焦點
                     isInputFocused = false
                     self.hideKeyboard()
                 }
@@ -99,7 +102,7 @@ struct IndexView: View {
                 }
                 VStack(alignment: .leading, spacing: 0) {
                     HStack {
-                        Text("用藥資料")
+                        Text("今日用藥資料")
                             .font(.system(size: 16))
                             .bold()
                         Spacer()
@@ -160,6 +163,12 @@ struct IndexView: View {
                                             currentUserID: uid,
                                             token: token
                                         )
+                                        Task {
+                                            let today = Date().toString(
+                                                format: "yyyy-MM-dd"
+                                            )
+                                            await medVM.loadRecords(for: today)
+                                        }
                                     }
                                 }
                             }) {
@@ -185,13 +194,17 @@ struct IndexView: View {
                     // 內容滾動區
                     ScrollView {
                         VStack(spacing: 0) {
-                            if medVM.medicationList.isEmpty {
+                            let todayRecords = medVM.medicationList.filter {
+                                record in
+                                Calendar.current.isDateInToday(record.date)
+                            }
+                            if todayRecords.isEmpty {
                                 Text("目前尚無資料")
                                     .foregroundColor(.secondary)
                                     .padding(.vertical, 40)
                                     .frame(maxWidth: .infinity)
                             } else {
-                                ForEach(medVM.medicationList.prefix(5)) { med in
+                                ForEach(todayRecords.prefix(5)) { med in
                                     medicationRow(
                                         date: med.date.toString(format: "M/d"),
                                         time: med.date.toString(
@@ -226,5 +239,18 @@ struct IndexView: View {
             isInputFocused = false
             self.hideKeyboard()
         }
+        .onAppear {
+            Task {
+                let today = Date().toString(format: "yyyy-MM-dd")
+                await medVM.loadRecords(for: today)
+            }
+        }
     }
+}
+#Preview {
+    NavigationBarView(
+        loginVM: LoginViewModel(),
+        dataVM: DataViewModel(),
+        medVM: MedicationViewModel()
+    )
 }
