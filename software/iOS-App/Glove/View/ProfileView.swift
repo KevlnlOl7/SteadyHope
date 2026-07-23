@@ -3,7 +3,13 @@ import SwiftUI
 struct ProfileView: View {
     @ObservedObject var loginVM: LoginViewModel
     @ObservedObject var medVM: MedicationViewModel
-    @State private var isPresentingMedication = false
+    @ObservedObject var dataVM: DataViewModel
+
+    /// 判斷使用者是否為照護者且尚未綁定被照護者
+    private var isUnlinkedCaregiver: Bool {
+        let isCaregiver = loginVM.userData?.role == 1
+        return isCaregiver && !loginVM.isLinked
+    }
 
     var body: some View {
         ZStack {
@@ -36,15 +42,40 @@ struct ProfileView: View {
 
                         VStack(spacing: 0) {
                             DataRow(title: "個人資料")
+                            
+                            // 僅在已綁定或病患身份時顯示用藥與匯出功能
+                            if !isUnlinkedCaregiver {
+                                NavigationLink(
+                                    destination: MedicationView(
+                                        loginVM: loginVM,
+                                        medVM: medVM
+                                    )
+                                ) {
+                                    DataRow(title: "用藥資料", text: "查看")
+                                }
+
+                                NavigationLink(
+                                    destination: ExportSettingsView(
+                                        loginVM: loginVM,
+                                        medVM: medVM,
+                                        dataVM: dataVM
+                                    )
+                                ) {
+                                    DataRow(title: "匯出最近資料", text: "選擇期間")
+                                }
+                            }
+
                             NavigationLink(
-                                destination: MedicationView(
-                                    loginVM: loginVM,
-                                    medVM: medVM
+                                destination: AccountSettingsView(
+                                    loginVM: loginVM
                                 )
                             ) {
-                                DataRow(title: "用藥資料", text: "查看")
+                                DataRow(
+                                    title: "帳號設定",
+                                    text: "設定",
+                                    showDivider: false
+                                )
                             }
-                            DataRow(title: "帳號設定", showDivider: false)
                         }
                         .background(Color.white)
                         .cornerRadius(15)

@@ -16,10 +16,25 @@ class LoginViewModel: ObservableObject {
 
     /// 用戶資料
     @Published var userData: UserData?
+    
+    /// 標記照護者目前是否已經成功連接病患
+    @Published var isLinked: Bool = false
 
     // 連資料庫 取得用戶資料
     private let authRepository = AuthRepository()
+    
+    /// 照護者綁定的病患/連動對象詳細資料
+    @Published var boundPartner: LinkedPartnerResponseDTO?
 
+    /// 患者姓名
+    var partnerName: String {
+        if userData?.role == 1 {
+            return boundPartner?.partnerName ?? "患者"
+        } else {
+            return userData?.userName ?? "患者"
+        }
+    }
+    
     /// 執行登入驗證邏輯
     /// - Parameters:
     ///   - email: 使用者輸入的帳號
@@ -84,7 +99,5 @@ class LoginViewModel: ObservableObject {
             }
             try? modelContext.save()
         }
-    }
-}
     }
 }

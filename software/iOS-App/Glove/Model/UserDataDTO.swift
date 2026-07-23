@@ -8,7 +8,8 @@ struct UserDataDTO: Codable {
     let gender: Int
     let birthday: Date?
     let diseaseStage: String?
-    let role:String
+    let role:Int
+    let pairingCode: String?
     
     // 處理後端 JSON 欄位命名不一致
     enum CodingKeys: String, CodingKey {
@@ -19,6 +20,7 @@ struct UserDataDTO: Codable {
         case birthday = "birth"
         case diseaseStage = "diseaseStage"
         case role = "role"
+        case pairingCode = "pairingCode"
     }
     
     /// 將 DTO 轉換為可存入 SwiftData 的 UserData 模型
@@ -30,7 +32,8 @@ struct UserDataDTO: Codable {
             gender: self.gender,
             birthday: self.birthday ?? Date(),
             diseaseStage: self.diseaseStage ?? "尚未設定",
-            role:self.role
+            role:self.role,
+            pairingCode: self.pairingCode
         )
     }
 }
