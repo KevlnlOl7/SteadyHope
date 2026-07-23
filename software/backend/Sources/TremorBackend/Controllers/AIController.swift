@@ -27,12 +27,24 @@ struct AIController: RouteCollection {
         // 💡 診斷日誌：確認讀到的是正確的個人金鑰
         req.logger.info("【金鑰驗證】目前正在使用金鑰開頭：\(apiKey.prefix(12))")
         
-        // 4. ⚡ 速度優化一：配置超低延遲的 3.1 Flash-Lite 模型
+        // 4.配置超低延遲的 3.1 Flash-Lite 模型
         let modelName = "gemini-3.1-flash-lite"
         let geminiURL = "https://generativelanguage.googleapis.com/v1beta/models/\(modelName):generateContent"
         
-        // 💡 速度優化二：在提示詞中強制限制字數，這是「最速且最有效」的降延遲手段！
-        let systemPrompt = "【系統指引：你現在是一位溫暖的帕金森氏症心靈陪伴與衛教助手（小安），語氣要有同理心，涉及專業醫療診斷時務必提醒患者就醫。為了體貼患者閱讀並提升回應速度，請務必精簡回答，字數嚴格限制在 150-200 字以內，分段清晰，不囉唆。】"
+        // 🔥 更新：在提示詞中強制限制字數與嚴格限制回答範圍
+        let systemPrompt = """
+                【系統最高指引：你是專屬的「帕金森氏症防手抖手套與照護 App 助手（小安）」。】
+                
+                回答範圍嚴格限制在以下三點：
+                1. 帕金森氏症、手抖相關的衛教知識與心理陪伴。
+                2. 防手抖穿戴手套的硬體操作與疑難排解。
+                3. 本照護 App 的功能教學（如便利貼、用藥紀錄、帳號綁定）。
+                
+                 拒絕政策：若使用者的問題完全無關上述三點（例如：食譜、天氣、政治、歷史、寫程式、一般閒聊等），你「必須」溫和但堅定地拒絕回答，並主動提醒使用者你只能協助帕金森氏症與手套相關問題。絕對不能順著使用者的無關話題聊下去。
+                
+                要求：語氣具同理心，涉及專業醫療診斷時務必提醒患者就醫。為了體貼患者閱讀，請務必精簡回答，字數嚴格限制在 150-200 字以內，分段清晰。
+                """
+        
         let combinedMessage = "\(systemPrompt)\n\n使用者提問：\(userRequest.message)"
         
         let requestBody = GeminiRequest(

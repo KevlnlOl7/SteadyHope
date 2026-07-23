@@ -8,11 +8,15 @@ struct UserController: RouteCollection {
         users.post("register", use: register)
         users.post("login", use: login)
         
-        let protected = users.grouped(UserPayload.authenticator(), UserPayload.guardMiddleware())
+        // 🔥 在這裡把 SingleDeviceMiddleware() 也加進去！
+        let protected = users.grouped(
+            UserPayload.authenticator(),
+            UserPayload.guardMiddleware(),
+            SingleDeviceMiddleware() // 👈 加這行
+        )
+        
         protected.post("bonds", "generate-code", use: generatePairingCode)
         protected.post("bonds", "link", use: linkPatient)
-        
-        // 🔥 將原本的 my-patient 改名為 partner，因為現在雙方都能查
         protected.get("bonds", "partner", use: getMyPartner)
     }
     
@@ -75,7 +79,19 @@ struct UserController: RouteCollection {
             throw Abort(.unauthorized, reason: "帳號或密碼錯誤")
         }
         
-        let payload = UserPayload(userID: user.id!, exp: .init(value: Date().addingTimeInterval(3600 * 24)))
+        // 🔥 新增：1. 產生一組全新的隨機 Session ID
+        let newSessionID = UUID().uuidString
+        
+        // 🔥 新增：2. 寫入資料庫，這代表之前的 Session ID 已經失效了
+        user.activeSessionID = newSessionID
+        try await user.update(on: req.db)
+        
+        // 🔥 修改：3. 將新的 Session ID 包進 JWT Payload 中
+        let payload = UserPayload(
+            userID: user.id!,
+            sessionID: newSessionID,
+            exp: .init(value: Date().addingTimeInterval(3600 * 24))
+        )
         let token = try req.jwt.sign(payload)
         
         let loginResponse = LoginResponse(token: token, user: user.toResponse())
