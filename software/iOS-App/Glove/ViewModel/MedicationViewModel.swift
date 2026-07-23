@@ -59,7 +59,7 @@ class MedicationViewModel: ObservableObject {
                 let success = try await repository.addMedication(newRecord)
 
                 if success {
-                    let dateString = formatDate(inputDate, format: "yyyy-MM-dd")
+                    let dateString = inputDate.toString(format: "yyyy-MM-dd")
                     await loadRecords(for: dateString)
                     await MainActor.run { clearInputs() }
                 }
@@ -102,16 +102,5 @@ class MedicationViewModel: ObservableObject {
         inputDose = ""
         inputUnit = ""
         inputDate = Date()
-    }
-
-    /// 日期格式化工具
-    /// - Parameters:
-    ///   - date: 要轉換的 Date 物件
-    ///   - format: 格式化字串
-    /// - Returns: 格式化後的日期字串
-    func formatDate(_ date: Date, format: String) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = format
-        return formatter.string(from: date)
     }
 }

@@ -101,7 +101,7 @@ struct MedicationView: View {
                             displayedComponents: .date
                         )
                         .labelsHidden()
-                        .onChange(of: filterDate) { oldValue, newValue in
+                        .onChange(of: filterDate) { _, newValue in
                             withAnimation {
                                 isShowingAll = false
                             }
@@ -131,14 +131,8 @@ struct MedicationView: View {
                         } else {
                             ForEach(filteredRecords) { med in
                                 medicationRow(
-                                    date: medVM.formatDate(
-                                        med.date,
-                                        format: "M/d"
-                                    ),
-                                    time: medVM.formatDate(
-                                        med.date,
-                                        format: "HH:mm"
-                                    ),
+                                    date: med.date.toString(format: "M/d"),
+                                    time: med.date.toString(format: "HH:mm"),
                                     name: med.name,
                                     dose: med.dose
                                 )
@@ -187,9 +181,8 @@ struct MedicationView: View {
         if isShowingAll {
             return "歷史紀錄"
         } else {
-            // 如果選的是今天，顯示今日紀錄，否則顯示選取的日期
             return Calendar.current.isDateInToday(filterDate)
-                ? "今日紀錄" : medVM.formatDate(filterDate, format: "M/d 紀錄")
+                ? "今日紀錄" : filterDate.toString(format: "M/d 紀錄")
         }
     }
 }

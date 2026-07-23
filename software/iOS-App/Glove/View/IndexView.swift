@@ -193,12 +193,8 @@ struct IndexView: View {
                             } else {
                                 ForEach(medVM.medicationList.prefix(5)) { med in
                                     medicationRow(
-                                        date: medVM.formatDate(
-                                            med.date,
-                                            format: "M/d"
-                                        ),
-                                        time: medVM.formatDate(
-                                            med.date,
+                                        date: med.date.toString(format: "M/d"),
+                                        time: med.date.toString(
                                             format: "HH:mm"
                                         ),
                                         name: med.name,

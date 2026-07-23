@@ -22,3 +22,14 @@ extension View {
             )
         }
 }
+extension Date {
+    /// 日期格式化工具
+    /// - Parameter format: 格式化字串，例如 "yyyyMMdd"
+    /// - Returns: 格式化後的日期字串
+    func toString(format: String) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = format
+        return formatter.string(from: self)
+    }
+}
+}
