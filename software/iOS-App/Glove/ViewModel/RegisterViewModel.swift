@@ -12,8 +12,7 @@ class RegisterViewModel: ObservableObject {
     @Published var birthday =
         Calendar.current.date(byAdding: .year, value: -60, to: Date()) ?? Date()
     @Published var diseaseStage = ""
-    @Published var role: String = "patient"
-    @Published var targetPatientID = ""
+    @Published var role: Int = 0  // 0: 病患, 1: 照護者
 
     /// 控制讀取狀態 防重送
     @Published var isLoading = false
@@ -29,9 +28,7 @@ class RegisterViewModel: ObservableObject {
         isLoading = true
         errorMessage = ""
 
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd"
-        let birthString = formatter.string(from: birthday)
+        let birthString = birthday.toString(format: "yyyy-MM-dd")
 
         let request = RegisterData(
             name: name,
@@ -39,20 +36,27 @@ class RegisterViewModel: ObservableObject {
             password: password,
             gender: gender.rawValue,
             birth: birthString,
-            diseaseStage: diseaseStage
+            diseaseStage: diseaseStage,
+            role: role
         )
 
         do {
             // 呼叫 API 並拿回 UserData
             let userData = try await repository.register(request: request)
 
-            // 直接存入 SwiftData (唯一儲存)
-            // 為確保本地只有一個登入使用者，先清空舊資料
-            try? modelContext.delete(model: UserData.self)
+            // 確保本地只有一個登入使用者：安全地清空舊資料
+            let descriptor = FetchDescriptor<UserData>()
+            if let oldUsers = try? modelContext.fetch(descriptor) {
+                for user in oldUsers {
+                    modelContext.delete(user)
+                }
+            }
+
+            // 插入新登入的使用者資料
             modelContext.insert(userData)
 
             // 存檔並標記成功
-            try? modelContext.save()
+            try modelContext.save()
             self.showSuccessAlert = true
         } catch {
             self.errorMessage = error.localizedDescription

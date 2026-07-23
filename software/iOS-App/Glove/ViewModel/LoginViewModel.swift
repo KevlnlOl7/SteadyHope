@@ -32,21 +32,6 @@ class LoginViewModel: ObservableObject {
         loginError = ""
 
         do {
-            if email == "test@test.com" && password == "Kk123456" {
-                let testUser = UserData(
-                    userID: 0,
-                    userName: "Admin",
-                    email: "",
-                    gender: 0,
-                    birthday: Date(),
-                    diseaseStage: "first stage",
-                    role: ""
-                )
-
-                self.userData = testUser
-                self.isAuthenticated = true
-                return
-            }
             let loginAccount = Account(email: email, password: password)
 
             // 取得包含 token 的回傳結果
@@ -54,10 +39,19 @@ class LoginViewModel: ObservableObject {
                 request: loginAccount
             )
 
+            // 寫入新資料前，先安全地清空本地所有舊的 UserData
+            let descriptor = FetchDescriptor<UserData>()
+            if let oldUsers = try? modelContext.fetch(descriptor) {
+                for user in oldUsers {
+                    modelContext.delete(user)
+                }
+            }
+
             // 處理使用者資料
             let userModel = fetchedResponse.user.toModel()
             modelContext.insert(userModel)
-            try? modelContext.save()
+
+            try modelContext.save()
 
             self.userData = userModel
             self.isAuthenticated = true
@@ -71,10 +65,26 @@ class LoginViewModel: ObservableObject {
 
     /// 使用者登出
     /// 清除登入狀態與使用者資料
+    /// - Parameter modelContext: 傳入以一併清除本地資料庫的 UserData
     @MainActor
-    func logout() {
+    func logout(modelContext: ModelContext? = nil) {
         self.isAuthenticated = false
         self.userData = nil
+        self.isLinked = false
         self.loginError = ""
+        AuthManager.shared.clearToken()
+
+        // 如果有傳入 modelContext，一併清空本地資料庫的 UserData
+        if let modelContext = modelContext {
+            let descriptor = FetchDescriptor<UserData>()
+            if let oldUsers = try? modelContext.fetch(descriptor) {
+                for user in oldUsers {
+                    modelContext.delete(user)
+                }
+            }
+            try? modelContext.save()
+        }
+    }
+}
     }
 }

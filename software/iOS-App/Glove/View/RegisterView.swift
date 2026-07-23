@@ -4,38 +4,26 @@ struct RegisterView: View {
     @StateObject private var viewModel = RegisterViewModel()
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) var dismiss
-    
+
     // 控制是否按過註冊，按過才顯示紅字
     @State private var hasAttemptedRegister = false
 
     // 格式檢查邏輯
     private var isFormValid: Bool {
-        let baseValid = !viewModel.name.isEmpty &&
-        Validator.validateEmail(viewModel.email) == nil &&
-        Validator.validatePassword(viewModel.password) == nil &&
-        viewModel.password == viewModel.confirmPassword
-        
-        if viewModel.role == "caregiver" {
-            // 照護者身份下，被照護者 ID 必須填寫
-            return baseValid && !viewModel.targetPatientID.trimmingCharacters(in: .whitespaces).isEmpty
-        } else {
-            return baseValid
-        }
+        !viewModel.name.isEmpty
+            && Validator.validateEmail(viewModel.email) == nil
+            && Validator.validatePassword(viewModel.password) == nil
+            && viewModel.password == viewModel.confirmPassword
+            && !viewModel.isLoading
     }
-    
+
     // 若不為空，且目前不在讀取狀態
     private var canSubmit: Bool {
-        let baseSubmit = !viewModel.name.isEmpty &&
-        !viewModel.email.isEmpty &&
-        !viewModel.password.isEmpty &&
-        !viewModel.confirmPassword.isEmpty &&
-        !viewModel.isLoading
-        
-        if viewModel.role == "caregiver" {
-            return baseSubmit && !viewModel.targetPatientID.isEmpty
-        } else {
-            return baseSubmit
-        }
+        !viewModel.name.isEmpty
+            && !viewModel.email.isEmpty
+            && !viewModel.password.isEmpty
+            && !viewModel.confirmPassword.isEmpty
+            && !viewModel.isLoading
     }
 
     var body: some View {
@@ -47,57 +35,57 @@ struct RegisterView: View {
                             .font(.footnote)
                             .foregroundColor(.secondary)
                             .padding(.leading, 4)
-                        
+
                         Picker("身分", selection: $viewModel.role) {
-                            Text("病患本人").tag("patient")
-                            Text("照護者家屬").tag("caregiver")
+                            Text("病患本人").tag(0)
+                            Text("照護者家屬").tag(1)
                         }
                         .pickerStyle(.segmented)
                     }
                 }
                 .listRowBackground(Color.clear)
-                .listRowInsets(EdgeInsets(top: 10, leading: 4, bottom: 10, trailing: 4))
+                .listRowInsets(
+                    EdgeInsets(top: 10, leading: 4, bottom: 10, trailing: 4)
+                )
                 // 帳號設定
                 Section(header: Text("帳號設定")) {
                     TextField("電子信箱", text: $viewModel.email)
                         .keyboardType(.emailAddress)
                         .autocapitalization(.none)
                         .disabled(viewModel.isLoading)
-                    
+
                     SecureField("密碼", text: $viewModel.password)
                         .textContentType(.oneTimeCode)
                         .autocorrectionDisabled(true)
                         .textInputAutocapitalization(.none)
-                    
+                        .disabled(viewModel.isLoading)
+
                     SecureField("確認密碼", text: $viewModel.confirmPassword)
                         .textContentType(.oneTimeCode)
                         .autocorrectionDisabled(true)
                         .textInputAutocapitalization(.none)
+                        .disabled(viewModel.isLoading)
                 }
                 // 基本資料
                 Section(header: Text("基本資料")) {
                     TextField("姓名", text: $viewModel.name)
                         .disabled(viewModel.isLoading)
-                    
+
                     Picker("性別", selection: $viewModel.gender) {
                         Text("男").tag(Gender.male)
                         Text("女").tag(Gender.female)
                         Text("其他").tag(Gender.other)
                     }
                     .pickerStyle(.segmented)
-                    
-                    if viewModel.role == "patient" {
+
+                    // 0:患者 ; 1:照護者
+                    if viewModel.role == 0 {
                         Picker("疾病階段", selection: $viewModel.diseaseStage) {
                             Text("未知").tag("未知")
                             Text("初期").tag("初期")
                             Text("中期").tag("中期")
                             Text("後期").tag("後期")
                         }
-                        
-                    }
-                    if viewModel.role == "caregiver" {
-                        TextField("被照護者家屬ID", text: $viewModel.targetPatientID)
-                            .disabled(viewModel.isLoading)
                     }
                     DatePicker("生日", selection: $viewModel.birthday, displayedComponents: .date)
                         .disabled(viewModel.isLoading)
@@ -120,7 +108,7 @@ struct RegisterView: View {
                         }
                         .font(.caption)
                         .foregroundColor(.red)
-                        
+
                         // 註冊按鈕
                         Button(action: {
                             hasAttemptedRegister = true
@@ -156,7 +144,4 @@ struct RegisterView: View {
             }
         }
     }
-}
-#Preview {
-    RegisterView()
 }

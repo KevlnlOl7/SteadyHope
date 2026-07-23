@@ -20,4 +20,7 @@ struct RegisterData: Codable {
     
     /// 疾病階段
     var diseaseStage: String
+    
+    /// 登入身份
+    var role: Int
 }
