@@ -6,6 +6,9 @@ struct TabBar: View {
     let tabItems: [(title: String, icon: String)]
 
     var body: some View {
+        
+        let itemWidth = CGFloat(tabItems.count) > 0 ? 360 / CGFloat(tabItems.count) : 0
+        
         ZStack {
             // 導航列背景
             RoundedRectangle(cornerRadius: 296)
@@ -21,10 +24,10 @@ struct TabBar: View {
             // 選中的灰色滑動背景
             RoundedRectangle(cornerRadius: 20)
                 .fill(Color(red: 0.9, green: 0.9, blue: 0.9))
-                .frame(width: 86, height: 58)
+                .frame(width: max(0, itemWidth - 6), height: 58)
                 .cornerRadius(296)
                 // 自動根據目前傳入的 index 計算物理位置
-                .offset(x: CGFloat(selectedTab) * 90 - 135)
+                .offset(x: CGFloat(selectedTab) * itemWidth - (360 - itemWidth) / 2)
                 .animation(
                     .spring(response: 0.4, dampingFraction: 0.75),
                     value: selectedTab
