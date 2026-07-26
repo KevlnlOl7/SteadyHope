@@ -74,7 +74,7 @@ struct NavigationBarView: View {
             SettingView(loginVM: loginVM)
                 .tag(1)
 
-            CareBoardView(loginVM: loginVM)
+            DailyView(loginVM: loginVM)
                 .tag(2)
 
             DataView(loginVM: loginVM, dataVM: dataVM)
@@ -94,7 +94,7 @@ struct NavigationBarView: View {
         if loginVM.isLinked {
             // 已綁定病患：顯示完整的 4 個分頁
             TabView(selection: $selectedTab) {
-                CareBoardView(loginVM: loginVM)
+                DailyView(loginVM: loginVM)
                     .tag(0)
 
                 SettingView(loginVM: loginVM)
