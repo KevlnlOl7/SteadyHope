@@ -17,9 +17,7 @@ class AuthRepository {
         )
 
         let decoder = JSONDecoder()
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd"
-        decoder.dateDecodingStrategy = .formatted(formatter)
+        decoder.dateDecodingStrategy = .iso8601
 
         // 解碼成 LoginResponseDTO 才能拿到 token
         let response = try decoder.decode(LoginResponseDTO.self, from: data)

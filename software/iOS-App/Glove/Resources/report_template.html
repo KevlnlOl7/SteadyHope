@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <style>
+        @page {
+            size: A4;
+            margin: 20mm;
+        }
+
+        body {
+            font-family: 'PingFang TC', 'Heiti TC', 'Microsoft JhengHei', sans-serif;
+            padding: 0;
+            margin: 0;
+            color: #333333;
+            background-color: #ffffff;
+            line-height: 1.5;
+            width: 100%;
+            -webkit-print-color-adjust: exact;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 800px;
+            margin: 0 auto;
+            box-sizing: border-box;
+        }
+
+        .header {
+            border-bottom: 2px solid #eef2f5;
+            padding-bottom: 15px;
+            margin-bottom: 25px;
+        }
+
+        h2 {
+            color: #1a365d;
+            margin: 0 0 15px 0;
+            font-size: 22px;
+            font-weight: 600;
+        }
+
+        .meta-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 10px;
+        }
+
+        .meta-table td {
+            padding: 4px 0;
+            font-size: 13px;
+            color: #4a5568;
+            border: none !important;
+        }
+
+        .section-title {
+            color: #2b6cb0;
+            font-size: 16px;
+            font-weight: 600;
+            margin-top: 25px;
+            margin-bottom: 12px;
+            border-left: 4px solid #3182ce;
+            padding-left: 8px;
+        }
+
+        .content-block {
+            margin-bottom: 20px;
+        }
+
+        table.data-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 8px;
+            background-color: #ffffff;
+            table-layout: fixed;
+        }
+
+        table.data-table th,
+        table.data-table td {
+            padding: 10px 12px;
+            text-align: left;
+            font-size: 13px;
+            word-wrap: break-word;
+        }
+
+        table.data-table th {
+            background-color: #f7fafc;
+            color: #2b6cb0;
+            font-weight: 600;
+            border-bottom: 2px solid #e2e8f0;
+        }
+
+        table.data-table tr {
+            border-bottom: 1px solid #edf2f7;
+        }
+
+        table.data-table tr:last-child {
+            border-bottom: none;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+
+        .badge-high {
+            background-color: #fed7d7;
+            color: #9b2c2c;
+        }
+
+        .badge-med {
+            background-color: #feebc8;
+            color: #9c4221;
+        }
+
+        .badge-low {
+            background-color: #c6f6d5;
+            color: #22543d;
+        }
+
+        .note-box {
+            background-color: #f7fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            padding: 12px 15px;
+            font-size: 13px;
+            color: #2d3748;
+            line-height: 1.6;
+            word-wrap: break-word;
+            white-space: pre-wrap;
+            /* 保持使用者輸入的換行符號 */
+        }
+
+        .content-block {
+            margin-bottom: 20px;
+            page-break-inside: avoid;
+            break-inside: avoid;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <div class="header">
+            <h2>日常健康綜合紀錄報告</h2>
+            <table class="meta-table">
+                <tr>
+                    <td style="width: 30%;"><strong>患者姓名：</strong>{{userName}}</td>
+                    <td style="width: 30%;"><strong>生日：</strong>{{userBirth}}</td>
+                    <td style="width: 40%; text-align: right;"><strong>統計區間：</strong>{{startString}} 至 {{endString}}
+                    </td>
+                </tr>
+            </table>
+        </div>
+
+        <div class="section-title">手部震動紀錄</div>
+        <div class="content-block">
+            <p style="margin-top: 0; color: #718096; font-size: 12px; margin-bottom: 5px;">此區域紀錄手套感測器偵測到之震動頻率與幅度變化統計：
+            </p>
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th style="width: 35%;">測量時間</th>
+                        <th style="width: 25%;">平均頻率 (Hz)</th>
+                        <th style="width: 20%;">震動幅度</th>
+                        <th style="width: 20%;">狀態判定</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {{vibrationRowsHTML}}
+                </tbody>
+            </table>
+        </div>
+
+        <div class="section-title">用藥與控制紀錄</div>
+        <div class="content-block">
+            <p style="margin-top: 0; color: #718096; font-size: 12px; margin-bottom: 5px;">此區域紀錄患者於統計區間內的服藥紀錄：</p>
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th style="width: 40%;">服藥時間</th>
+                        <th style="width: 35%;">藥物名稱</th>
+                        <th style="width: 25%;">劑量</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {{medicationRowsHTML}}
+                </tbody>
+            </table>
+        </div>
+
+        <div class="section-title">生理徵象監測紀錄</div>
+        <div class="content-block">
+            <p style="margin-top: 0; color: #718096; font-size: 12px; margin-bottom: 5px;">此區域紀錄日常量測之血壓、血糖、體溫及體重數據：</p>
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th style="width: 25%;">量測時間</th>
+                        <th style="width: 25%;">血壓 (mmHg)</th>
+                        <th style="width: 20%;">血糖 (mg/dL)</th>
+                        <th style="width: 15%;">體溫 (°C)</th>
+                        <th style="width: 15%;">體重 (kg)</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {{vitalsRowsHTML}}
+                </tbody>
+            </table>
+        </div>
+
+        <!-- 修正：將新區塊移入 container 內部，並讓變數與標籤橫向緊貼，防止換行縮進錯誤 -->
+        <div class="section-title">回診核心溝通與主觀觀測</div>
+        <div class="content-block">
+            <table class="meta-table" style="margin-bottom: 5px;">
+                <tr>
+                    <td><strong>病人狀況描述（日常動作與症狀）：</strong></td>
+                </tr>
+            </table>
+            <div class="note-box" style="border-left: 4px solid #3182ce;">{{patientStatusDescription}}</div>
+        </div>
+
+        <div class="content-block">
+            <table class="meta-table" style="margin-bottom: 5px;">
+                <tr>
+                    <td><strong>與上次回診之差異比較（變化趨勢）：</strong></td>
+                </tr>
+            </table>
+            <div class="note-box" style="border-left: 4px solid #805ad5;">{{comparisonWithLastVisit}}</div>
+        </div>
+
+        <div class="content-block">
+            <table class="meta-table" style="margin-bottom: 5px;">
+                <tr>
+                    <td><strong>其他科別用藥與特殊補充：</strong></td>
+                </tr>
+            </table>
+            <div class="note-box" style="border-left: 4px solid #38a169;">{{otherMedicationsOrNotes}}</div>
+        </div>
+
+        <div class="content-block">
+            <table class="meta-table" style="margin-bottom: 5px;">
+                <tr>
+                    <td><strong>本次想諮詢醫生的核心問題：</strong></td>
+                </tr>
+            </table>
+            <div class="note-box" style="border-left: 4px solid #dd6b20;">{{questionsForDoctor}}</div>
+        </div>
+    </div> 
+</body>
+
+</html>
