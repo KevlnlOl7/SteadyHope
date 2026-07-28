@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "sample_rate_hz": 100,
+  "raw_lsb_per_dps": 16,
+  "amplitude_peak_dps": 15.0,
+  "rest_before_seconds": 1,
+  "tone_seconds": 4,
+  "rest_after_seconds": 2,
+  "sample_count_per_vector": 700,
+  "vectors": [
+    {
+      "frequency_hz": 1,
+      "csv": "gating_01hz.csv",
+      "expected_should_enable": false
+    },
+    {
+      "frequency_hz": 2,
+      "csv": "gating_02hz.csv",
+      "expected_should_enable": false
+    },
+    {
+      "frequency_hz": 3,
+      "csv": "gating_03hz.csv",
+      "expected_should_enable": false
+    },
+    {
+      "frequency_hz": 4,
+      "csv": "gating_04hz.csv",
+      "expected_should_enable": true
+    },
+    {
+      "frequency_hz": 5,
+      "csv": "gating_05hz.csv",
+      "expected_should_enable": true
+    },
+    {
+      "frequency_hz": 6,
+      "csv": "gating_06hz.csv",
+      "expected_should_enable": true
+    },
+    {
+      "frequency_hz": 8,
+      "csv": "gating_08hz.csv",
+      "expected_should_enable": false
+    }
+  ],
+  "scope": "Synthetic algorithm-injection test only; not human tremor data."
+}
