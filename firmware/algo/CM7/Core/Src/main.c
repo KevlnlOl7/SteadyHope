@@ -23,7 +23,9 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include <stdint.h>
+#include <math.h>
 #include "BNO055_STM32.h"
+#include "tremor_gate.h"
 
 /* 保留原本已經可以編譯的演算法 include，不修改演算法檔案 */
 #include "C:/Users/banny/STM32CubeIDE/workspace_1.7.0/algo/CM7/Core/Algo/bmflc/BMFLC_step.h"
@@ -40,6 +42,21 @@ typedef enum
   MOTOR_REVERSE
 } MotorState;
 
+/*
+ * 線軸動作狀態：
+ * IDLE      等待手抖成立
+ * PULLING   固定方向收線
+ * HOLDING   停止馬達並維持目前位置
+ * RETURNING 反方向放線回到原位
+ */
+typedef enum
+{
+  ACTUATOR_IDLE = 0,
+  ACTUATOR_PULLING,
+  ACTUATOR_HOLDING,
+  ACTUATOR_RETURNING
+} ActuatorState;
+
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
@@ -49,8 +66,72 @@ typedef enum
 #define HSEM_ID_0 (0U) /* HW semaphore 0*/
 #endif
 
-#define MOTOR_THRESHOLD 5.0f
-#define MOTOR_GAIN      1.0f
+/* 僅用於 Live Expressions 顯示演算法反相控制值；本版本不拿正負號逐週期換向。 */
+#define MOTOR_GAIN                    1.0
+
+/*
+ * 線軸方向定義。若實際接線相反，只需要互換這兩個定義。
+ * MOTOR_PULL_DIRECTION：收線、拉緊方向
+ * MOTOR_RELEASE_DIRECTION：放線、放鬆方向
+ */
+#define MOTOR_PULL_DIRECTION          MOTOR_FORWARD
+#define MOTOR_RELEASE_DIRECTION       MOTOR_REVERSE
+
+/*
+ * 初始桌上測試時間：偵測成立後收線 300 ms；手抖消失後放線 300 ms。
+ * 這兩個值只是 bring-up 起始值，之後必須依線軸直徑與實際位移重新量測。
+ */
+#define MOTOR_PULL_TIME_MS            2000U
+#define MOTOR_RELEASE_TIME_MS         2000U
+
+/* 正反方向切換前，先停止 100 ms；非阻塞，不使用 HAL_Delay()。 */
+#define MOTOR_REVERSE_DEADTIME_MS     100U
+
+/* 100 Hz 控制週期 */
+#define CONTROL_SAMPLE_RATE_HZ        100.0
+
+/*
+ * 演算法具有內部狀態，只能固定餵一個軸，不能同時餵 X/Y/Z。
+ * 第一種方式預設維持 X 軸；若之後確認主要抖動方向是 Y 或 Z，
+ * 只要改 TREMOR_INPUT_AXIS，不需要修改演算法檔案。
+ */
+#define TREMOR_AXIS_X                 0U
+#define TREMOR_AXIS_Y                 1U
+#define TREMOR_AXIS_Z                 2U
+#define TREMOR_INPUT_AXIS             TREMOR_AXIS_X
+
+/*
+ * 測試階段的目標頻帶：3.0~7.0 Hz。
+ * 啟動後使用 2.5~7.5 Hz 的較寬保持範圍，避免邊界小幅波動。
+ */
+#define TREMOR_FREQ_ON_MIN_HZ         3.0
+#define TREMOR_FREQ_ON_MAX_HZ         8.0
+#define TREMOR_FREQ_OFF_MIN_HZ        2.5
+#define TREMOR_FREQ_OFF_MAX_HZ        8.5
+
+/*
+ * tremorEstimate 是有正負號的波形，不能直接要求連續高於門檻，
+ * 因為每個週期都會穿越 0；因此使用 RMS 包絡判斷震顫強度。
+ */
+#define TREMOR_RMS_ON_DPS             3.0
+#define TREMOR_RMS_OFF_DPS            2.0
+#define TREMOR_POWER_EMA_ALPHA        0.05
+
+/*
+ * 100 Hz 下：
+ * 30 點  = 條件連續成立 0.30 秒後開始收線。
+ * 150 點 = 條件連續消失 1.50 秒後開始反轉放線。
+ */
+#define TREMOR_ON_CONFIRM_SAMPLES     30U
+#define TREMOR_OFF_CONFIRM_SAMPLES    150U
+
+/* 演算法開機先累積 2 秒資料，避免初始頻率暫態誤啟動 */
+#define ALGO_WARMUP_SAMPLES           200U
+
+/* 板上測試資料：5 Hz、峰值 20 degree/second */
+#define TEST_TREMOR_FREQ_HZ           5.0
+#define TEST_TREMOR_AMPLITUDE_DPS     20.0
+#define PI_D                          3.14159265358979323846
 
 /* BNO055 位址、暫存器、模式與型別由 BNO055_STM32.h 提供 */
 
@@ -81,6 +162,51 @@ float gyroZ = 0.0f;
 /* eHWFLC 演算法輸出 */
 double tremorEstimate = 0.0;
 double freqEstimate = 0.0;
+
+/* 手抖啟動判斷狀態，可放入 Live Expressions 觀察 */
+double selectedGyroInputDps = 0.0;
+double tremorPowerEma = 0.0;
+double tremorRmsDps = 0.0;
+double controlValueDebug = 0.0;
+volatile uint8_t tremor_active = 0;
+volatile uint8_t frequency_gate_ok = 0;
+volatile uint8_t amplitude_gate_ok = 0;
+volatile uint16_t tremor_on_count = 0;
+volatile uint16_t tremor_off_count = 0;
+volatile uint32_t algo_warmup_count = 0;
+
+/*
+ * tremor_gate.c 的獨立頻帶判斷。
+ * 不取代上面的 eHWFLC/RMS 判斷，而是作為第二道啟動條件。
+ */
+static TremorGate bandpass_tremor_gate;
+static TremorGateConfig bandpass_tremor_gate_config;
+volatile uint8_t bandpass_gate_enabled = 0;
+volatile uint8_t suppression_start_allowed = 0;
+volatile float bandpass_tremor_envelope = 0.0f;
+volatile float bandpass_voluntary_envelope = 0.0f;
+volatile float bandpass_tremor_ratio = 0.0f;
+volatile uint16_t bandpass_on_count = 0;
+volatile uint16_t bandpass_off_count = 0;
+
+/* 一次收線、保持、放線的狀態機，可加入 Live Expressions 觀察。 */
+volatile ActuatorState actuator_state = ACTUATOR_IDLE;
+volatile uint32_t actuator_state_started_ms = 0;
+volatile uint32_t actuator_state_elapsed_ms = 0;
+volatile uint32_t actuator_pull_count = 0;
+volatile uint32_t actuator_return_count = 0;
+
+/*
+ * 馬達換向保護狀態，可加入 Live Expressions 觀察。
+ * motor_last_drive_direction 會記住最後一次真正輸出的轉動方向。
+ */
+volatile MotorState motor_applied_state = MOTOR_STOP;
+volatile MotorState motor_last_drive_direction = MOTOR_STOP;
+volatile MotorState motor_pending_direction = MOTOR_STOP;
+volatile uint8_t motor_reverse_wait_active = 0;
+volatile uint32_t motor_stop_started_ms = 0;
+volatile uint32_t motor_reverse_wait_elapsed_ms = 0;
+volatile uint32_t motor_reverse_event_count = 0;
 
 
 /* TIM6 每 10 ms 設定一次旗標；ISR 內不執行 I2C */
@@ -117,8 +243,16 @@ static void MX_TIM6_Init(void);
 /* USER CODE BEGIN PFP */
 
 void Motor_Control(MotorState state);
+void Motor_Deadtime_Reset(void);
+void Motor_UpdateWithDeadtime(MotorState requestedState);
+void Actuator_StateMachine_Reset(void);
+void Actuator_StateMachine_Update(void);
 void Algorithm_Init(void);
-MotorState Tremor_Algorithm(float gyroX, float gyroY, float gyroZ);
+void Tremor_Gate_Reset(void);
+void Tremor_Detector_Update(float gyroX, float gyroY, float gyroZ);
+void Bandpass_TremorGate_Init(void);
+void Bandpass_TremorGate_Reset(void);
+void Bandpass_TremorGate_Update(double gyroDps);
 void Read_IMU_TestData(float *gx, float *gy, float *gz);
 HAL_StatusTypeDef Read_IMU_RealData(float *gx, float *gy, float *gz);
 
@@ -199,103 +333,478 @@ HAL_StatusTypeDef Sensor_GyroOnly_Init(void)
 
 void Motor_Control(MotorState state)
 {
+  /* 此函式只負責直接輸出 GPIO；換向等待由 Motor_UpdateWithDeadtime() 處理。 */
   if (state == MOTOR_FORWARD)
   {
-
     HAL_GPIO_WritePin(GPIOG, GPIO_PIN_3, GPIO_PIN_SET);
     HAL_GPIO_WritePin(GPIOA, GPIO_PIN_6, GPIO_PIN_RESET);
   }
   else if (state == MOTOR_REVERSE)
   {
-
     HAL_GPIO_WritePin(GPIOG, GPIO_PIN_3, GPIO_PIN_RESET);
     HAL_GPIO_WritePin(GPIOA, GPIO_PIN_6, GPIO_PIN_SET);
   }
   else
   {
-
     HAL_GPIO_WritePin(GPIOG, GPIO_PIN_3, GPIO_PIN_RESET);
     HAL_GPIO_WritePin(GPIOA, GPIO_PIN_6, GPIO_PIN_RESET);
   }
 }
+
+/**
+  * @brief 強制停止馬達並清除換向等待狀態。
+  * @note  開機、IMU 錯誤或需要完全重新開始時使用。
+  */
+void Motor_Deadtime_Reset(void)
+{
+  Motor_Control(MOTOR_STOP);
+
+  motor_applied_state = MOTOR_STOP;
+  motor_last_drive_direction = MOTOR_STOP;
+  motor_pending_direction = MOTOR_STOP;
+  motor_reverse_wait_active = 0;
+  motor_stop_started_ms = HAL_GetTick();
+  motor_reverse_wait_elapsed_ms = 0;
+}
+
+/**
+  * @brief 依照要求方向控制馬達；若要反向，先停止 100 ms 再切換。
+  * @note  本函式為非阻塞設計，必須在 100 Hz 主控制迴圈中持續呼叫。
+  *
+  * 行為：
+  * 1. MOTOR_FORWARD -> MOTOR_REVERSE：先 STOP 100 ms，再 REVERSE。
+  * 2. MOTOR_REVERSE -> MOTOR_FORWARD：先 STOP 100 ms，再 FORWARD。
+  * 3. 同方向持續輸出：不等待。
+  * 4. MOTOR_STOP -> 任一方向：若已停止滿 100 ms，直接啟動。
+  */
+void Motor_UpdateWithDeadtime(MotorState requestedState)
+{
+  uint32_t nowMs = HAL_GetTick();
+
+  /* 防止異常 enum 值造成兩個 H-bridge 輸入狀態不可預期。 */
+  if ((requestedState != MOTOR_STOP) &&
+      (requestedState != MOTOR_FORWARD) &&
+      (requestedState != MOTOR_REVERSE))
+  {
+    requestedState = MOTOR_STOP;
+  }
+
+  if (requestedState == MOTOR_STOP)
+  {
+    /* 第一次從轉動切到停止時，記錄停止起始時間。 */
+    if (motor_applied_state != MOTOR_STOP)
+    {
+      motor_stop_started_ms = nowMs;
+    }
+
+    Motor_Control(MOTOR_STOP);
+    motor_applied_state = MOTOR_STOP;
+
+    if ((motor_last_drive_direction != MOTOR_STOP) ||
+        motor_reverse_wait_active)
+    {
+      motor_reverse_wait_elapsed_ms = nowMs - motor_stop_started_ms;
+
+      /*
+       * 已經連續停止滿 100 ms，代表馬達已有足夠靜置時間。
+       * 下次要求任一方向時，可視為從停止狀態重新啟動。
+       */
+      if (motor_reverse_wait_elapsed_ms >= MOTOR_REVERSE_DEADTIME_MS)
+      {
+        motor_last_drive_direction = MOTOR_STOP;
+        motor_pending_direction = MOTOR_STOP;
+        motor_reverse_wait_active = 0;
+        motor_reverse_wait_elapsed_ms = 0;
+      }
+    }
+    else
+    {
+      /* 沒有換向等待時保持為 0，避免 Live Expressions 顯示很大的累積值。 */
+      motor_reverse_wait_elapsed_ms = 0;
+    }
+
+    return;
+  }
+
+  /*
+   * 尚未有轉動方向，或要求方向與最後方向相同：不屬於換向，直接輸出。
+   */
+  if ((motor_last_drive_direction == MOTOR_STOP) ||
+      (requestedState == motor_last_drive_direction))
+  {
+    Motor_Control(requestedState);
+    motor_applied_state = requestedState;
+    motor_last_drive_direction = requestedState;
+    motor_pending_direction = MOTOR_STOP;
+    motor_reverse_wait_active = 0;
+    motor_reverse_wait_elapsed_ms = 0;
+    return;
+  }
+
+  /*
+   * 走到這裡表示要求方向與最後轉動方向相反，必須先停止。
+   * 若目前仍在轉動，從現在開始計算 100 ms。
+   */
+  if (motor_applied_state != MOTOR_STOP)
+  {
+    Motor_Control(MOTOR_STOP);
+    motor_applied_state = MOTOR_STOP;
+    motor_stop_started_ms = nowMs;
+  }
+
+  /* 第一次偵測到這次換向要求時，記錄等待方向與換向次數。 */
+  if ((!motor_reverse_wait_active) ||
+      (motor_pending_direction != requestedState))
+  {
+    motor_pending_direction = requestedState;
+    motor_reverse_wait_active = 1;
+    motor_reverse_event_count++;
+  }
+
+  motor_reverse_wait_elapsed_ms = nowMs - motor_stop_started_ms;
+
+  if (motor_reverse_wait_elapsed_ms >= MOTOR_REVERSE_DEADTIME_MS)
+  {
+    /* 已靜置滿 100 ms，才真正輸出新方向。 */
+    Motor_Control(requestedState);
+    motor_applied_state = requestedState;
+    motor_last_drive_direction = requestedState;
+    motor_pending_direction = MOTOR_STOP;
+    motor_reverse_wait_active = 0;
+    motor_reverse_wait_elapsed_ms = 0;
+  }
+  else
+  {
+    /* 等待期間保持 H-bridge 兩個方向腳皆為 Low。 */
+    Motor_Control(MOTOR_STOP);
+    motor_applied_state = MOTOR_STOP;
+  }
+}
+
+/**
+  * @brief 重置線軸狀態機並立即停止馬達。
+  */
+void Actuator_StateMachine_Reset(void)
+{
+  Motor_Deadtime_Reset();
+  actuator_state = ACTUATOR_IDLE;
+  actuator_state_started_ms = HAL_GetTick();
+  actuator_state_elapsed_ms = 0;
+}
+
+/**
+  * @brief 一次收線 -> 保持 -> 手抖消失後放線的非阻塞狀態機。
+  *
+  * 流程：
+  * 1. suppression_start_allowed 由 0 變 1：固定收線方向轉 MOTOR_PULL_TIME_MS。
+  * 2. 收線完成：馬達停止，進入 HOLDING，不跟著 tremorEstimate 正負換向。
+  * 3. tremor_active 變 0：維持原本連續不符合 1.5 秒後才開始放線。
+  * 4. 放線 MOTOR_RELEASE_TIME_MS 後停止，回到 IDLE。
+  */
+void Actuator_StateMachine_Update(void)
+{
+  uint32_t nowMs = HAL_GetTick();
+  actuator_state_elapsed_ms = nowMs - actuator_state_started_ms;
+
+  switch (actuator_state)
+  {
+    case ACTUATOR_IDLE:
+      Motor_UpdateWithDeadtime(MOTOR_STOP);
+      actuator_state_elapsed_ms = 0;
+
+      if (suppression_start_allowed)
+      {
+        actuator_state = ACTUATOR_PULLING;
+        actuator_state_started_ms = nowMs;
+        actuator_state_elapsed_ms = 0;
+        actuator_pull_count++;
+        Motor_UpdateWithDeadtime(MOTOR_PULL_DIRECTION);
+      }
+      break;
+
+    case ACTUATOR_PULLING:
+      if (actuator_state_elapsed_ms >= MOTOR_PULL_TIME_MS)
+      {
+        Motor_UpdateWithDeadtime(MOTOR_STOP);
+        actuator_state = ACTUATOR_HOLDING;
+        actuator_state_started_ms = nowMs;
+        actuator_state_elapsed_ms = 0;
+      }
+      else
+      {
+        Motor_UpdateWithDeadtime(MOTOR_PULL_DIRECTION);
+      }
+      break;
+
+    case ACTUATOR_HOLDING:
+      /* 馬達停止；線是否能保持位置取決於減速箱/線軸是否會回滑。 */
+      Motor_UpdateWithDeadtime(MOTOR_STOP);
+
+      if (!tremor_active)
+      {
+        actuator_state = ACTUATOR_RETURNING;
+        actuator_state_started_ms = nowMs;
+        actuator_state_elapsed_ms = 0;
+        actuator_return_count++;
+        Motor_UpdateWithDeadtime(MOTOR_RELEASE_DIRECTION);
+      }
+      break;
+
+    case ACTUATOR_RETURNING:
+      if (actuator_state_elapsed_ms >= MOTOR_RELEASE_TIME_MS)
+      {
+        Motor_UpdateWithDeadtime(MOTOR_STOP);
+        actuator_state = ACTUATOR_IDLE;
+        actuator_state_started_ms = nowMs;
+        actuator_state_elapsed_ms = 0;
+      }
+      else
+      {
+        Motor_UpdateWithDeadtime(MOTOR_RELEASE_DIRECTION);
+      }
+      break;
+
+    default:
+      Actuator_StateMachine_Reset();
+      break;
+  }
+}
+
+void Tremor_Gate_Reset(void)
+{
+  selectedGyroInputDps = 0.0;
+  tremorPowerEma = 0.0;
+  tremorRmsDps = 0.0;
+  controlValueDebug = 0.0;
+  tremor_active = 0;
+  frequency_gate_ok = 0;
+  amplitude_gate_ok = 0;
+  tremor_on_count = 0;
+  tremor_off_count = 0;
+  algo_warmup_count = 0;
+}
+
 void Algorithm_Init(void)
 {
   /* 保留原本已相容的 eHWFLC 初始化，不修改演算法內容 */
   eHWFLC_KF_step_init();
+  Tremor_Gate_Reset();
 }
 
-MotorState Tremor_Algorithm(float gyroX, float gyroY, float gyroZ)
+/**
+  * @brief 初始化 tremor_gate.c 的 100 Hz 頻帶判斷。
+  * @note  預設參數取自 TremorGate_DefaultConfig()，不修改原演算法門檻。
+  */
+void Bandpass_TremorGate_Init(void)
+{
+  bandpass_tremor_gate_config = TremorGate_DefaultConfig();
+  TremorGate_Init(&bandpass_tremor_gate, &bandpass_tremor_gate_config);
+  Bandpass_TremorGate_Reset();
+}
+
+/**
+  * @brief 清除 tremor_gate.c 的濾波狀態，但保留設定參數。
+  */
+void Bandpass_TremorGate_Reset(void)
+{
+  TremorGate_Reset(&bandpass_tremor_gate);
+
+  bandpass_gate_enabled = 0U;
+  suppression_start_allowed = 0U;
+  bandpass_tremor_envelope = 0.0f;
+  bandpass_voluntary_envelope = 0.0f;
+  bandpass_tremor_ratio = 0.0f;
+  bandpass_on_count = 0U;
+  bandpass_off_count = 0U;
+}
+
+/**
+  * @brief 將原本選定的單軸 Gyro 餵入 tremor_gate.c。
+  * @note  suppression_start_allowed 只負責「是否允許開始收線」，必須同時滿足：
+  *        1. 原本 eHWFLC/RMS 判斷 tremor_active == 1
+  *        2. tremor_gate.c 判斷 bandpass_gate_enabled == 1
+  */
+void Bandpass_TremorGate_Update(double gyroDps)
+{
+  bandpass_gate_enabled = TremorGate_Update(&bandpass_tremor_gate, gyroDps);
+
+  /* 複製成簡單變數，方便 STM32CubeIDE Live Expressions 觀察。 */
+  bandpass_tremor_envelope = bandpass_tremor_gate.tremor_envelope;
+  bandpass_voluntary_envelope = bandpass_tremor_gate.voluntary_envelope;
+  bandpass_tremor_ratio = bandpass_tremor_gate.tremor_ratio;
+  bandpass_on_count = bandpass_tremor_gate.on_count;
+  bandpass_off_count = bandpass_tremor_gate.off_count;
+
+  suppression_start_allowed =
+      ((tremor_active != 0U) && (bandpass_gate_enabled != 0U)) ? 1U : 0U;
+}
+
+void Tremor_Detector_Update(float gyroX, float gyroY, float gyroZ)
 {
   double inputGyro;
-  double controlValue;
+  double instantaneousPower;
+  uint8_t keepActive;
   uint32_t t0;
 
-  /* 演算法具有內部狀態，只餵單一 X 軸，輸入單位為 degree/second */
-  inputGyro = (double)gyroX;
+  /*
+   * eHWFLC 具有內部狀態，每次只能固定餵一個軸。
+   * 預設使用 X 軸，並以 3~7 Hz 作為測試階段的啟動頻帶。
+   */
+#if (TREMOR_INPUT_AXIS == TREMOR_AXIS_X)
+  selectedGyroInputDps = (double)gyroX;
+#elif (TREMOR_INPUT_AXIS == TREMOR_AXIS_Y)
+  selectedGyroInputDps = (double)gyroY;
+#elif (TREMOR_INPUT_AXIS == TREMOR_AXIS_Z)
+  selectedGyroInputDps = (double)gyroZ;
+#else
+#error "TREMOR_INPUT_AXIS must be TREMOR_AXIS_X, TREMOR_AXIS_Y, or TREMOR_AXIS_Z"
+#endif
 
+  inputGyro = selectedGyroInputDps;
 
   t0 = DWT->CYCCNT;
-
   eHWFLC_KF_step(inputGyro, &tremorEstimate, &freqEstimate);
-
   algo_cycles = DWT->CYCCNT - t0;
   algo_time_us = (float)algo_cycles / ((float)SystemCoreClock / 1000000.0f);
 
-
-  controlValue = -(MOTOR_GAIN * tremorEstimate);
-
-  if (controlValue > MOTOR_THRESHOLD)
+  /* 非有限數值代表估測器狀態異常，立即停止並重置啟動判斷。 */
+  if ((!isfinite(tremorEstimate)) || (!isfinite(freqEstimate)))
   {
-
-    return MOTOR_FORWARD;
+    Tremor_Gate_Reset();
+    return;
   }
-  else if (controlValue < -MOTOR_THRESHOLD)
-  {
 
-    return MOTOR_REVERSE;
+  /*
+   * 對 tremorEstimate^2 做指數移動平均，再開根號得到 RMS 包絡。
+   * 這樣不會因震顫波形每半週穿越 0 而一直取消啟動計數。
+   */
+  instantaneousPower = tremorEstimate * tremorEstimate;
+  tremorPowerEma += TREMOR_POWER_EMA_ALPHA *
+                    (instantaneousPower - tremorPowerEma);
+
+  if (tremorPowerEma < 0.0)
+  {
+    tremorPowerEma = 0.0;
+  }
+  tremorRmsDps = sqrt(tremorPowerEma);
+
+  /* 開機暖機期間仍持續估測，但不允許馬達動作。 */
+  if (algo_warmup_count < ALGO_WARMUP_SAMPLES)
+  {
+    algo_warmup_count++;
+    controlValueDebug = 0.0;
+    return;
+  }
+
+  if (!tremor_active)
+  {
+    /* 尚未啟動：3.0~7.0 Hz、RMS >= 3.0，連續 0.30 秒。 */
+    frequency_gate_ok =
+        ((freqEstimate >= TREMOR_FREQ_ON_MIN_HZ) &&
+         (freqEstimate <= TREMOR_FREQ_ON_MAX_HZ)) ? 1U : 0U;
+
+    amplitude_gate_ok =
+        (tremorRmsDps >= TREMOR_RMS_ON_DPS) ? 1U : 0U;
+
+    if (frequency_gate_ok && amplitude_gate_ok)
+    {
+      if (tremor_on_count < TREMOR_ON_CONFIRM_SAMPLES)
+      {
+        tremor_on_count++;
+      }
+    }
+    else
+    {
+      tremor_on_count = 0;
+    }
+
+    if (tremor_on_count >= TREMOR_ON_CONFIRM_SAMPLES)
+    {
+      tremor_active = 1;
+      tremor_on_count = 0;
+      tremor_off_count = 0;
+    }
   }
   else
   {
+    /*
+     * 已啟動：使用較寬的 2.5~7.5 Hz 與較低 RMS 門檻。
+     * 連續不符合 1.50 秒後，tremor_active 才清為 0，觸發放線。
+     */
+    frequency_gate_ok =
+        ((freqEstimate >= TREMOR_FREQ_OFF_MIN_HZ) &&
+         (freqEstimate <= TREMOR_FREQ_OFF_MAX_HZ)) ? 1U : 0U;
 
-    return MOTOR_STOP;
+    amplitude_gate_ok =
+        (tremorRmsDps >= TREMOR_RMS_OFF_DPS) ? 1U : 0U;
+
+    keepActive = (frequency_gate_ok && amplitude_gate_ok) ? 1U : 0U;
+
+    if (!keepActive)
+    {
+      if (tremor_off_count < TREMOR_OFF_CONFIRM_SAMPLES)
+      {
+        tremor_off_count++;
+      }
+    }
+    else
+    {
+      tremor_off_count = 0;
+    }
+
+    if (tremor_off_count >= TREMOR_OFF_CONFIRM_SAMPLES)
+    {
+      tremor_active = 0;
+      tremor_on_count = 0;
+      tremor_off_count = 0;
+      controlValueDebug = 0.0;
+      return;
+    }
   }
+
+  if (!tremor_active)
+  {
+    controlValueDebug = 0.0;
+    return;
+  }
+
+  /*
+   * 僅供除錯觀察。此版本不再依 tremorEstimate 正負逐週期換向，
+   * 真正的馬達方向由 Actuator_StateMachine_Update() 固定決定。
+   */
+  controlValueDebug = -(MOTOR_GAIN * tremorEstimate);
 }
 
 void Read_IMU_TestData(float *gx, float *gy, float *gz)
 {
+  static uint32_t sampleIndex = 0;
+  double phase;
+  float testValue;
 
-  static int testStep = 0;
+  /*
+   * 產生真正的 5 Hz 正弦測試資料。
+   * 測試訊號會自動放到 TREMOR_INPUT_AXIS 所選的軸。
+   */
+  phase = 2.0 * PI_D * TEST_TREMOR_FREQ_HZ *
+          ((double)sampleIndex / CONTROL_SAMPLE_RATE_HZ);
+  testValue = (float)(TEST_TREMOR_AMPLITUDE_DPS * sin(phase));
 
-  if (testStep == 0)
-  {
-    *gx = 80;
-    *gy = 0;
-    *gz = 0;
-  }
-  else if (testStep == 1)
-  {
-    *gx = 10;
-    *gy = 0;
-    *gz = 0;
-  }
-  else if (testStep == 2)
-  {
-    *gx = -80;
-    *gy = 0;
-    *gz = 0;
-  }
-  else
-  {
-    *gx = 0;
-    *gy = 0;
-    *gz = 0;
-  }
+  *gx = 0.0f;
+  *gy = 0.0f;
+  *gz = 0.0f;
 
-  testStep++;
+#if (TREMOR_INPUT_AXIS == TREMOR_AXIS_X)
+  *gx = testValue;
+#elif (TREMOR_INPUT_AXIS == TREMOR_AXIS_Y)
+  *gy = testValue;
+#elif (TREMOR_INPUT_AXIS == TREMOR_AXIS_Z)
+  *gz = testValue;
+#endif
 
-  if (testStep >= 4)
+  sampleIndex++;
+  if (sampleIndex >= (uint32_t)CONTROL_SAMPLE_RATE_HZ)
   {
-    testStep = 0;
+    sampleIndex = 0;
   }
 }
 
@@ -332,7 +841,7 @@ int main(void)
 {
   /* USER CODE BEGIN 1 */
 
-  MotorState motorState = MOTOR_STOP;
+  /* 馬達動作改由 Actuator_StateMachine_Update() 管理。 */
 
   /* USER CODE END 1 */
 /* USER CODE BEGIN Boot_Mode_Sequence_0 */
@@ -396,13 +905,16 @@ int main(void)
   MX_TIM6_Init();
   /* USER CODE BEGIN 2 */
 
-  Motor_Control(MOTOR_STOP);
+  Actuator_StateMachine_Reset();
 
   /* DWT 要在第一次演算法 step 前啟用。 */
   DWT_Init();
 
   /* 保留原本已相容的演算法初始化。 */
   Algorithm_Init();
+
+  /* 初始化新增的 tremor_gate.c 頻帶判斷。 */
+  Bandpass_TremorGate_Init();
 
   /*
    * 初始化原本的 BNO055 驅動。若失敗，不讓程式卡住，
@@ -461,6 +973,8 @@ int main(void)
           {
             imu_ready = 0;
             using_test_data = 1;
+            Tremor_Gate_Reset();
+            Bandpass_TremorGate_Reset();
           }
         }
       }
@@ -474,17 +988,29 @@ int main(void)
         Read_IMU_TestData(&gyroX, &gyroY, &gyroZ);
       }
 
-      /* 演算法邏輯不變：只餵 X 軸，單位為 degree/second。 */
-      motorState = Tremor_Algorithm(gyroX, gyroY, gyroZ);
+      /* 更新單軸 eHWFLC 與原本的頻率/RMS 手抖判斷。 */
+      Tremor_Detector_Update(gyroX, gyroY, gyroZ);
+
+      /*
+       * 將同一個 selectedGyroInputDps 餵入 tremor_gate.c。
+       * 兩套判斷結果會合併成 suppression_start_allowed。
+       */
+      Bandpass_TremorGate_Update(selectedGyroInputDps);
       algo_call_count++;
 
       if (imu_ready && (bno_read_status == HAL_OK))
       {
-        Motor_Control(motorState);
+        /*
+         * 狀態機控制：
+         * 原本判斷與 tremor_gate.c 同時成立 -> 允許開始收線；
+         * 收線後的保持與 1.5 秒放線判斷仍維持原本 tremor_active 流程。
+         */
+        Actuator_StateMachine_Update();
       }
       else
       {
-        Motor_Control(MOTOR_STOP);
+        /* 感測器異常時立即停止並回到待機。 */
+        Actuator_StateMachine_Reset();
       }
     }
 
