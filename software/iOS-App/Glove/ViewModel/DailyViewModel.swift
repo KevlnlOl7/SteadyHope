@@ -33,6 +33,9 @@ class DailyViewModel: ObservableObject {
     /// 是否顯示新增留言 Sheet 視圖
     @Published var showAddNoteSheet = false
 
+    /// 是否僅限照護者查看狀態
+    @Published var isCaregiverOnly: Bool = false
+
     /// 當前所選取欲檢視詳細資訊或刪除的便利貼模型
     @Published var selectedDetailNote: Daily? = nil
 
@@ -102,10 +105,25 @@ class DailyViewModel: ObservableObject {
     }
 
     /// 從遠端伺服器拉取最新便利貼資料，寫入本機 SwiftData 並更新畫面
-    /// - Parameter modelContext: SwiftData 資料庫操作上下文
+    /// - Parameters:
+    ///   - modelContext: SwiftData 資料庫操作上下文
+    ///   - isSilent: 是否採用靜默載入（不觸發全螢幕載入轉圈圈動畫）
     @MainActor
-    func loadAllNotes(modelContext: ModelContext) async {
-        isLoadingData = true
+    func loadAllNotes(modelContext: ModelContext, isSilent: Bool = false) async {
+        if !isSilent {
+            await MainActor.run {
+                self.isLoadingData = true
+            }
+        }
+
+        defer {
+            if !isSilent {
+                Task { @MainActor in
+                    self.isLoadingData = false
+                }
+            }
+        }
+
         do {
             // 從後端獲取最新資料
             let remoteNotes = try await dailyRepo.fetchAllDailies()
@@ -128,8 +146,17 @@ class DailyViewModel: ObservableObject {
             self.notes = remoteNotes
 
         } catch {
-            print("載入便利貼失敗: \(error.localizedDescription)")
-            // 若網路連線失敗，則降級為讀取本機快取資料
+            let errorMsg = error.localizedDescription
+            print("載入便利貼失敗: \(errorMsg)")
+
+            // 若為 401 或登入失效，不載入快取，直接清空資料並返回
+            if errorMsg.contains("401") || errorMsg.contains("已在其他裝置登入") || errorMsg.contains("登入已失效") {
+                self.notes = []
+                isLoadingData = false
+                return
+            }
+
+            // 僅在非 401 錯誤（如網路斷線）時，降級讀取本機快取資料
             let descriptor = FetchDescriptor<Daily>(
                 sortBy: [SortDescriptor(\.date, order: .reverse)]
             )
@@ -157,7 +184,8 @@ class DailyViewModel: ObservableObject {
             date: Date(),
             colorHex: noteColor.toHex() ?? "#FFF0CC",
             sender: currentUserRole,
-            moodName: sheetSelectedMoodName
+            moodName: sheetSelectedMoodName,
+            isCaregiverOnly: isCaregiverOnly
         )
 
         // 同步寫入本機 SwiftData 資料庫
@@ -178,7 +206,8 @@ class DailyViewModel: ObservableObject {
                 date: newNote.date,
                 colorHex: newNote.colorHex,
                 sender: newNote.sender,
-                moodName: newNote.moodName
+                moodName: newNote.moodName,
+                isCaregiverOnly: newNote.isCaregiverOnly
             )
         } catch {
             print("同步便利貼至伺服器失敗: \(error.localizedDescription)")

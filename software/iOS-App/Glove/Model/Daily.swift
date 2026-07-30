@@ -20,6 +20,9 @@ class Daily {
     
     /// 心情狀態名稱（如：開心、平靜、疲憊、不舒服）
     var moodName: String?
+    
+    /// 是否僅限照護者查看狀態
+    var isCaregiverOnly: Bool?
 
     /// 初始化每日貼貼紀錄模型
     /// - Parameters:
@@ -35,7 +38,8 @@ class Daily {
         date: Date = Date(),
         colorHex: String,
         sender: String,
-        moodName: String? = nil
+        moodName: String? = nil,
+        isCaregiverOnly: Bool? = false
     ) {
         self.id = id
         self.content = content
@@ -43,6 +47,7 @@ class Daily {
         self.colorHex = colorHex
         self.sender = sender
         self.moodName = moodName
+        self.isCaregiverOnly = isCaregiverOnly
     }
 }
 

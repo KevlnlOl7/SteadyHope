@@ -18,7 +18,8 @@ class DailyRepository {
         date: Date,
         colorHex: String,
         sender: String,
-        moodName: String?
+        moodName: String?,
+        isCaregiverOnly: Bool?
     ) async throws {
         guard let token = AuthManager.shared.getToken() else {
             throw DailyService.NetworkError.serverError(reason: "認證憑證過期，請重新登入")
@@ -30,7 +31,8 @@ class DailyRepository {
             date: date,
             colorHex: colorHex,
             sender: sender,
-            moodName: moodName
+            moodName: moodName,
+            isCaregiverOnly:isCaregiverOnly
         )
 
         try await service.syncRecord(token: token, record: dto)

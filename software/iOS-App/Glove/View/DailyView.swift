@@ -9,8 +9,14 @@ struct DailyView: View {
     @ObservedObject var loginVM: LoginViewModel
     @Environment(\.modelContext) private var modelContext
 
-    /// 初始化照護看板視圖並配置對應的 ViewModel
-    /// - Parameter loginVM: 包含目前使用者登入狀態與角色權限的 LoginViewModel
+    @State private var selectedDate: Date = Date()
+    @State private var showFullDatePicker: Bool = false
+
+    /// 照護者專用：看板分類過濾（"ALL": 全部留言, "CAREGIVER_ONLY": 僅限家屬）
+    @State private var caregiverBoardFilter: String = "ALL"
+
+    /// 初始化 DailyView
+    /// - Parameter loginVM: 外部傳入之 LoginViewModel 實例
     init(loginVM: LoginViewModel) {
         self.loginVM = loginVM
         _viewModel = StateObject(
@@ -24,36 +30,72 @@ struct DailyView: View {
         GridItem(.flexible(), spacing: 12),
     ]
 
+    /// 判斷當前使用者是否為照護者角色
+    private var isCaregiver: Bool {
+        loginVM.userData?.role == 1
+    }
+
+    /// 依據選取日期篩選之當日心情歷史紀錄
+    private var filteredMoods: [Daily] {
+        viewModel.todaysDailiesWithMood.filter { daily in
+            Calendar.current.isDate(daily.date, inSameDayAs: selectedDate)
+        }
+    }
+
+    /// 便利貼留言看板清單（自動依據使用者權限、日期與選擇分類進行過濾）
+    private var filteredNotes: [Daily] {
+        viewModel.notes.filter { note in
+            // 日期比對篩選
+            let isSameDay = Calendar.current.isDate(
+                note.date,
+                inSameDayAs: selectedDate
+            )
+
+            // 角色權限與可視分類過濾
+            let isAccessible: Bool
+            if isCaregiver {
+                if caregiverBoardFilter == "CAREGIVER_ONLY" {
+                    isAccessible = (note.isCaregiverOnly ?? false)
+                } else {
+                    isAccessible = true
+                }
+            } else {
+                isAccessible = !(note.isCaregiverOnly ?? false)
+            }
+
+            return isSameDay && isAccessible
+        }
+    }
+
     var body: some View {
         ZStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 24) {
+            Color(red: 0.97, green: 0.97, blue: 0.98)
+                .ignoresSafeArea()
+
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 6) {
                     Text("心情留言板")
                         .font(.system(size: 28, weight: .bold))
                         .padding(.horizontal, 12)
                         .padding(.top, 5)
 
-                    // 今日心情歷程區塊
+                    // 週曆元件
+                    compactWeekCalendarSection
+
+                    // 當日心情歷程顯示區塊
                     moodSection
 
                     // 便利貼留言看板區塊
                     boardSection
                 }
-                .padding(.vertical)
+                .padding(.vertical, 12)
             }
-            .onDisappear {
-                viewModel.selectedDetailNote = nil
+            .refreshable {
+                await reloadData(isSilent: true)
             }
-            .background(
-                Color(red: 0.97, green: 0.97, blue: 0.97).ignoresSafeArea()
-            )
             .blur(radius: viewModel.selectedDetailNote != nil ? 4 : 0)
-            .task {
-                // 畫面載入時自動同步伺服器並拉取最新看板留言
-                await viewModel.loadAllNotes(modelContext: modelContext)
-            }
 
-            // 置中放大的便利貼詳細資訊彈窗
+            // 便利貼詳細內容彈窗
             if let note = viewModel.selectedDetailNote {
                 Color.black.opacity(0.25)
                     .ignoresSafeArea()
@@ -78,40 +120,170 @@ struct DailyView: View {
                 modelContext: modelContext
             )
         }
+        .sheet(isPresented: $showFullDatePicker) {
+            VStack {
+                HStack {
+                    Text("選擇日期")
+                        .font(.system(size: 17, weight: .bold))
+                    Spacer()
+                    Button("完成") { showFullDatePicker = false }
+                        .font(.system(size: 16, weight: .semibold))
+                }
+                .padding()
+
+                DatePicker(
+                    "選擇日期",
+                    selection: $selectedDate,
+                    displayedComponents: [.date]
+                )
+                .datePickerStyle(.graphical)
+                .padding(.horizontal)
+
+                Spacer()
+            }
+            .presentationDetents([.height(460)])
+        }
+        .task {
+            await reloadData(isSilent: false)
+
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 15_000_000_000)
+                await reloadData(isSilent: true)
+            }
+        }
     }
 
-    /// 今日心情顯示區塊
-    private var moodSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("今天心情：")
-                .font(.system(size: 18, weight: .bold))
-                .foregroundColor(Color(red: 0.1, green: 0.1, blue: 0.1))
+    /// 週曆區塊（包含年月標題與重新整理按鈕）
+    private var compactWeekCalendarSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(selectedDate.toString(format: "yyyy 年 M 月"))
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundColor(.secondary)
+                    .padding(.leading, 2)
+                Spacer()
+                Button(action: { Task { await reloadData(isSilent: true) } }) {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundColor(.gray)
+                        .padding(8)
+                        .background(Color.white)
+                        .clipShape(Circle())
+                }
+            }
+            HStack(spacing: 6) {
+                let days = currentWeekDays(for: selectedDate)
 
-            if viewModel.todaysDailiesWithMood.isEmpty {
-                Text("今天尚未記錄心情")
+                ForEach(days, id: \.self) { date in
+                    let isSelected = Calendar.current.isDate(
+                        date,
+                        inSameDayAs: selectedDate
+                    )
+                    let isToday = Calendar.current.isDateInToday(date)
+
+                    Button(action: {
+                        withAnimation(.easeInOut(duration: 0.15)) {
+                            selectedDate = date
+                        }
+                    }) {
+                        VStack(spacing: 4) {
+                            Text(weekdayString(for: date))
+                                .font(.system(size: 11))
+                                .foregroundColor(isSelected ? .white : .gray)
+
+                            Text(date.toString(format: "d"))
+                                .font(
+                                    .system(
+                                        size: 16,
+                                        weight: isSelected ? .bold : .semibold
+                                    )
+                                )
+                                .foregroundColor(
+                                    isSelected
+                                        ? .white
+                                        : (isToday
+                                            ? Color(
+                                                red: 0.1,
+                                                green: 0.45,
+                                                blue: 0.85
+                                            ) : .primary)
+                                )
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                        .background(
+                            isSelected
+                                ? Color(red: 0.25, green: 0.52, blue: 0.95)
+                                : Color.white
+                        )
+                        .cornerRadius(12)
+                    }
+                    .buttonStyle(PlainButtonStyle())
+                }
+
+                Button(action: { showFullDatePicker = true }) {
+                    Image(systemName: "calendar")
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundColor(
+                            Color(red: 0.25, green: 0.52, blue: 0.95)
+                        )
+                        .frame(width: 38, height: 50)
+                        .background(
+                            Color(red: 0.25, green: 0.52, blue: 0.95).opacity(
+                                0.1
+                            )
+                        )
+                        .cornerRadius(12)
+                }
+            }
+        }
+        .padding(.horizontal, 16)
+    }
+
+    /// 今日心情紀錄展示區塊
+    private var moodSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text(
+                Calendar.current.isDateInToday(selectedDate)
+                    ? "今天心情：" : "\(selectedDate.toString(format: "MM/dd")) 心情："
+            )
+            .font(.system(size: 18, weight: .bold))
+            .foregroundColor(Color(red: 0.15, green: 0.15, blue: 0.15))
+
+            if filteredMoods.isEmpty {
+                HStack {
+                    Spacer()
+                    Text(
+                        Calendar.current.isDateInToday(selectedDate)
+                            ? "今天尚未記錄心情" : "該日期尚未記錄心情"
+                    )
                     .font(.system(size: 14))
                     .foregroundColor(.gray)
-                    .padding(.vertical, 4)
+                    Spacer()
+                }
+                .padding(.vertical, 16)
             } else {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 12) {
-                        ForEach(viewModel.todaysDailiesWithMood) { daily in
+                        ForEach(filteredMoods) { daily in
                             if let moodName = daily.moodName {
                                 moodItem(daily: daily, moodName: moodName)
                             }
                         }
                     }
+                    .padding(.vertical, 4)
                 }
             }
         }
         .padding(.horizontal)
+        .padding(.vertical, 3)
     }
 
     /// 單一心情圖示項目
     private func moodItem(daily: Daily, moodName: String) -> some View {
-        VStack(spacing: 8) {
-            Text(daily.date.toString(format: "MM/dd HH:mm"))
-                .font(.system(size: 10, weight: .bold))
+        VStack(spacing: 6) {
+            Text(daily.date.toString(format: "HH:mm"))
+                .font(.system(size: 10, weight: .semibold))
                 .foregroundColor(.secondary)
 
             Image(systemName: viewModel.getMoodIcon(for: moodName))
@@ -120,53 +292,70 @@ struct DailyView: View {
             Text(moodName)
                 .font(.system(size: 12, weight: .medium))
         }
-        .frame(width: 85)
+        .frame(width: 72)
         .padding(.vertical, 12)
-        .background(
-            viewModel.getMoodColor(for: moodName).opacity(0.2)
-        )
+        .background(viewModel.getMoodColor(for: moodName).opacity(0.15))
         .foregroundColor(viewModel.getMoodColor(for: moodName))
-        .cornerRadius(16)
+        .cornerRadius(12)
     }
 
     /// 便利貼留言看板區塊
     private var boardSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("留言板")
-                    .font(.system(size: 18, weight: .bold))
-                    .foregroundColor(Color(red: 0.1, green: 0.1, blue: 0.1))
+                Text("留言看板")
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundColor(Color(red: 0.2, green: 0.2, blue: 0.2))
+
                 Spacer()
 
-                Button(action: {
-                    viewModel.showAddNoteSheet = true
-                }) {
+                Button(action: { viewModel.showAddNoteSheet = true }) {
                     HStack(spacing: 4) {
                         Image(systemName: "square.and.pencil")
                         Text("寫便利貼")
                     }
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.system(size: 13, weight: .semibold))
                     .foregroundColor(.white)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 6)
-                    .background(Color(red: 0, green: 0.53, blue: 1))
-                    .cornerRadius(20)
+                    .background(Color(red: 0.25, green: 0.52, blue: 0.95))
+                    .cornerRadius(16)
                 }
+            }
+
+            if isCaregiver {
+                Picker("看板分類", selection: $caregiverBoardFilter) {
+                    Text("全部留言").tag("ALL")
+                    Text("僅限家屬查看").tag("CAREGIVER_ONLY")
+                }
+                .pickerStyle(.segmented)
+                .padding(.bottom, 2)
             }
 
             if viewModel.isLoadingData {
                 HStack {
                     Spacer()
-                    ProgressView("讀取看板中...")
+                    ProgressView()
+                        .padding(.vertical, 30)
                     Spacer()
                 }
-                .padding(.vertical, 40)
+            } else if filteredNotes.isEmpty {
+                VStack(spacing: 6) {
+                    Image(systemName: "doc.text.magnifyingglass")
+                        .font(.system(size: 32))
+                        .foregroundColor(.gray.opacity(0.5))
+                    Text("該日期無留言紀錄")
+                        .font(.system(size: 13))
+                        .foregroundColor(.gray)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 30)
             } else {
                 LazyVGrid(columns: columns, spacing: 12) {
-                    ForEach(viewModel.notes) { note in
+                    ForEach(filteredNotes) { note in
                         DailyNoteCardView(item: note, viewModel: viewModel)
                             .onTapGesture {
-                                withAnimation(.easeInOut(duration: 0.2)) {
+                                withAnimation(.easeInOut(duration: 0.15)) {
                                     viewModel.selectedDetailNote = note
                                 }
                             }
@@ -174,7 +363,35 @@ struct DailyView: View {
                 }
             }
         }
-        .padding(.horizontal)
+        .padding(.horizontal, 16)
+    }
+
+    /// 非同步重新載入留言與心情資料
+    /// - Parameter isSilent: 是否採用靜默更新（不觸發全螢幕 Loading 圖示）
+    private func reloadData(isSilent: Bool = false) async {
+        await viewModel.loadAllNotes(
+            modelContext: modelContext,
+            isSilent: isSilent
+        )
+    }
+
+    /// 取得指定日期所在一週的所有 Date 陣列
+    private func currentWeekDays(for date: Date) -> [Date] {
+        let calendar = Calendar.current
+        guard
+            let weekInterval = calendar.dateInterval(of: .weekOfYear, for: date)
+        else { return [] }
+        return (0..<7).compactMap {
+            calendar.date(byAdding: .day, value: $0, to: weekInterval.start)
+        }
+    }
+
+    /// 轉換 Date 為星期簡寫字串 (例如："週一")
+    private func weekdayString(for date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "zh_Hant_TW")
+        formatter.dateFormat = "EEE"
+        return formatter.string(from: date)
     }
 }
 
@@ -185,13 +402,30 @@ struct DailyNoteCardView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            if let moodName = item.moodName, !moodName.isEmpty {
-                HStack(spacing: 4) {
-                    Image(systemName: viewModel.getMoodIcon(for: moodName))
-                    Text(moodName)
+            HStack {
+                if let moodName = item.moodName, !moodName.isEmpty {
+                    HStack(spacing: 4) {
+                        Image(systemName: viewModel.getMoodIcon(for: moodName))
+                        Text(moodName)
+                    }
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(.secondary)
                 }
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundColor(.secondary)
+
+                Spacer()
+
+                if item.isCaregiverOnly == true {
+                    HStack(spacing: 2) {
+                        Image(systemName: "lock.fill")
+                        Text("家屬")
+                    }
+                    .font(.system(size: 9, weight: .bold))
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 2)
+                    .background(Color.gray.opacity(0.15))
+                    .foregroundColor(.gray)
+                    .cornerRadius(4)
+                }
             }
 
             Text(item.content)
@@ -233,7 +467,7 @@ struct DailyNoteCardView: View {
     }
 }
 
-/// 放大的便利貼卡片詳細資訊彈窗元件（包含刪除按鈕）
+/// 放大的便利貼卡片詳細資訊彈窗元件
 struct DailyNoteDetailPopup: View {
     let item: Daily
     @ObservedObject var viewModel: DailyViewModel
@@ -243,20 +477,32 @@ struct DailyNoteDetailPopup: View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(alignment: .center) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(item.sender)
-                        .font(.system(size: 14, weight: .bold))
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 2)
-                        .background(
-                            item.sender == viewModel.currentUserRole
-                                ? Color.orange.opacity(0.2)
-                                : Color.blue.opacity(0.2)
-                        )
-                        .foregroundColor(
-                            item.sender == viewModel.currentUserRole
-                                ? .orange : .blue
-                        )
-                        .cornerRadius(6)
+                    HStack(spacing: 6) {
+                        Text(item.sender)
+                            .font(.system(size: 14, weight: .bold))
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 2)
+                            .background(
+                                item.sender == viewModel.currentUserRole
+                                    ? Color.orange.opacity(0.2)
+                                    : Color.blue.opacity(0.2)
+                            )
+                            .foregroundColor(
+                                item.sender == viewModel.currentUserRole
+                                    ? .orange : .blue
+                            )
+                            .cornerRadius(6)
+
+                        if item.isCaregiverOnly == true {
+                            Text("僅照護者家屬")
+                                .font(.system(size: 10, weight: .bold))
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Color.gray.opacity(0.2))
+                                .foregroundColor(.gray)
+                                .cornerRadius(4)
+                        }
+                    }
 
                     Text(item.date.toString(format: "MM/dd HH:mm"))
                         .font(.system(size: 12))
@@ -320,7 +566,7 @@ struct DailyNoteDetailPopup: View {
     }
 }
 
-/// 新增留言便利貼的 Sheet 視圖表單
+/// 新增留言便利貼表單視圖
 struct AddDailyNoteSheet: View {
     @ObservedObject var viewModel: DailyViewModel
     @ObservedObject var loginVM: LoginViewModel
@@ -382,6 +628,19 @@ struct AddDailyNoteSheet: View {
                 .listRowInsets(
                     EdgeInsets(top: -10, leading: 4, bottom: 0, trailing: 4)
                 )
+
+                if loginVM.userData?.role == 1 {
+                    Section(header: Text("是否要讓 \(loginVM.partnerName) 看到這則便利貼"))
+                    {
+                        Toggle(isOn: $viewModel.isCaregiverOnly) {
+                            HStack(spacing: 6) {
+                                Image(systemName: "lock.shield")
+                                    .foregroundColor(.blue)
+                                Text("僅限照護者家屬查看")
+                            }
+                        }
+                    }
+                }
 
                 if loginVM.userData?.role == 0 {
                     Section(header: Text("記錄當下心情 (選填)")) {

@@ -8,6 +8,7 @@ struct DailyRequestDTO: Codable {
     let colorHex: String
     let sender: String
     let moodName: String?
+    let isCaregiverOnly: Bool?
 }
 
 /// 用於承接後端回傳 DailyRecord 的 Response 結構 (接收 GET)
@@ -19,4 +20,5 @@ struct DailyRecordResponseDTO: Codable {
     let colorHex: String
     let sender: String
     let moodName: String?
+    let isCaregiverOnly: Bool?
 }
