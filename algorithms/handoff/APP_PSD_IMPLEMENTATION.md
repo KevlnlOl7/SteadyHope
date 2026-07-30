@@ -304,3 +304,21 @@ bin是否乘2、PSD是否除以`fs*sum(w^2)`，以及是否先分軸再相加。
 再用`tremor_noisy_5hz.csv`驗收：主要頻率應為4.75 Hz、4–6 Hz RMS約5.7901 deg/s。
 純2 Hz驗收可取`test_vectors/gating_frequency/gating_02hz.csv`中sequence 100–499的
 400筆tone資料，將Y、Z設為0；此時不得顯示震顫主要頻率。
+
+### 10.1 BLE byte解析驗收
+
+`algorithms/validation/fixtures/ble_5hz_records.bin`是400筆真正的16-byte little-endian
+record，共6400 bytes。App先只做byte解析，確認每筆欄位與
+`ble_5hz_expected.json`一致，再把解析後的三軸資料送進FFT／PSD。產生器是
+`algorithms/validation/ble_packet_reference.py`。
+
+資料品質錯誤案例列在`algorithms/validation/fixtures/app_quality_cases.json`，包含：
+
+- 只有399筆。
+- `sequence`跳號。
+- `sample_tick_ms`不連續。
+- `sensor_valid=0`。
+- 資料完整但訊號太小。
+
+前四種令`data_valid=false`；訊號太小時資料仍完整，所以`data_valid=true`，但
+`frequency_reliable=false`且主要頻率顯示`--`。兩種狀態不可混成同一個錯誤。

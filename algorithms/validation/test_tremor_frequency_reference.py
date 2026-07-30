@@ -73,6 +73,41 @@ class TremorFrequencyReferenceTest(unittest.TestCase):
         self.assertFalse(result["frequency_reliable"])
         self.assertTrue(any("掉包" in reason for reason in result["data_reasons"]))
 
+    def test_insufficient_samples_are_rejected(self):
+        data = make_example_5hz()
+        shortened = {key: values[:-1] for key, values in data.items()}
+        result = analyze_example(shortened)
+
+        self.assertFalse(result["data_valid"])
+        self.assertFalse(result["frequency_reliable"])
+
+    def test_bad_sample_tick_is_rejected(self):
+        data = make_example_5hz()
+        data["sample_tick_ms"][200:] += 20.0
+        result = analyze_example(data)
+
+        self.assertFalse(result["data_valid"])
+        self.assertFalse(result["frequency_reliable"])
+
+    def test_sensor_invalid_is_rejected(self):
+        data = make_example_5hz()
+        data["sensor_valid"][200] = 0
+        result = analyze_example(data)
+
+        self.assertFalse(result["data_valid"])
+        self.assertFalse(result["frequency_reliable"])
+
+    def test_low_signal_is_valid_but_frequency_is_not_reliable(self):
+        data = make_example_5hz()
+        data["gyro_x_dps"][:] = 0.0
+        data["gyro_y_dps"][:] = 0.0
+        data["gyro_z_dps"][:] = 0.0
+        result = analyze_example(data)
+
+        self.assertTrue(result["data_valid"])
+        self.assertFalse(result["frequency_reliable"])
+        self.assertIsNone(result["dominant_frequency_hz"])
+
     def test_nonfinite_sample_is_rejected(self):
         data = make_example_5hz()
         data["gyro_x_dps"][10] = np.nan
