@@ -193,7 +193,7 @@ handoff/
 │   └── README.md
 ├── test_vectors/
 │   ├── gating_frequency/       1～8 Hz CSV、STM32 C陣列與逐筆golden trace
-│   └── gating_robustness/      振幅、混合動作、取樣率、jitter與掉點模擬結果
+│   └── gating_robustness/      振幅、混合動作、取樣率、取樣間隔誤差與掉點模擬結果
 ├── golden/
 │   ├── input.csv              確定性輸入（10 s @ 100 Hz）
 │   ├── golden_bmflc.csv       BMFLC 真值輸出
@@ -216,7 +216,7 @@ handoff/
 
 ## 9. V2 gating 延伸離線模擬
 
-執行下列命令可重產生振幅、2 Hz + 5 Hz 混合訊號、95/100/105 Hz 取樣率、timer jitter
+執行下列命令可重產生振幅、2 Hz + 5 Hz 混合訊號、95/100/105 Hz 取樣率、timer 取樣間隔誤差
 與資料掉點測試：
 
 ```powershell
