@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "generated_by": "algorithms/validation/gating_robustness_sim.py",
+  "nominal_filter_sample_rate_hz": 100.0,
+  "bno055_raw_lsb_per_dps": 16.0,
+  "scope": "Synthetic engineering simulation only; not human or patient data.",
+  "files_and_row_counts": {
+    "amplitude_sweep.csv": 56,
+    "mixed_2hz_5hz_sweep.csv": 40,
+    "sample_rate_sweep.csv": 9,
+    "jitter_sweep.csv": 20,
+    "dropout_sweep.csv": 13
+  }
+}

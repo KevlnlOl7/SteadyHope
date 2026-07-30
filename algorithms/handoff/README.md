@@ -185,13 +185,15 @@ handoff/
 ├── APP_PSD_IMPLEMENTATION.md  ← App從BLE解析到FFT/PSD、RMS及圖表的逐步實作
 ├── REAL_DATA_PROTOCOL.md      ← 實機100 Hz錄製情境、欄位與gating門檻校調
 ├── SUPPRESSION_VALIDATION.md  ← PWM request與第二顆IMU Motor OFF/ON成效驗證
+├── templates/                 ← 離線/實機測試紀錄與版本追蹤空白表格
 ├── src/
 │   ├── bmflc/                  BMFLC C（ARM-safe，純 scalar；含自含 rtwtypes.h）
 │   ├── ehwflc/                 eHWFLC-KF C（ARM-safe，已重產生無 SSE2）
 │   ├── gating/                 V2 雙頻帶 gating C（不依賴 HAL、instance-based）
 │   └── README.md
 ├── test_vectors/
-│   └── gating_frequency/       1～8 Hz CSV、STM32 C陣列與逐筆golden trace
+│   ├── gating_frequency/       1～8 Hz CSV、STM32 C陣列與逐筆golden trace
+│   └── gating_robustness/      振幅、混合動作、取樣率、jitter與掉點模擬結果
 ├── golden/
 │   ├── input.csv              確定性輸入（10 s @ 100 Hz）
 │   ├── golden_bmflc.csv       BMFLC 真值輸出
@@ -211,3 +213,16 @@ handoff/
 - 顫抖帶 4–6 Hz、自主動作 ~2 Hz；BMFLC 的頻帶選擇性就是用來區分兩者。
 - `Copy/demo_c/demo_main.c` 是**另一份手寫 demo，不是交付參考**（內有死碼、且 50 Hz 模式
   仍套 100 Hz 係數）。權威來源是 `.m` 與 Coder 產生的 C。
+
+## 9. V2 gating 延伸離線模擬
+
+執行下列命令可重產生振幅、2 Hz + 5 Hz 混合訊號、95/100/105 Hz 取樣率、timer jitter
+與資料掉點測試：
+
+```powershell
+python algorithms/validation/gating_robustness_sim.py
+python -m unittest discover -s algorithms/validation -p "test_gating_robustness_sim.py"
+```
+
+結果、判讀與已知限制見
+[`test_vectors/gating_robustness/README.md`](test_vectors/gating_robustness/README.md)。這些都是合成資料，不能當成實機抑震率或患者成效。

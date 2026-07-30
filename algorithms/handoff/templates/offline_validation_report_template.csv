@@ -1,0 +1,1 @@
+test_id,test_date,commit_hash,algorithm_version,scenario,input_frequency_hz,input_amplitude_peak_dps,actual_sample_rate_hz,dropout_pattern,dropout_policy,first_enabled_delay_ms,release_delay_ms,enabled_fraction_during_test,pass,notes
