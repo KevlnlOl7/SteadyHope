@@ -12,6 +12,7 @@ from generate_gating_frequency_vectors import (
     SAMPLE_COUNT,
     TONE_SECONDS,
     make_vector,
+    run_reference,
 )
 
 
@@ -35,6 +36,19 @@ class GatingFrequencyVectorTest(unittest.TestCase):
         expected = dict(zip(FREQUENCIES_HZ, EXPECTED_SHOULD_ENABLE, strict=True))
         self.assertEqual([frequency for frequency, enabled in expected.items() if enabled],
                          [4, 5, 6])
+
+    def test_reference_outputs_match_expected_classes(self):
+        vectors = {frequency: make_vector(frequency) for frequency in FREQUENCIES_HZ}
+        traces = run_reference(vectors)
+        expected = dict(zip(FREQUENCIES_HZ, EXPECTED_SHOULD_ENABLE, strict=True))
+
+        for frequency, should_enable in expected.items():
+            enabled = [int(row["enabled"]) for row in traces[frequency]]
+            self.assertEqual(any(enabled), bool(should_enable), frequency)
+            self.assertEqual(enabled[-1], 0, frequency)
+
+    def test_frequency_sweep_is_continuous_one_to_eight_hz(self):
+        self.assertEqual(FREQUENCIES_HZ, tuple(range(1, 9)))
 
 
 if __name__ == "__main__":
