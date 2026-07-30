@@ -88,6 +88,7 @@ static int test_frequency_vectors(void)
         TremorGate gate;
         uint32_t first_enabled = UINT32_MAX;
         uint32_t enabled_during_tone = 0U;
+        uint32_t pointwise_mismatches = 0U;
         uint32_t sample_index;
 
         TremorGate_Init(&gate, NULL);
@@ -98,6 +99,11 @@ static int test_frequency_vectors(void)
                 (double)GATING_TEST_GYRO_X_RAW_LSB[vector_index][sample_index] /
                 GATING_TEST_RAW_LSB_PER_DPS;
             uint8_t enabled = TremorGate_Update(&gate, gyro_dps);
+
+            if (enabled != GATING_TEST_EXPECTED_ENABLED
+                    [vector_index][sample_index]) {
+                pointwise_mismatches++;
+            }
 
             if ((enabled != 0U) && (first_enabled == UINT32_MAX)) {
                 first_enabled = sample_index;
@@ -117,11 +123,16 @@ static int test_frequency_vectors(void)
             printf("%lu ms",
                    (unsigned long)(first_enabled * 10U));
         }
-        printf(", tone enabled = %lu / %u, final = %u\n",
+        printf(", tone enabled = %lu / %u, final = %u, pointwise mismatch = %lu\n",
                (unsigned long)enabled_during_tone,
                (unsigned int)(GATING_TEST_TONE_END_SAMPLE -
                               GATING_TEST_TONE_START_SAMPLE),
-               (unsigned int)gate.enabled);
+               (unsigned int)gate.enabled,
+               (unsigned long)pointwise_mismatches);
+
+        if (pointwise_mismatches != 0U) {
+            pass = 0;
+        }
 
         if (GATING_TEST_EXPECTED_SHOULD_ENABLE[vector_index] != 0U) {
             if ((first_enabled == UINT32_MAX) ||

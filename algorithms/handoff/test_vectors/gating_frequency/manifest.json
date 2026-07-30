@@ -7,6 +7,8 @@
   "tone_seconds": 4,
   "rest_after_seconds": 2,
   "sample_count_per_vector": 700,
+  "expected_trace": "expected_trace.csv",
+  "expected_summary": "expected_results.csv",
   "vectors": [
     {
       "frequency_hz": 1,
@@ -37,6 +39,11 @@
       "frequency_hz": 6,
       "csv": "gating_06hz.csv",
       "expected_should_enable": true
+    },
+    {
+      "frequency_hz": 7,
+      "csv": "gating_07hz.csv",
+      "expected_should_enable": false
     },
     {
       "frequency_hz": 8,

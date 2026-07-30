@@ -5,4 +5,5 @@ frequency_hz,should_enable,first_enabled_ms_from_start,delay_from_tone_start_ms,
 4,1,1670,670,333,0
 5,1,1520,520,348,0
 6,1,1490,490,351,0
+7,0,never,never,0,0
 8,0,never,never,0,0
