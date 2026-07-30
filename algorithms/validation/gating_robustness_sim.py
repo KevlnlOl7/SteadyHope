@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """產生V2 gating的離線robustness simulation結果。
 
-涵蓋振幅、2 Hz自主動作＋5 Hz震顫、實際取樣率偏差、timer jitter與感測器掉拍。
+涵蓋振幅、2 Hz自主動作＋5 Hz震顫、實際取樣率偏差、timer取樣間隔誤差與感測器掉拍。
 所有結果皆為合成訊號工程測試，不是患者資料或實機成效。
 """
 
