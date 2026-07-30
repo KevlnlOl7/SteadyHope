@@ -216,8 +216,12 @@ Python V1的明確保護條件為：三軸合計RMS至少0.20 deg/s、3–7 Hz p
 - `algorithms/validation/fixtures/tremor_5hz_expected.json`
 - `algorithms/validation/fixtures/tremor_noisy_5hz.csv`
 - `algorithms/validation/fixtures/tremor_noisy_5hz_expected.json`
+- `algorithms/validation/fixtures/ble_5hz_records.bin`（400筆16-byte BLE record）
+- `algorithms/validation/fixtures/ble_5hz_expected.json`
+- `algorithms/validation/fixtures/app_quality_cases.json`
+- `algorithms/validation/ble_packet_reference.py`
 
-PNG只在需要報告或除錯時產生，不納入Git；自動測試也寫入系統暫存目錄，執行後
+PNG只在需要報告或除錯時產生，不納入Git；自動測試使用隱藏暫存檔，執行後刪除，
 不會把教學圖留在repo。
 
 執行環境需要 `numpy`；產生 PNG 另需 `Pillow`。
