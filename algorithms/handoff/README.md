@@ -156,8 +156,8 @@ uint32_t cyc = DWT->CYCCNT - t0;   /* 時間(us) = cyc / (SystemCoreClock/1e6) *
 另：把 `golden/input.csv` 存成陣列在板上跑，輸出對 `golden/*.csv` 比對，
 確認 ARM build 也數值一致。
 
-再使用 `test_vectors/gating_frequency/` 的1、2、3、4、5、6、8 Hz固定向量，
-斷開馬達後注入同一個100 Hz tick。1–3與8 Hz應維持`enabled=0`，4–6 Hz應啟動後
+再使用 `test_vectors/gating_frequency/` 的1～8 Hz固定向量，
+斷開馬達後注入同一個100 Hz tick。1–3與7–8 Hz應維持`enabled=0`，4–6 Hz應啟動後
 再於訊號停止時關閉。這是在驗證板上gating，不是以人工手抖取代標準訊號。
 
 ### Stage 3 — 閉迴路抑制（硬體）= 真正回答「演算法有沒有用」
@@ -183,13 +183,15 @@ handoff/
 ├── ACTUATOR_CONTROL.md        ← PWM/P control、N20 頻寬驗證、actuator/第二顆 IMU 選型門檻
 ├── TREMOR_FREQUENCY.md        ← STM32/BLE欄位、FFT/PSD與App主振幅圖定案規格
 ├── APP_PSD_IMPLEMENTATION.md  ← App從BLE解析到FFT/PSD、RMS及圖表的逐步實作
+├── REAL_DATA_PROTOCOL.md      ← 實機100 Hz錄製情境、欄位與gating門檻校調
+├── SUPPRESSION_VALIDATION.md  ← PWM request與第二顆IMU Motor OFF/ON成效驗證
 ├── src/
 │   ├── bmflc/                  BMFLC C（ARM-safe，純 scalar；含自含 rtwtypes.h）
 │   ├── ehwflc/                 eHWFLC-KF C（ARM-safe，已重產生無 SSE2）
 │   ├── gating/                 V2 雙頻帶 gating C（不依賴 HAL、instance-based）
 │   └── README.md
 ├── test_vectors/
-│   └── gating_frequency/       1、2、3、4、5、6、8 Hz CSV與STM32 C陣列
+│   └── gating_frequency/       1～8 Hz CSV、STM32 C陣列與逐筆golden trace
 ├── golden/
 │   ├── input.csv              確定性輸入（10 s @ 100 Hz）
 │   ├── golden_bmflc.csv       BMFLC 真值輸出
@@ -198,7 +200,7 @@ handoff/
 │   └── README.md
 └── test/
     ├── test_equivalence.c     等價性測試（讀 golden、跑 C、印 PASS/FAIL）
-    ├── test_tremor_gate.c     gating基本行為與七組固定頻率向量測試
+    ├── test_tremor_gate.c     gating基本行為與八組固定頻率向量逐筆測試
     ├── build_and_run.sh       PC build（gcc/clang）
     └── build_and_run.bat      PC build（MinGW）
 ```

@@ -142,3 +142,14 @@ actuator/transmission 選型。控制器無法補救物理頻寬不足。
 
 這些資料完成後，才能把 `control_sim.m` 的標稱 `K_act`、`tau_act` 與 delay 換成實測值，
 再決定是否需要 PI/PID、phase compensation 或更換 actuator。
+
+## 8. 可執行的演算法端參考工具
+
+- `algorithms/validation/pwm_control_reference.py`：把`enabled`與`tremorEstimate`映射成
+  duty／方向，包含deadband、saturation、slew limit、反轉先歸零及異常立即停止。
+- `algorithms/handoff/SUPPRESSION_VALIDATION.md`：第二顆IMU的Motor OFF／ON錄製方式。
+- `algorithms/validation/suppression_metrics.py`：計算三軸4–6 Hz TPSR、RMS下降比例與
+  axis transfer警告。
+
+這些是可重現的介面與分析規格；它們不會自動決定N20的安全PWM上限或拉力。安全上限仍
+必須由硬體與機構組在非人體負載下量測後填入。
