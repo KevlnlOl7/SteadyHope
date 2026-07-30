@@ -1,5 +1,10 @@
 import Foundation
 
+/// 定義全域 401 通知名稱
+extension Notification.Name {
+    static let didReceive401Unauthorized = Notification.Name("didReceive401Unauthorized")
+}
+
 class AuthManager {
     static let shared = AuthManager()
 

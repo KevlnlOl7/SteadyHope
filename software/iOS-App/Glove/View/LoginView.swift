@@ -115,5 +115,11 @@ struct LoginView: View {
             .padding()
             .navigationTitle("登入")
         }
+        .alert("登入已失效", isPresented: $loginVM.showSessionExpiredAlert) {
+                Button("確定", role: .cancel) { }
+            } message: {
+                Text(loginVM.sessionExpiredMessage)
+            }
     }
+        
 }

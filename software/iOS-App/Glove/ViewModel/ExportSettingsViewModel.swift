@@ -67,21 +67,6 @@ class ExportSettingsViewModel: ObservableObject {
         self.dataVM = dataVM
     }
 
-    /// 載入與確認連動夥伴資料
-    @MainActor
-    func loadPartnerIfNeeded() async {
-        if loginVM.userData?.role == 1 && loginVM.boundPartner == nil {
-            do {
-                let bondRepo = UserBondRepository()
-                let partner = try await bondRepo.fetchMyBoundPartnerInfo()
-                loginVM.boundPartner = partner
-                loginVM.isLinked = true
-            } catch {
-                print("抓取連動夥伴資料失敗: \(error.localizedDescription)")
-            }
-        }
-    }
-
     /// 撈取相關數據，套用 HTML 樣式範本並繪製 PDF 報告
     @MainActor
     func preparePDFForPreviewAsync() async {

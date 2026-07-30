@@ -58,8 +58,13 @@ struct NavigationBarView: View {
             .navigationTitle("")
             .navigationBarHidden(true)
             .task {
-                // 進入畫面時，自動同步與檢查連線狀態
-                await checkInitialConnectionStatus()
+                await loginVM.loadPartnerIfNeeded()
+                
+                // 進入畫面後，定時同步並檢查家屬綁定連線狀態
+                while !Task.isCancelled {
+                    await checkInitialConnectionStatus()
+                    try? await Task.sleep(nanoseconds: 15_000_000_000)
+                }
             }
         }
     }
@@ -131,16 +136,30 @@ struct NavigationBarView: View {
         let bondRepo = UserBondRepository()
         do {
             let result = try await bondRepo.fetchMyBoundPartnerInfo()
-            // 若成功取得 Email 則代表連線成立
-            loginVM.isLinked = !result.partnerEmail.isEmpty
 
-            // 如果已經成功連接，預設帶到第一個 Tab
-            if loginVM.isLinked {
-                selectedTab = 0
+            await MainActor.run {
+                let newlyLinked = !result.partnerEmail.isEmpty
+
+                // 首度切換為已連線狀態時，自動將選取 Tab 重置至第一個分頁
+                if !loginVM.isLinked && newlyLinked {
+                    selectedTab = 0
+                }
+                loginVM.isLinked = newlyLinked
             }
         } catch {
-            loginVM.isLinked = false
-            showBindReminderAlert = true
+            let errorMsg = error.localizedDescription
+
+            // 若為 401 授權失效等錯誤，不觸發綁定提醒，改由全域廣播處理登出
+            if errorMsg.contains("401") || errorMsg.contains("已在其他裝置登入")
+                || errorMsg.contains("登入已失效")
+            {
+                return
+            }
+
+            await MainActor.run {
+                loginVM.isLinked = false
+                showBindReminderAlert = true
+            }
         }
     }
 }

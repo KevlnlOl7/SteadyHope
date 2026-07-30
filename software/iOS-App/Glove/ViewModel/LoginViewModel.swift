@@ -25,7 +25,30 @@ class LoginViewModel: ObservableObject {
     
     /// 照護者綁定的病患/連動對象詳細資料
     @Published var boundPartner: LinkedPartnerResponseDTO?
+    
+    /// 控制 401 登出提示視窗
+    @Published var showSessionExpiredAlert: Bool = false
+    @Published var sessionExpiredMessage: String = ""
 
+    /// 載入與確認連動夥伴資料
+    @MainActor
+    func loadPartnerIfNeeded() async {
+        // 如果不是照護者 (role != 1)，可以直接 return
+        guard userData?.role == 1 else { return }
+
+        do {
+            let bondRepo = UserBondRepository()
+            let partner = try await bondRepo.fetchMyBoundPartnerInfo()
+
+            self.boundPartner = partner
+            self.isLinked = !partner.partnerEmail.isEmpty
+
+        } catch {
+            print("抓取連動夥伴資料失敗: \(error.localizedDescription)")
+            self.isLinked = false
+        }
+    }
+    
     /// 患者姓名
     var partnerName: String {
         if userData?.role == 1 {
@@ -34,6 +57,35 @@ class LoginViewModel: ObservableObject {
             return userData?.userName ?? "患者"
         }
     }
+    
+    init() {
+            // 全域監聽 401 登出通知
+            NotificationCenter.default.addObserver(
+                forName: .didReceive401Unauthorized,
+                object: nil,
+                queue: .main
+            ) { [weak self] notification in
+                print("[全域攔截] 收到 401 Unauthorized，自動執行登出...")
+                
+                // 取得後端傳來的錯誤訊息，如果沒有就用預設提示
+                let message = notification.userInfo?["message"] as? String ?? "您的帳號已在其他裝置登入，或登入已過期，請重新登入。"
+                
+                DispatchQueue.main.async {
+                    self?.handleUnauthorizedLogout(message: message)
+                }
+            }
+        }
+    
+    /// 處理 401 被踢掉或過期的登出邏輯
+        @MainActor
+        private func handleUnauthorizedLogout(message: String) {
+            // 1. 執行原本的登出邏輯 (清除 Token 與狀態)
+            self.logout()
+            self.isAuthenticated = false
+            // 2. 設定提示訊息並觸發 Alert
+            self.sessionExpiredMessage = message
+            self.showSessionExpiredAlert = true
+        }
     
     /// 執行登入驗證邏輯
     /// - Parameters:

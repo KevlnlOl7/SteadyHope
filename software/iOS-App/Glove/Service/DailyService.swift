@@ -1,12 +1,16 @@
 import Foundation
 
+/// 負責處理日常紀錄（Daily Record）遠端 API 同步、查詢與刪除之服務類別
 class DailyService {
+    /// 靜態單例存取點
     static let shared = DailyService()
+    
     private init() {}
 
+    /// API 基礎路徑
     private let baseURL = "\(APIConfig.baseURL)/daily"
 
-    /// 自訂網路錯誤型態
+    /// 網路連線與資料解析錯誤列舉
     enum NetworkError: LocalizedError {
         case invalidURL
         case noData
@@ -23,11 +27,29 @@ class DailyService {
         }
     }
 
-    /// 同步（新增或修改）每日紀錄卡片至伺服器
+    /// 檢查 HTTP 回應狀態碼是否為 401，若為 401 則發送全域廣播通知並拋出錯誤
+    /// - Parameters:
+    ///   - httpResponse: HTTP URL 回應物件
+    ///   - data: 伺服器回傳之 Data
+    private func checkStatusCode(_ httpResponse: HTTPURLResponse, data: Data) throws {
+        if httpResponse.statusCode == 401 {
+            let reason = parseServerError(data: data, code: 401)
+            
+            DispatchQueue.main.async {
+                NotificationCenter.default.post(
+                    name: .didReceive401Unauthorized,
+                    object: nil,
+                    userInfo: ["message": reason]
+                )
+            }
+            throw NetworkError.serverError(reason: reason)
+        }
+    }
+
+    /// 同步單筆日常紀錄至伺服器
     /// - Parameters:
     ///   - token: 使用者驗證 Token
-    ///   - record: 包含留言內容與卡片資訊的 DailyRequestDTO
-    /// - Throws: NetworkError 網址無效、伺服器錯誤或回應異常
+    ///   - record: 欲同步之 DailyRequestDTO 物件
     func syncRecord(token: String, record: DailyRequestDTO) async throws {
         guard let url = URL(string: "\(baseURL)/sync") else {
             throw NetworkError.invalidURL
@@ -48,16 +70,17 @@ class DailyService {
             throw NetworkError.noData
         }
 
+        try checkStatusCode(httpResponse, data: data)
+
         if httpResponse.statusCode != 200 {
             let reason = parseServerError(data: data, code: httpResponse.statusCode)
             throw NetworkError.serverError(reason: reason)
         }
     }
 
-    /// 獲取看板上所有的每日紀錄卡片
+    /// 取得伺服器內所有的日常歷史紀錄
     /// - Parameter token: 使用者驗證 Token
-    /// - Returns: 解碼後的 DailyRecordResponseDTO 陣列
-    /// - Throws: NetworkError 網址無效、解析失敗或伺服器錯誤
+    /// - Returns: 歷史紀錄陣列
     func getAllRecords(token: String) async throws -> [DailyRecordResponseDTO] {
         guard let url = URL(string: "\(baseURL)/all") else {
             throw NetworkError.invalidURL
@@ -74,6 +97,8 @@ class DailyService {
             throw NetworkError.noData
         }
 
+        try checkStatusCode(httpResponse, data: data)
+
         if httpResponse.statusCode == 200 {
             let decoder = JSONDecoder()
             decoder.dateDecodingStrategy = .iso8601
@@ -88,11 +113,10 @@ class DailyService {
         }
     }
 
-    /// 根據紀錄識別碼刪除伺服器上的每日紀錄卡片
+    /// 刪除指定 ID 之日常紀錄
     /// - Parameters:
     ///   - token: 使用者驗證 Token
-    ///   - recordID: 紀錄之唯一識別碼 (UUID String)
-    /// - Throws: NetworkError 網址無效或伺服器錯誤
+    ///   - recordID: 紀錄之識別碼
     func deleteRecord(token: String, recordID: String) async throws {
         guard let url = URL(string: "\(baseURL)/\(recordID)") else {
             throw NetworkError.invalidURL
@@ -108,7 +132,8 @@ class DailyService {
             throw NetworkError.noData
         }
 
-        // 後端成功處理後回傳 204 No Content
+        try checkStatusCode(httpResponse, data: data)
+
         if httpResponse.statusCode == 204 {
             return
         } else {
@@ -117,7 +142,7 @@ class DailyService {
         }
     }
 
-    /// 解析後端錯誤原因的輔助函式
+    /// 解析伺服器回傳之錯誤訊息 JSON
     /// - Parameters:
     ///   - data: 伺服器回傳的 Data
     ///   - code: HTTP 狀態碼

@@ -43,9 +43,6 @@ struct ExportSettingsView: View {
         } message: {
             Text(viewModel.errorMessage)
         }
-        .task {
-            await viewModel.loadPartnerIfNeeded()
-        }
     }
 
     /// 第一頁視圖區塊：日期與匯出類型選擇
