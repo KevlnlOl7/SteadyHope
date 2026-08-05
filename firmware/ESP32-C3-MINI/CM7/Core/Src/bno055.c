@@ -4,7 +4,7 @@
  *  Created on: Mar 6, 2024
  *      Author: Berat Bayram
  */
-#include "BNO055_STM32.h"
+#include "bno055_stm32.h"
 #include <string.h>
 
 /*!
@@ -119,6 +119,70 @@ void ResetBNO055(void){
 	    } while ((ret != HAL_OK) || (chip_id != BNO055_ID));
 }
 
+
+/**
+  * @brief  Reads the three BNO055 gyroscope axes without converting to float.
+  *
+  * @param  gyro_x_raw Pointer receiving X axis in 1/16 dps.
+  * @param  gyro_y_raw Pointer receiving Y axis in 1/16 dps.
+  * @param  gyro_z_raw Pointer receiving Z axis in 1/16 dps.
+  *
+  * @retval HAL_OK when all six bytes were read successfully.
+  */
+HAL_StatusTypeDef BNO055_ReadGyroRaw(
+    int16_t *gyro_x_raw,
+    int16_t *gyro_y_raw,
+    int16_t *gyro_z_raw
+)
+{
+    uint8_t buffer[6] = {0};
+    HAL_StatusTypeDef status;
+
+    if (
+        gyro_x_raw == NULL ||
+        gyro_y_raw == NULL ||
+        gyro_z_raw == NULL
+    )
+    {
+        return HAL_ERROR;
+    }
+
+    status = HAL_I2C_Mem_Read(
+        &bno_i2c,
+        P_BNO055,
+        BNO_GYRO,
+        I2C_MEMADD_SIZE_8BIT,
+        buffer,
+        sizeof(buffer),
+        5U
+    );
+
+    if (status != HAL_OK)
+    {
+        *gyro_x_raw = 0;
+        *gyro_y_raw = 0;
+        *gyro_z_raw = 0;
+        return status;
+    }
+
+    *gyro_x_raw = (int16_t)(
+        ((uint16_t)buffer[1] << 8) |
+        (uint16_t)buffer[0]
+    );
+
+    *gyro_y_raw = (int16_t)(
+        ((uint16_t)buffer[3] << 8) |
+        (uint16_t)buffer[2]
+    );
+
+    *gyro_z_raw = (int16_t)(
+        ((uint16_t)buffer[5] << 8) |
+        (uint16_t)buffer[4]
+    );
+
+    return HAL_OK;
+}
+
 /*!
  *   @brief  Reads various data measured by BNO055
  *
@@ -169,51 +233,33 @@ void ReadData(BNO055_Sensors_t *sensorData,BNO055_Sensor_Type sensors){
 
 	    if (sensors & SENSOR_GYRO)
 	    {
-	        HAL_StatusTypeDef gyroReadStatus;
+	        int16_t gyroXRaw = 0;
+	        int16_t gyroYRaw = 0;
+	        int16_t gyroZRaw = 0;
 
-	        gyroReadStatus = HAL_I2C_Mem_Read(
-	            &bno_i2c,
-	            P_BNO055,
-	            BNO_GYRO,
-	            I2C_MEMADD_SIZE_8BIT,
-	            buffer,
-	            6,
-	            100
-	        );
+	        HAL_StatusTypeDef gyroReadStatus =
+	            BNO055_ReadGyroRaw(
+	                &gyroXRaw,
+	                &gyroYRaw,
+	                &gyroZRaw
+	            );
 
 	        if (gyroReadStatus == HAL_OK)
 	        {
 	            sensorData->Gyro.X =
-	                ((float)(int16_t)(
-	                    ((uint16_t)buffer[1] << 8) |
-	                    buffer[0]
-	                )) / 16.0f;
+	                (float)gyroXRaw / 16.0f;
 
 	            sensorData->Gyro.Y =
-	                ((float)(int16_t)(
-	                    ((uint16_t)buffer[3] << 8) |
-	                    buffer[2]
-	                )) / 16.0f;
+	                (float)gyroYRaw / 16.0f;
 
 	            sensorData->Gyro.Z =
-	                ((float)(int16_t)(
-	                    ((uint16_t)buffer[5] << 8) |
-	                    buffer[4]
-	                )) / 16.0f;
+	                (float)gyroZRaw / 16.0f;
 	        }
 	        else
 	        {
-	            /*
-	             * 讀取失敗時先歸零。
-	             */
 	            sensorData->Gyro.X = 0.0f;
 	            sensorData->Gyro.Y = 0.0f;
 	            sensorData->Gyro.Z = 0.0f;
-
-	            printf(
-	                "BNO055 gyro read failed: %d\r\n",
-	                gyroReadStatus
-	            );
 	        }
 
 	        memset(buffer, 0, sizeof(buffer));
@@ -369,6 +415,33 @@ void BNO055_Init(BNO055_Init_t Init){
 	 */
 	SelectPage(PAGE_1);
 	SET_Accel_Range(Init.ACC_Range);
+	HAL_Delay(50);
+
+	/*
+	 * Configure gyroscope range and bandwidth while still in CONFIG mode
+	 * and on register page 1.
+	 */
+	if (
+		HAL_I2C_Mem_Write(
+			&bno_i2c,
+			P_BNO055,
+			GYRO_CONFIG_0_ADDR,
+			I2C_MEMADD_SIZE_8BIT,
+			&Init.GYR_Config,
+			1,
+			100
+		) != HAL_OK
+	)
+	{
+		printf("Gyroscope configuration could not be set!\r\n");
+	}
+	else
+	{
+		printf(
+			"Gyroscope configuration set: 0x%02X\r\n",
+			(unsigned int)Init.GYR_Config
+		);
+	}
 	HAL_Delay(50);
 
 	//Set register page number to 0

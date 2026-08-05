@@ -27,13 +27,32 @@
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
+#pragma pack(push, 1)
+typedef struct
+{
+  uint32_t sequence;
+  uint32_t sample_tick_ms;
+  int16_t gyro_x_raw;
+  int16_t gyro_y_raw;
+  int16_t gyro_z_raw;
+  uint8_t sensor_valid;
+  uint8_t motor_enabled;
+} TremorSample_t;
+#pragma pack(pop)
 
+typedef char TremorSample_t_must_be_16_bytes[
+	(sizeof(TremorSample_t) == 16U) ? 1 : -1
+];
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-BNO055_Sensors_t BNO055;	/*!BNO055 data structure definition which hold euler, quaternion, linearaccel, gyro etc. parameters*/
+#define TREMOR_SAMPLE_INTERVAL_MS  (10U)
+#define TREMOR_UART_TIMEOUT_MS     (5U)
+
+BNO055_Sensors_t BNO055;  /* Retained for compatibility with the existing driver. */
 uint8_t OffsetDatas[22];
+
 #ifndef HSEM_ID_0
 #define HSEM_ID_0 (0U) /* HW semaphore 0*/
 #endif
@@ -54,13 +73,24 @@ UART_HandleTypeDef huart1;
 UART_HandleTypeDef huart3;
 
 /* USER CODE BEGIN PV */
-char imuTxBuffer[100];
+volatile HAL_StatusTypeDef imuUartStatus = HAL_OK;
+volatile HAL_StatusTypeDef imuI2cStatus = HAL_OK;
 
-volatile HAL_StatusTypeDef imuUartStatus;
+volatile uint32_t imuSampleCount = 0U;
+volatile uint32_t imuI2cErrorCount = 0U;
+volatile uint32_t imuUartErrorCount = 0U;
+volatile uint32_t imuTimingSlipCount = 0U;
 
-volatile HAL_StatusTypeDef imuI2cStatus;
+/*
+ * Replace this variable with the actual output of tremor_gate.c when that
+ * module is integrated. BLE/UART uses 0 or 1 only.
+ */
+volatile uint8_t motorEnabledForApp = 0U;
 
-volatile uint32_t imuSampleCount = 0;
+static uint32_t tremorSequence = 0U;
+static uint32_t nextSampleTickMs = 0U;
+static uint32_t lastDebugTickMs = 0U;
+static TremorSample_t lastTremorSample = {0};
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -73,6 +103,8 @@ static void MX_USART1_UART_Init(void);
 /* USER CODE BEGIN PFP */
 
 void Sensor_Init(void);
+static void Tremor_SendOneSample(void);
+static void Tremor_PrintStatistics(void);
 
 #ifdef __GNUC__
 #define PUTCHAR_PROTOTYPE int __io_putchar(int ch)
@@ -105,6 +137,13 @@ void Sensor_Init(void)
     ResetBNO055();
 
     BNO055_InitStruct.ACC_Range = Range_16G;
+
+    /*
+     * 2000 dps range and 116 Hz bandwidth. This is suitable for polling
+     * the gyro at 100 Hz while preserving the raw 1/16 dps representation.
+     */
+    BNO055_InitStruct.GYR_Config =
+        GYRO_CONFIG_2000DPS_116HZ;
 
     BNO055_InitStruct.Axis =
         DEFAULT_AXIS_REMAP;
@@ -192,6 +231,102 @@ void Sensor_Init(void)
 
     printf("BNO055 initialization finished\r\n");
 }
+
+static void Tremor_SendOneSample(void)
+{
+    TremorSample_t sample = {0};
+    int16_t gyroXRaw = 0;
+    int16_t gyroYRaw = 0;
+    int16_t gyroZRaw = 0;
+
+    /*
+     * sequence advances for every scheduled sample, including invalid IMU
+     * reads. The App can therefore distinguish an invalid sample from a lost
+     * BLE/UART sample.
+     */
+    sample.sequence = tremorSequence++;
+    sample.sample_tick_ms = HAL_GetTick();
+
+    imuI2cStatus = BNO055_ReadGyroRaw(
+        &gyroXRaw,
+        &gyroYRaw,
+        &gyroZRaw
+    );
+
+    if (imuI2cStatus == HAL_OK)
+    {
+        sample.gyro_x_raw = gyroXRaw;
+        sample.gyro_y_raw = gyroYRaw;
+        sample.gyro_z_raw = gyroZRaw;
+        sample.sensor_valid = 1U;
+    }
+    else
+    {
+        sample.gyro_x_raw = 0;
+        sample.gyro_y_raw = 0;
+        sample.gyro_z_raw = 0;
+        sample.sensor_valid = 0U;
+        imuI2cErrorCount++;
+    }
+
+    sample.motor_enabled =
+        (motorEnabledForApp != 0U) ? 1U : 0U;
+
+    /*
+     * USART1 is the binary data channel to ESP32-C3.
+     * Do not print text/CSV on USART1, otherwise the ESP32 16-byte parser
+     * will lose alignment.
+     */
+    imuUartStatus = HAL_UART_Transmit(
+        &huart1,
+        (uint8_t *)&sample,
+        (uint16_t)sizeof(sample),
+        TREMOR_UART_TIMEOUT_MS
+    );
+
+    if (imuUartStatus != HAL_OK)
+    {
+        imuUartErrorCount++;
+    }
+
+    lastTremorSample = sample;
+    imuSampleCount++;
+}
+
+static void Tremor_PrintStatistics(void)
+{
+    uint32_t nowMs = HAL_GetTick();
+
+    if ((uint32_t)(nowMs - lastDebugTickMs) < 1000U)
+    {
+        return;
+    }
+
+    lastDebugTickMs = nowMs;
+
+    /*
+     * USART3/ST-LINK is the debug channel. Printing only once per second
+     * avoids disturbing the 100 Hz sampling loop.
+     */
+    printf(
+        "Tremor: samples=%lu seq=%lu tick=%lu "
+        "raw=(%d,%d,%d) valid=%u motor=%u "
+        "i2cErr=%lu uartErr=%lu timingSlip=%lu size=%u\r\n",
+        (unsigned long)imuSampleCount,
+        (unsigned long)lastTremorSample.sequence,
+        (unsigned long)lastTremorSample.sample_tick_ms,
+        (int)lastTremorSample.gyro_x_raw,
+        (int)lastTremorSample.gyro_y_raw,
+        (int)lastTremorSample.gyro_z_raw,
+        (unsigned int)lastTremorSample.sensor_valid,
+        (unsigned int)lastTremorSample.motor_enabled,
+        (unsigned long)imuI2cErrorCount,
+        (unsigned long)imuUartErrorCount,
+        (unsigned long)imuTimingSlipCount,
+        (unsigned int)sizeof(TremorSample_t)
+    );
+}
+
 /* USER CODE END 0 */
 
 /**
@@ -257,6 +392,16 @@ Error_Handler();
   MX_USART1_UART_Init();
   /* USER CODE BEGIN 2 */
   Sensor_Init();
+
+  nextSampleTickMs =
+      HAL_GetTick() + TREMOR_SAMPLE_INTERVAL_MS;
+
+  lastDebugTickMs = HAL_GetTick();
+
+  printf(
+      "Tremor binary stream ready: %u bytes/sample, 100 Hz\r\n",
+      (unsigned int)sizeof(TremorSample_t)
+  );
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -265,62 +410,29 @@ Error_Handler();
   while (1)
   {
     /* USER CODE END WHILE */
-	  /*
-	       * 讀取 BNO055 Gyro
-	       */
-	      ReadData(&BNO055, SENSOR_GYRO);
+    uint32_t nowMs = HAL_GetTick();
 
-	      /*
-	       * 改成 milli-DPS 整數格式。
-	       * 不需要啟用 printf 浮點數支援。
-	       *
-	       * 例如：
-	       * 1.250 DPS 會傳送成 1250
-	       */
-	      int32_t gxMilliDps =
-	          (int32_t)(BNO055.Gyro.X * 1000.0f);
+    if ((int32_t)(nowMs - nextSampleTickMs) >= 0)
+    {
+        nextSampleTickMs += TREMOR_SAMPLE_INTERVAL_MS;
 
-	      int32_t gyMilliDps =
-	          (int32_t)(BNO055.Gyro.Y * 1000.0f);
+        Tremor_SendOneSample();
 
-	      int32_t gzMilliDps =
-	          (int32_t)(BNO055.Gyro.Z * 1000.0f);
+        /*
+         * If I2C/UART or another task delayed the loop by at least one full
+         * sample period, skip catching up with a burst and resume from now.
+         */
+        nowMs = HAL_GetTick();
 
-	      int length = snprintf(
-	          imuTxBuffer,
-	          sizeof(imuTxBuffer),
-	          "GYRO,%ld,%ld,%ld\r\n",
-	          (long)gxMilliDps,
-	          (long)gyMilliDps,
-	          (long)gzMilliDps
-	      );
+        if ((int32_t)(nowMs - nextSampleTickMs) >= 0)
+        {
+            imuTimingSlipCount++;
+            nextSampleTickMs =
+                nowMs + TREMOR_SAMPLE_INTERVAL_MS;
+        }
+    }
 
-	      if (
-	          length > 0 &&
-	          length < (int)sizeof(imuTxBuffer)
-	      )
-	      {
-	          /*
-	           * USART1 PB6 傳送到 ESP32
-	           */
-	          imuUartStatus = HAL_UART_Transmit(
-	              &huart1,
-	              (uint8_t *)imuTxBuffer,
-	              (uint16_t)length,
-	              100
-	          );
-	      }
-
-	      imuSampleCount++;
-
-	      printf(
-	          "Gyro milli-DPS: %ld, %ld, %ld\r\n",
-	          (long)gxMilliDps,
-	          (long)gyMilliDps,
-	          (long)gzMilliDps
-	      );
-
-	      HAL_Delay(100);
+    // Tremor_PrintStatistics();
     /* USER CODE BEGIN 3 */
   }
   /* USER CODE END 3 */

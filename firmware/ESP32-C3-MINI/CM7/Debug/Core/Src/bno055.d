@@ -1,4 +1,4 @@
-Core/Src/bno055.o: ../Core/Src/bno055.c ../Core/Inc/BNO055_STM32.h \
+Core/Src/bno055.o: ../Core/Src/bno055.c ../Core/Inc/bno055_stm32.h \
  ../../Drivers/STM32H7xx_HAL_Driver/Inc/stm32h7xx_hal.h \
  ../Core/Inc/stm32h7xx_hal_conf.h \
  ../../Drivers/STM32H7xx_HAL_Driver/Inc/stm32h7xx_hal_rcc.h \
@@ -30,7 +30,7 @@ Core/Src/bno055.o: ../Core/Src/bno055.c ../Core/Inc/BNO055_STM32.h \
  ../../Drivers/STM32H7xx_HAL_Driver/Inc/stm32h7xx_hal_uart.h \
  ../../Drivers/STM32H7xx_HAL_Driver/Inc/stm32h7xx_hal_uart_ex.h
 
-../Core/Inc/BNO055_STM32.h:
+../Core/Inc/bno055_stm32.h:
 
 ../../Drivers/STM32H7xx_HAL_Driver/Inc/stm32h7xx_hal.h:
 

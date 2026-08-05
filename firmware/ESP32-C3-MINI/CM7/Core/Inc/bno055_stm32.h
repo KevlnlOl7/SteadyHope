@@ -206,8 +206,8 @@ extern I2C_HandleTypeDef hi2c4;
 #define INT_MSK_ADDR 				0x0F	/*! */
 #define GYR_Sleep_Config_ADDR 		0x0D	/*! */
 #define ACC_Sleep_Config_ADDR 		0x0C	/*! */
-#define GYRO_CONFIG_1_ADDR 			0x0B	/*! */
-#define GYRO_CONFIG_0_ADDR 			0x0A	/*! */
+#define GYRO_CONFIG_1_ADDR 			0x0B	/*! Gyroscope power mode configuration */
+#define GYRO_CONFIG_0_ADDR 			0x0A	/*! Gyroscope range and bandwidth configuration */
 #define MAG_CONFIG_ADDR 			0x09	/*! */
 #define ACC_CONFIG_ADDR 			0x08	/*! */
 
@@ -293,6 +293,7 @@ typedef struct
 	uint8_t OP_Modes;
 	uint8_t Clock_Source;
 	uint8_t ACC_Range;
+	uint8_t GYR_Config;
 }BNO055_Init_t;
 
 typedef enum{// OPERATION MODES
@@ -344,6 +345,15 @@ typedef enum{// OPERATION MODES
 #define Range_16G 					0x03
 
 /*
+ * GYR_CONFIG_0 register:
+ * bits 2:0 = range, bits 5:3 = bandwidth.
+ */
+#define GYRO_RANGE_2000DPS            0x00U
+#define GYRO_BANDWIDTH_116HZ          (0x02U << 3)
+#define GYRO_CONFIG_2000DPS_116HZ     \
+    (GYRO_RANGE_2000DPS | GYRO_BANDWIDTH_116HZ)
+
+/*
  * BNO055 library function declaration
  */
 void getCalibration(Calib_status_t *calib);
@@ -360,6 +370,11 @@ void BNO055_Axis(uint8_t remap, uint8_t sign);
 void SelectPage(uint8_t page);
 void SET_Accel_Range(uint8_t range);
 void BNO055_Init(BNO055_Init_t Init);
+HAL_StatusTypeDef BNO055_ReadGyroRaw(
+    int16_t *gyro_x_raw,
+    int16_t *gyro_y_raw,
+    int16_t *gyro_z_raw
+);
 void ReadData(BNO055_Sensors_t *sensorData,BNO055_Sensor_Type sensors);
 void Check_Status(BNO_Status_t *result);
 void ResetBNO055(void);
