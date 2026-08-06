@@ -42,6 +42,15 @@ if errorlevel 1 exit /b 1
 if errorlevel 1 exit /b 1
 
 %CC% -O2 -std=c11 -Wall -Wextra ^
+  -I"%SRC%\gating" -I"%ROOT%\test_vectors\gating_amplitude_sweep" ^
+  "%HERE%test_tremor_gate_amplitude_sweep.c" "%SRC%\gating\tremor_gate.c" ^
+  -lm -o "%OUT%\test_tremor_gate_amplitude_sweep.exe"
+if errorlevel 1 exit /b 1
+
+"%OUT%\test_tremor_gate_amplitude_sweep.exe"
+if errorlevel 1 exit /b 1
+
+%CC% -O2 -std=c11 -Wall -Wextra ^
   -I"%SRC%\gating" -I"%ROOT%\test_vectors\gating_mixed_boundary" ^
   "%HERE%test_tremor_gate_mixed_boundary.c" "%SRC%\gating\tremor_gate.c" ^
   -lm -o "%OUT%\test_tremor_gate_mixed_boundary.exe"
