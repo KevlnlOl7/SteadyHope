@@ -195,6 +195,7 @@ handoff/
 ├── test_vectors/
 │   ├── gating_frequency/       1～8 Hz CSV、STM32 C陣列與逐筆golden trace
 │   ├── gating_7hz_boundary/    7 Hz／10、15、20 deg/s板上輸入與逐筆golden
+│   ├── gating_amplitude_sweep/ 1～8 Hz × 7振幅的56組板上輸入與逐筆golden
 │   ├── gating_mixed_boundary/  2 Hz＋5 Hz代表case板上輸入與逐筆golden
 │   └── gating_robustness/      完整振幅、混合、取樣率、jitter與掉點離線摘要
 ├── golden/
@@ -207,6 +208,7 @@ handoff/
     ├── test_equivalence.c     等價性測試（讀 golden、跑 C、印 PASS/FAIL）
     ├── test_tremor_gate.c     gating基本行為與八組固定頻率向量逐筆測試
     ├── test_tremor_gate_7hz_boundary.c   7 Hz三振幅逐筆C/reference
+    ├── test_tremor_gate_amplitude_sweep.c 56組頻率×振幅逐筆C/reference
     ├── test_tremor_gate_mixed_boundary.c 混合訊號逐筆C/reference
     ├── build_and_run.sh       PC build（gcc/clang）
     └── build_and_run.bat      PC build（MinGW）
