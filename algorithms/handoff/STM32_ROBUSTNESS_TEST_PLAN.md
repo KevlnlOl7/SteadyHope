@@ -10,7 +10,7 @@
 | 測試 | 演算法端交付 | STM32尚需完成 |
 |---|---|---|
 | 7 Hz／10、15、20 deg/s | 三組CSV、C header、逐筆golden、C測試均完成 | 注入三組並回傳逐筆log |
-| 1～8 Hz × 2～20 deg/s | 56組單一CSV、C header、逐筆golden、C測試均完成 | 略過已測15 deg/s後注入其餘48組 |
+| 1～8 Hz × 2～20 deg/s | 56組單一CSV、C header、逐筆golden、C測試均完成 | 略過已測的7組15 deg/s後注入其餘49組 |
 | 2 Hz＋5 Hz混合 | 四個代表case的CSV、C header、逐筆golden、C測試均完成 | 注入四組並回傳逐筆log |
 | 95／100／105 Hz | 九組離線摘要完成 | 實際改timer pacing並記錄tick |
 | 取樣jitter | 20組可重現離線模擬完成 | 記錄真實相鄰tick，不用假裝raw陣列等於jitter |
@@ -39,7 +39,7 @@ tremor_envelope,voluntary_envelope,tremor_ratio,enabled
 ## 3. 第二優先：完整頻率×振幅邊界
 
 交付目錄：`test_vectors/gating_amplitude_sweep/`。共56組、39,200筆；上週已完成
-1～6 Hz與8 Hz的15 deg/s，因此板上可略過這八組，補測其餘48組。每組仍要
+1～6 Hz與8 Hz的15 deg/s，因此板上可略過這七組，補測其餘49組。每組仍要
 完整Reset、輸入700筆並回傳摘要，不可把56組連續輸入同一個gate狀態。
 
 `gating_amplitude_sweep_vectors.h`只在一個測試`.c`檔include，因為raw與reference
