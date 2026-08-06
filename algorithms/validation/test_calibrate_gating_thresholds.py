@@ -50,6 +50,13 @@ class CalibrateGatingThresholdsTest(unittest.TestCase):
             results[-1]["balanced_accuracy"],
         )
 
+    def test_unscored_exploratory_rows_are_excluded(self):
+        rows = synthetic_rows()
+        for row in rows[:100]:
+            row["scored"] = 0
+        result = evaluate_config(rows, GateConfig())
+        self.assertEqual(result["scored_sample_count"], len(rows) - 100 - 150)
+
 
 if __name__ == "__main__":
     unittest.main()

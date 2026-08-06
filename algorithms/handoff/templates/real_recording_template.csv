@@ -1,1 +1,1 @@
-session_id,segment_id,activity_label,expected_gate,sequence,sample_tick_ms,gyro_x_raw,gyro_y_raw,gyro_z_raw,gyro_x_dps,gyro_y_dps,gyro_z_dps,tremor_envelope,voluntary_envelope,tremor_ratio,enabled,tremor_estimate,pwm_percent,motor_direction,sensor_valid
+session_id,segment_id,activity_label,expected_gate,scored,sequence,sample_tick_ms,gyro_x_raw,gyro_y_raw,gyro_z_raw,gyro_x_dps,gyro_y_dps,gyro_z_dps,tremor_envelope,voluntary_envelope,tremor_ratio,enabled,tremor_estimate,pwm_percent,motor_direction,sensor_valid
