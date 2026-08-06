@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "sample_rate_hz": 100,
+  "frequency_hz": 7.0,
+  "amplitudes_peak_dps": [
+    10.0,
+    15.0,
+    20.0
+  ],
+  "raw_lsb_per_dps": 16,
+  "rest_before_seconds": 1,
+  "tone_seconds": 4,
+  "rest_after_seconds": 2,
+  "sample_count_per_vector": 700,
+  "scope": "Synthetic algorithm-injection test only; not human tremor data.",
+  "cases": [
+    {
+      "test_case_id": "7hz_10dps",
+      "frequency_hz": 7.0,
+      "amplitude_peak_dps": 10.0,
+      "design_should_enable": 0,
+      "reference_did_enable": 0,
+      "delay_from_tone_start_ms": "never",
+      "enabled_samples_during_400_sample_tone": 0,
+      "enabled_fraction_during_tone": 0.0,
+      "final_enabled": 0
+    },
+    {
+      "test_case_id": "7hz_15dps",
+      "frequency_hz": 7.0,
+      "amplitude_peak_dps": 15.0,
+      "design_should_enable": 0,
+      "reference_did_enable": 0,
+      "delay_from_tone_start_ms": "never",
+      "enabled_samples_during_400_sample_tone": 0,
+      "enabled_fraction_during_tone": 0.0,
+      "final_enabled": 0
+    },
+    {
+      "test_case_id": "7hz_20dps",
+      "frequency_hz": 7.0,
+      "amplitude_peak_dps": 20.0,
+      "design_should_enable": 0,
+      "reference_did_enable": 1,
+      "delay_from_tone_start_ms": 390,
+      "enabled_samples_during_400_sample_tone": 361,
+      "enabled_fraction_during_tone": 0.9025,
+      "final_enabled": 0
+    }
+  ]
+}
