@@ -1,0 +1,14 @@
+plan_id,activity_label,motion_plane,target_frequency_hz,duration_seconds,repetitions,expected_gate,scored,motor_state,operator_instruction,analysis_purpose
+REST,rest,none,,20,3,0,1,off,手臂有支撐且自然放鬆,量測偏移與靜置誤開
+HOLD,posture_hold,selected_axis,,20,3,0,1,off,維持中立姿勢且不主動移動,量測姿勢維持誤開
+VOL1,voluntary_slow,selected_axis,1,20,3,0,1,off,沿選定平面做約1 Hz規律動作,檢查低頻拒絕
+VOL2,voluntary_normal,selected_axis,2,20,3,0,1,off,沿選定平面做約2 Hz規律動作,檢查1至3 Hz自主頻帶
+FAST,voluntary_fast,selected_axis,,20,3,0,1,off,自然快速動作且不刻意維持固定頻率,尋找正常動作誤開
+CUP,cup_hold,selected_axis,,20,3,0,1,off,拿起空塑膠杯並維持姿勢,檢查日常任務誤開
+SIM4,simulated_tremor,selected_axis,4,20,3,1,1,off,依節拍器做小幅規律模擬抖動,工程觸發與延遲
+SIM5,simulated_tremor,selected_axis,5,20,3,1,1,off,依節拍器做小幅規律模擬抖動,工程觸發與延遲
+SIM6,simulated_tremor,selected_axis,6,20,3,1,1,off,依節拍器做小幅規律模擬抖動,工程觸發與延遲
+REON_A,simulated_tremor,selected_axis,5,5,3,1,1,off,5 Hz模擬抖動第一段,檢查首次開啟
+REON_PAUSE,rest,selected_axis,,3,3,0,1,off,完全停止動作,檢查關閉
+REON_B,simulated_tremor,selected_axis,5,5,3,1,1,off,5 Hz模擬抖動第二段,檢查重新啟動
+MIX,mixed,selected_axis,5,20,3,0,0,off,慢速自主動作同時加入快速小幅抖動,探索限制且暫不納入門檻計分

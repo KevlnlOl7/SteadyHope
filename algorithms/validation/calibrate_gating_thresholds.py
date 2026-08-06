@@ -2,6 +2,7 @@
 """用已標註的100 Hz GyroX紀錄離線比較V2 gating門檻。
 
 必要欄位：gyro_x_dps、expected_gate。若有session_id，切換session時會重設gate。
+可選欄位scored=0可保留探索性區段，但不納入分類率計分。
 健康受試者的模擬抖動標籤只能用於工程校調，不是Parkinson's disease臨床標籤。
 """
 
@@ -31,11 +32,19 @@ def read_labeled_csv(path: Path) -> list[dict[str, Any]]:
             try:
                 gyro = float(source["gyro_x_dps"])
                 expected = int(float(source["expected_gate"]))
+                scored = (
+                    int(float(source["scored"]))
+                    if "scored" in fields and source["scored"].strip() != ""
+                    else 1
+                )
                 if not math.isfinite(gyro) or expected not in (0, 1):
                     raise ValueError("gyro必須為有限值，expected_gate只能是0或1")
+                if scored not in (0, 1):
+                    raise ValueError("scored只能是0或1")
                 rows.append({
                     "gyro_x_dps": gyro,
                     "expected_gate": expected,
+                    "scored": scored,
                     "session_id": source.get("session_id", "default") or "default",
                     "segment_id": source.get("segment_id", "") or "",
                 })
@@ -86,7 +95,7 @@ def evaluate_config(
             previous_session = session
         actual.append(gate.update(float(row["gyro_x_dps"])))
 
-    scored = [True] * len(rows)
+    scored = [bool(int(row.get("scored", 1))) for row in rows]
     for index in range(1, len(rows)):
         if sessions[index] == sessions[index - 1] and expected[index] != expected[index - 1]:
             end = min(len(rows), index + transition_grace_samples)
