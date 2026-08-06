@@ -184,6 +184,7 @@ handoff/
 ├── TREMOR_FREQUENCY.md        ← STM32/BLE欄位、FFT/PSD與App主振幅圖定案規格
 ├── APP_PSD_IMPLEMENTATION.md  ← App從BLE解析到FFT/PSD、RMS及圖表的逐步實作
 ├── REAL_DATA_PROTOCOL.md      ← 實機100 Hz錄製情境、欄位與gating門檻校調
+├── STM32_ROBUSTNESS_TEST_PLAN.md ← 7 Hz、混合、timer、jitter與dropout板上交接
 ├── SUPPRESSION_VALIDATION.md  ← PWM request與第二顆IMU Motor OFF/ON成效驗證
 ├── templates/                 ← 離線/實機測試紀錄與版本追蹤空白表格
 ├── src/
@@ -193,7 +194,9 @@ handoff/
 │   └── README.md
 ├── test_vectors/
 │   ├── gating_frequency/       1～8 Hz CSV、STM32 C陣列與逐筆golden trace
-│   └── gating_robustness/      振幅、混合動作、取樣率、取樣間隔誤差與掉點模擬結果
+│   ├── gating_7hz_boundary/    7 Hz／10、15、20 deg/s板上輸入與逐筆golden
+│   ├── gating_mixed_boundary/  2 Hz＋5 Hz代表case板上輸入與逐筆golden
+│   └── gating_robustness/      完整振幅、混合、取樣率、jitter與掉點離線摘要
 ├── golden/
 │   ├── input.csv              確定性輸入（10 s @ 100 Hz）
 │   ├── golden_bmflc.csv       BMFLC 真值輸出
@@ -203,6 +206,8 @@ handoff/
 └── test/
     ├── test_equivalence.c     等價性測試（讀 golden、跑 C、印 PASS/FAIL）
     ├── test_tremor_gate.c     gating基本行為與八組固定頻率向量逐筆測試
+    ├── test_tremor_gate_7hz_boundary.c   7 Hz三振幅逐筆C/reference
+    ├── test_tremor_gate_mixed_boundary.c 混合訊號逐筆C/reference
     ├── build_and_run.sh       PC build（gcc/clang）
     └── build_and_run.bat      PC build（MinGW）
 ```
