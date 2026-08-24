@@ -1,6 +1,6 @@
 # STM32 Gate Upgrade 2026-08-22
 
-這是給瑋哲（Ryan branch `9e51e56bfcaf70ca1c140b3f37e1977935c534e5`，2026-08-18）的 **motor-off gate shadow 驗證包**。
+這是給瑋哲（Ryan branch `70f97bb685e30885544e10e4dc2f677267802cbc`，2026-08-24）的 **motor-off gate shadow 驗證包**。
 
 本包會把舊的 3–8 Hz `tremor_gate.c/.h` 成對換成目前已完成 host 驗證的 hardened V2 gate：
 
@@ -19,10 +19,12 @@
 2. 比對 STM32 與 PC golden trace 是否逐筆一致。
 3. 確認任何 gate 結果都沒有取得馬達控制權。
 
+本包**沒有直接修改 Ryan branch**。所有安裝與 patch 都必須由瑋哲在自己的 exact target worktree 明確執行。
+
 ## 先做這四件事
 
 1. **實體拔除馬達電源或 H-bridge 電源，且不可配戴在人身上。** 軟體設 LOW 不能取代實體斷電。
-2. 確認 Ryan repo HEAD 正好是 `9e51e56bfcaf70ca1c140b3f37e1977935c534e5`。
+2. 確認 Ryan repo HEAD 正好是 `70f97bb685e30885544e10e4dc2f677267802cbc`。
 3. 先執行本包的 PC 測試：
 
    ```powershell
@@ -60,27 +62,35 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install_gate_only.ps1 
 
 ## 套用 motor-off shadow patch
 
+`reference/main.c` 是從 exact Ryan commit `70f97bb685e30885544e10e4dc2f677267802cbc` 的完整 `main.c` 套用下列 patch 後得到的唯讀參考檔。它方便先審查完整結果，但不代表 Ryan branch 已被修改，也不取代 `tremor_gate.c/.h` 的成對安裝。
+
+- 原始 `main.c` Git blob：`97085aea33569fbb2b989187ae2697e60a7565ce`
+- shadow `main.c` Git blob：`468f28802b57b5bd9f1fa7d4d51def4007bc2b7d`
+- `reference/main.c` SHA-256（LF byte snapshot）：`36e753b23820bea390598336c7fd7966ae80647b9974485b3a002e68d393802d`
+
+Windows checkout 可能以 CRLF 儲存工作檔，所以跨平台核對時應使用 `git hash-object --path=firmware/algo/CM7/Core/Src/main.c` 的 clean Git blob；本包驗證另以 LF checkout 確認 reference 與 patch output 的 raw SHA-256 及 bytes 完全相同。
+
 先確認 patch 可套用：
 
 ```powershell
-git -C "C:\path\to\Ryan-SteadyHope" apply --check "C:\path\to\this-package\ryan_9e51_shadow_only.patch"
+git -C "C:\path\to\Ryan-SteadyHope" apply --check "C:\path\to\this-package\ryan_70f97bb_shadow_only.patch"
 ```
 
 通過後才套用：
 
 ```powershell
-git -C "C:\path\to\Ryan-SteadyHope" apply "C:\path\to\this-package\ryan_9e51_shadow_only.patch"
+git -C "C:\path\to\Ryan-SteadyHope" apply "C:\path\to\this-package\ryan_70f97bb_shadow_only.patch"
 ```
 
 這個 patch 會：
 
 - 將 `suppression_start_allowed` 固定為 0。
-- 只讓 fresh、valid 的真實 IMU sample 推進 estimator 與 gate。
+- 只讓 fresh、valid 的真實 IMU sample 推進 estimator 與 gate；內建 5 Hz 僅保留供 debugger 觀察。
 - 任一無效 sample 立刻 reset 舊 detector 與 V2 gate，不再用上一筆資料推進狀態。
 - 每個 control tick 都呼叫 `Actuator_StateMachine_Reset()`。
-- 將 TB6612 的 PWMA 初始值與啟動後狀態都設為 LOW。
+- 將 TB6612 的 PWMA startup level 設為 LOW，且本 patch 沒有任何路徑再把它設回 HIGH。
 
-它不會把 `freqEstimate` 當 gate，也不會讓舊的全速 2 秒 pull/return 取得控制權。`freqEstimate` 在這一階段只可留在 debugger 中，不可寫入 App 的 tremor frequency。
+它不會讓 `freqEstimate`、舊的全速 5 秒 pull/return 或 App 長度調整取得控制權。`freqEstimate` 在這一階段只可留在 debugger 中，不可寫入 App 的 tremor frequency。
 
 ## STM32 21 組邊界測試
 

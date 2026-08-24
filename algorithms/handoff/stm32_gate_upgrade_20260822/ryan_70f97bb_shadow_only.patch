@@ -1,0 +1,133 @@
+diff --git a/firmware/algo/CM7/Core/Src/main.c b/firmware/algo/CM7/Core/Src/main.c
+index 97085ae..468f288 100644
+--- a/firmware/algo/CM7/Core/Src/main.c
++++ b/firmware/algo/CM7/Core/Src/main.c
+@@ -1370,10 +1370,11 @@ void Bandpass_TremorGate_Update(double gyroDps)
+   bandpass_off_count =
+       bandpass_tremor_gate.off_count;
+
+-  suppression_start_allowed =
+-      ((tremor_active != 0U) &&
+-       (bandpass_gate_enabled != 0U))
+-      ? 1U : 0U;
++  /*
++   * 2026-08-24 gate-upgrade Stage A: observation only.
++   * This target build must never grant motor authority.
++   */
++  suppression_start_allowed = 0U;
+ }
+
+ void Tremor_Detector_Update(float gx, float gy, float gz)
+@@ -1628,6 +1629,7 @@ HAL_StatusTypeDef Read_IMU_RealData(
+ int main(void)
+ {
+   /* USER CODE BEGIN 1 */
++  uint8_t fresh_real_imu_sample_valid = 0U;
+
+   /* USER CODE END 1 */
+
+@@ -1889,6 +1891,8 @@ int main(void)
+       control_tick_count++;
+       fakeAppHeartbeat++;
+
++      fresh_real_imu_sample_valid = 0U;
++
+       if (imu_ready != 0U)
+       {
+         bno_read_status =
+@@ -1901,6 +1905,7 @@ int main(void)
+         if (bno_read_status == HAL_OK)
+         {
+           imu_read_ok_count++;
++          fresh_real_imu_sample_valid = 1U;
+           imu_consecutive_error_count = 0U;
+         }
+         else
+@@ -1921,8 +1926,8 @@ int main(void)
+
+       /*
+        * If real BNO055 is unavailable,
+-       * algorithm may still run on internal 5 Hz data.
+-       * Real actuator remains reset below.
++       * keep the internal 5 Hz value for debugger visibility only.
++       * It must not advance either detector or gate.
+        */
+       if (imu_ready == 0U)
+       {
+@@ -1933,34 +1938,36 @@ int main(void)
+         );
+       }
+
+-      Tremor_Detector_Update(
+-          gyroX,
+-          gyroY,
+-          gyroZ
+-      );
+-
+-      Bandpass_TremorGate_Update(
+-          selectedGyroInputDps
+-      );
+-
+-      algo_call_count++;
++      if (fresh_real_imu_sample_valid != 0U)
++      {
++        Tremor_Detector_Update(
++            gyroX,
++            gyroY,
++            gyroZ
++        );
+
+-      Encoder_UpdateLength();
++        Bandpass_TremorGate_Update(
++            selectedGyroInputDps
++        );
+
+-      if ((imu_ready != 0U) &&
+-          (bno_read_status == HAL_OK))
+-      {
+-        Actuator_StateMachine_Update();
++        algo_call_count++;
+       }
+       else
+       {
+-        Actuator_StateMachine_Reset();
++        Tremor_Gate_Reset();
++        Bandpass_TremorGate_Reset();
+       }
+
++      Encoder_UpdateLength();
++
++      /*
++       * Stage A is motor-off shadow only. Reset every control tick so
++       * neither tremor suppression nor App length adjustment can drive.
++       */
++      Actuator_StateMachine_Reset();
++
+       Tremor_TransmitCurrentSample(
+-          ((imu_ready != 0U) &&
+-           (bno_read_status == HAL_OK))
+-          ? 1U : 0U
++          fresh_real_imu_sample_valid
+       );
+     }
+
+@@ -2266,8 +2273,8 @@ static void MX_GPIO_Init(void)
+    * PA6 = AIN2
+    * PA8 = PWMA
+    *
+-   * PWM not used yet.
+-   * PWMA remains HIGH.
++   * Stage A is motor-off shadow only.
++   * PWMA starts and remains LOW.
+    */
+   HAL_GPIO_WritePin(
+       GPIOG,
+@@ -2284,7 +2291,7 @@ static void MX_GPIO_Init(void)
+   HAL_GPIO_WritePin(
+       GPIOA,
+       GPIO_PIN_8,
+-      GPIO_PIN_SET
++      GPIO_PIN_RESET
+   );
+
+   GPIO_InitStruct.Pin = GPIO_PIN_3;

@@ -5,8 +5,11 @@
   "scope": "Hardened V2 gate motor-off shadow and STM32 equivalence test",
   "target": {
     "branch": "Ryan/stm32-motor-control",
-    "commit": "9e51e56bfcaf70ca1c140b3f37e1977935c534e5",
-    "commit_date": "2026-08-18",
+    "commit": "70f97bb685e30885544e10e4dc2f677267802cbc",
+    "commit_date": "2026-08-24",
+    "old_main_git_blob": "97085aea33569fbb2b989187ae2697e60a7565ce",
+    "shadow_main_git_blob": "468f28802b57b5bd9f1fa7d4d51def4007bc2b7d",
+    "reference_main_sha256": "36e753b23820bea390598336c7fd7966ae80647b9974485b3a002e68d393802d",
     "old_gate_c_git_blob": "b170b7f0a8aa2c100f7699fbf967b8f4c250cf31",
     "old_gate_h_git_blob": "2756f76bbd7276bbd9eb12ce56def267de4fa7bb"
   },
@@ -46,9 +49,12 @@
     "fail_closed_smoke": "pass",
     "host_gcc_fanalyzer": "pass",
     "python_compile": "pass",
-    "ryan_patch_apply_check": "pass against exact 9e51e56 source",
-    "installer_dry_run": "pass against detached exact 9e51e56 worktree",
-    "installer_apply_and_hash_check": "pass against detached exact 9e51e56 worktree",
+    "ryan_patch_apply_check": "pass against detached exact 70f97bb source",
+    "reference_main_byte_equivalence": "pass against LF checkout of exact 70f97bb plus patch",
+    "reference_main_git_blob": "468f28802b57b5bd9f1fa7d4d51def4007bc2b7d",
+    "reference_main_sha256": "36e753b23820bea390598336c7fd7966ae80647b9974485b3a002e68d393802d",
+    "installer_dry_run": "pass against detached exact 70f97bb worktree",
+    "installer_apply_and_hash_check": "pass against detached exact 70f97bb worktree",
     "stm32_target_run": "not_run"
   },
   "files": [
@@ -69,18 +75,23 @@
     },
     {
       "path": "install_gate_only.ps1",
-      "bytes": 2936,
-      "sha256": "e0a8be971b1503c865025f4bce5a5d28c1fa215eacbe38106da4bf7b7abda9cc"
+      "bytes": 2939,
+      "sha256": "4b675035badba543c1604f96cd52f2d7da6b557f4159ebb51540baf4de2a6520"
     },
     {
       "path": "QUICK_START_給瑋哲.md",
-      "bytes": 1589,
-      "sha256": "238925c93bc591c993bce39237258c553c6d8a36feef5a4d4036a20eaece975f"
+      "bytes": 2302,
+      "sha256": "b27e37cbdf87632f9258a2eafd6ab24313b2532d954bc865ec4a04bf04ad84a2"
     },
     {
       "path": "README.md",
-      "bytes": 6396,
-      "sha256": "2ab157c513d826e15d1a5488b420e9f05a364512abc63a52748f70a9df58103b"
+      "bytes": 7434,
+      "sha256": "e1d0c89656098b99be9c4868e46ab2233a9afccdd1ca3419ce9f5bd149a97411"
+    },
+    {
+      "path": "reference/main.c",
+      "bytes": 55281,
+      "sha256": "36e753b23820bea390598336c7fd7966ae80647b9974485b3a002e68d393802d"
     },
     {
       "path": "run_host_tests.bat",
@@ -88,9 +99,9 @@
       "sha256": "5cd6eead272aa5e668c47868497b9100ac734828125158e4cc81f8555b96dad6"
     },
     {
-      "path": "ryan_9e51_shadow_only.patch",
-      "bytes": 2874,
-      "sha256": "6010aa74c3aafd882c0ec1253e282fe75b706ac6103b82489cc1b7a3169cc4c3"
+      "path": "ryan_70f97bb_shadow_only.patch",
+      "bytes": 3370,
+      "sha256": "34136664e35eec1a5b45764f8f3d23087334c845737759d4de48a58143f14b92"
     },
     {
       "path": "src/gating/tremor_gate.c",
