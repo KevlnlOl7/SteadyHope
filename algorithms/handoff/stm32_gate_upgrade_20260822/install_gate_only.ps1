@@ -9,7 +9,7 @@ param(
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
-$ExpectedCommit = "9e51e56bfcaf70ca1c140b3f37e1977935c534e5"
+$ExpectedCommit = "70f97bb685e30885544e10e4dc2f677267802cbc"
 $ExpectedOldCBlob = "b170b7f0a8aa2c100f7699fbf967b8f4c250cf31"
 $ExpectedOldHBlob = "2756f76bbd7276bbd9eb12ce56def267de4fa7bb"
 $ExpectedNewCSha256 = "2AE990DCAFE06DB927E9607FC7070EECC9479ED03888C0C28052DAF6FDCCAC81"
@@ -29,7 +29,7 @@ foreach ($Path in @($SourceC, $SourceH, $TargetC, $TargetH)) {
 
 $Head = (& git -C $Root rev-parse HEAD).Trim()
 if ($LASTEXITCODE -ne 0 -or $Head -ne $ExpectedCommit) {
-    throw "Expected Ryan 2026-08-18 commit $ExpectedCommit, found $Head"
+    throw "Expected Ryan 2026-08-24 commit $ExpectedCommit, found $Head"
 }
 
 $RelativeC = "firmware/algo/CM7/Core/Src/tremor_gate.c"
@@ -42,7 +42,7 @@ if ($LASTEXITCODE -ne 0 -or $Dirty) {
 $OldCBlob = (& git -C $Root hash-object -- $TargetC).Trim()
 $OldHBlob = (& git -C $Root hash-object -- $TargetH).Trim()
 if ($OldCBlob -ne $ExpectedOldCBlob -or $OldHBlob -ne $ExpectedOldHBlob) {
-    throw "Target gate files do not match the audited Ryan 8/18 pair."
+    throw "Target gate files do not match the audited Ryan 8/24 pair."
 }
 
 $SourceCSha256 = (Get-FileHash -LiteralPath $SourceC -Algorithm SHA256).Hash
@@ -69,5 +69,5 @@ if ($InstalledCSha256 -ne $ExpectedNewCSha256 -or
 }
 
 Write-Host "Latest hardened 4-6 Hz gate pair installed."
-Write-Host "NEXT: apply ryan_9e51_shadow_only.patch, CubeIDE Clean, then full rebuild."
+Write-Host "NEXT: apply ryan_70f97bb_shadow_only.patch, CubeIDE Clean, then full rebuild."
 Write-Host "Motor/H-bridge power must remain physically disconnected."
