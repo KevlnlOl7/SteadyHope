@@ -1,0 +1,7 @@
+# Preserve the byte-exact STM32 gate handoff package so its SHA-256 manifest
+# remains valid after checkout on Windows or Unix.
+algorithms/handoff/stm32_gate_upgrade_20260822/** -text
+
+# Keep the authoritative gate pair identical across platforms as well.
+algorithms/handoff/src/gating/tremor_gate.c -text
+algorithms/handoff/src/gating/tremor_gate.h -text
