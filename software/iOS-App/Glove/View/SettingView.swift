@@ -3,7 +3,8 @@ import SwiftUI
 struct SettingView: View {
     @ObservedObject var loginVM: LoginViewModel
     @State private var batteryLevel: Int = 80
-    @State private var intensity: Double = 0.5
+    @StateObject private var bleVM = BluetoothViewModel()
+    
     var body: some View {
         ZStack {
             Color(red: 0.97, green: 0.97, blue: 0.97)
@@ -42,7 +43,11 @@ struct SettingView: View {
 
                 // 功能設定列表
                 VStack(spacing: 0) {
-                    DataRow(icon: "bolt.fill", title: "連線狀態", text: "已連線")
+                    DataRow(
+                        icon: bleVM.isConnected ? "bolt.fill" : "bolt.slash.fill",
+                        title: "連線狀態",
+                        text: bleVM.connectionStatusText
+                    )
                 }
                 .background(Color.white)
                 .cornerRadius(15)
@@ -56,12 +61,12 @@ struct SettingView: View {
                         Text("手套運作強度")
                             .font(.system(size: 16, weight: .medium))
                         Spacer()
-                        Text("\(Int(intensity * 100))%")
+                        Text("\(Int(bleVM.intensity * 100))%")
                             .foregroundColor(.blue)
                             .fontWeight(.bold)
                     }
 
-                    Slider(value: $intensity, in: 0...1)
+                    Slider(value: $bleVM.intensity, in: 0...1)
                         .accentColor(.blue)
 
                     HStack {

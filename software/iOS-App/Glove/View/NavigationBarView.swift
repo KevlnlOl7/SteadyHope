@@ -3,9 +3,11 @@ import SwiftUI
 struct NavigationBarView: View {
     @State private var selectedTab: Int = 0
     @State private var showBindReminderAlert: Bool = false
+    @State private var showAIChat: Bool = false
     @ObservedObject var loginVM: LoginViewModel
     @ObservedObject var dataVM: DataViewModel
     @ObservedObject var medVM: MedicationViewModel
+    @ObservedObject var bleVM: BluetoothViewModel
 
     /// 病患端的分頁標籤與圖示設定
     private let patientTabs = [
@@ -54,9 +56,17 @@ struct NavigationBarView: View {
                     .padding(.bottom, 10)
                 }
 
+                aiFloatingButton
+                    .padding(.bottom, 80)
+                    .padding(.trailing, 20)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+
             }
             .navigationTitle("")
             .navigationBarHidden(true)
+            .fullScreenCover(isPresented: $showAIChat) {
+                AIChatView()
+            }
             .task {
                 await loginVM.loadPartnerIfNeeded()
                 
@@ -69,6 +79,42 @@ struct NavigationBarView: View {
         }
     }
 
+        @Environment(\.colorScheme) private var colorScheme
+        @ViewBuilder
+        private var aiFloatingButton: some View {
+            Button {
+                showAIChat = true
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "sparkles")
+                        .font(.title3)
+                    Text("小安")
+                        .font(.subheadline)
+                        .fontWeight(.bold)
+                }
+                .foregroundColor(.white)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 11)
+                .background(
+                    LinearGradient(
+                        colors: [
+                            AppTheme.accent(for: colorScheme),
+                            Color(hex: "F2B278")
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .clipShape(Capsule())
+                .shadow(
+                    color: AppTheme.accent(for: colorScheme).opacity(0.35),
+                    radius: 6,
+                    x: 0,
+                    y: 3
+                )
+            }
+        }
+    
     /// 病患端專用的分頁視圖
     @ViewBuilder
     private var patientPages: some View {
@@ -82,7 +128,7 @@ struct NavigationBarView: View {
             DailyView(loginVM: loginVM)
                 .tag(2)
 
-            DataView(loginVM: loginVM, dataVM: dataVM)
+            DataView(loginVM: loginVM, dataVM: dataVM,bleVM:bleVM)
                 .tag(3)
 
             ProfileView(loginVM: loginVM, medVM: medVM, dataVM: dataVM)
@@ -105,7 +151,7 @@ struct NavigationBarView: View {
                 SettingView(loginVM: loginVM)
                     .tag(1)
 
-                DataView(loginVM: loginVM, dataVM: dataVM)
+                DataView(loginVM: loginVM, dataVM: dataVM,bleVM:bleVM)
                     .tag(2)
 
                 ProfileView(loginVM: loginVM, medVM: medVM, dataVM: dataVM)
