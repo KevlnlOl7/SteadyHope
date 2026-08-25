@@ -2,23 +2,62 @@
 
 ## 0. 這次只驗證什麼
 
-目標是確認 STM32 能在 fail-safe 條件下，以 hardware PWM 驅動 TB6612FNG，並由 encoder 證明方向與相對位移。
+本輪第一個目標是把 0823 canonical `main.c` 正確整合進瑋哲實際編譯的 CM7 專案，確認最新版控制鏈、fresh-sample contract、telemetry 與 ForceSafe。**目前不是直接驅動馬達或上手測試。**
 
-限定條件：`6 V`、限流 bench supply、馬達與線軸固定在夾具、不接手套、不接人體。這不是 12 V 或上手測試，也不是商品設定。
+Canonical 預設：
+
+```c
+#define MOTOR_BENCH_CONFIG_APPROVED 0U
+```
+
+因此不論 gate、runtime arm 或 App 指令為何，控制鏈都必須維持 ForceSafe：`motor_output_active=0`、`STBY=LOW`、`CCR=0`。開機強度也預設為 0%，後續必須由已審核的 App／台架操作明確設定，但強度指令本身不能取得 motor authority。這是刻意的安全鎖，不是待修問題。不得為了讓馬達轉動直接改成 1；只有 mapper、PWM、方向、encoder、行程、timeout 與 fault config 都有最終硬體的台架證據並完成 review 後，才能另建 powered-bench build。
+
+後續若取得明確台架核准，限定條件才是 `6 V`、限流 bench supply、馬達與線軸固定在夾具、不接手套、不接人體。即使台架通過，也不代表可用 12 V、上手、人體測試或商品設定。
 
 若要同時驗證新版 gate，必須先完成
 `../stm32_gate_upgrade_20260822/QUICK_START_給瑋哲.md` 的 motor-off 測試，確認
 14,700 筆 STM32 輸出逐筆比對通過後，才進入本文件的馬達台架步驟。
 
-先在主 repo 的 `algorithms/handoff/` 執行：
+先從 repo root 跑 validator：
 
 ```powershell
-.\test\run_actuator_tests.bat
+python .\algorithms\validation\validate_stm32_motor_main.py
 ```
 
-必須全部 `PASS`，但這只證明 host C 與範例語法，不能取代下面的 CubeIDE build、scope 波形與實際台架測試。
+Validator 通過後，再跑 host tests：
+
+```powershell
+.\algorithms\handoff\test\run_actuator_tests.bat
+```
+
+兩者都必須全部 `PASS`，但這只證明 static contract、host C 與範例語法，不能取代 CubeIDE target build、scope 波形或台架證據。
+
+### 0.1 唯一 canonical `main.c`
+
+最新版只看：
+
+```text
+algorithms/handoff/stm32_motor_control_20260823/reference/main.c
+```
+
+0822 shadow 是 sealed historical evidence；`example/stm32_motor_integration_example.c` 也不是完整 `main.c`。上述 canonical 檔位於演算法交接目錄，**CubeIDE 不會自動編譯它**。瑋哲必須明確將它整合到自己 branch 的：
+
+```text
+firmware/algo/CM7/Core/Src/main.c
+```
+
+若 `.ioc`、peripheral handles 與 canonical 基底完全一致，可保留原檔 Git diff/build ID 後複製覆蓋；若 CubeMX 產生區、timer、UART、I2C 或 pin mapping 不同，只移植 canonical 的 USER CODE 與 pipeline，不可盲目覆蓋產生區。整合後立即對真正要編譯的檔案再跑：
+
+```powershell
+python .\algorithms\validation\validate_stm32_motor_main.py `
+  --main .\firmware\algo\CM7\Core\Src\main.c
+```
+
+這次 validator 也必須通過，才可 Clean Build CM7。
 
 ## 1. 接 VM 前逐項確認
+
+本節是取得 reviewed bench config 與 powered-bench 核准後的條件清單。在 `MOTOR_BENCH_CONFIG_APPROVED=0` 的目前階段，VM 與馬達電源保持實體斷開。
 
 - [ ] 拆掉 `STBY → 3V3`。
 - [ ] 改接 `D4 / PK1 → STBY`，並在 STBY 對 GND 加約 `10 kΩ` pulldown。
@@ -57,6 +96,20 @@
 - 傳輸和檔案輸出放在非 ISR 工作中，並量測 scheduler overrun。
 
 ## 3. 加入 CM7 build
+
+Canonical source 使用 header basename，禁止改成任何人的 `C:/Users/...` 絕對 include。CubeIDE 的 CM7 include search paths 至少加入：
+
+```text
+firmware/algo/CM7/Core/Inc
+algorithms/handoff/src/control
+algorithms/handoff/src/gating
+algorithms/handoff/src/actuator
+algorithms/handoff/src/bmflc
+algorithms/handoff/src/ehwflc
+algorithms/handoff/stm32_motor_control_20260823/src/actuator
+```
+
+另加入實際存放 `BNO055_STM32.h` 的目錄。Include path 只解決 header；下列 portable/adapter `.c` 仍須明確加入 CM7 build。
 
 由 repo 加入：
 
