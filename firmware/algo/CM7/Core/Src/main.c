@@ -2,11 +2,10 @@
 /**
   ******************************************************************************
   * @file           : main.c
-  * @brief          : Tremor suppression + Encoder + UART + Fake App test
+  * @brief          : 0822/0823 hardened tremor gate + Encoder + UART + safe motor integration
   ******************************************************************************
   */
 /* USER CODE END Header */
-
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 
@@ -81,12 +80,59 @@ typedef char TremorSample_t_must_be_16_bytes[
 #define MOTOR_GEAR_RATIO                21.3f
 #define ENCODER_MOTOR_SIGNALS_PER_REV   11U
 
+/*
+ * Legacy logical mapping only. 0823 requires a low-energy bench confirmation
+ * of which AIN1/AIN2 polarity is RELEASE vs TAKE-UP before this may authorize
+ * real motion. Physical output is locked below until that path is integrated.
+ */
 #define MOTOR_PULL_DIRECTION            MOTOR_FORWARD
 #define MOTOR_RELEASE_DIRECTION         MOTOR_REVERSE
 
+/*
+ * Legacy actuator timing is retained only so the old state-machine code still
+ * builds for diagnostics. 0823 motor permission does NOT come from these timers.
+ */
 #define MOTOR_PULL_TIME_MS              5000U
 #define MOTOR_RELEASE_TIME_MS           5000U
 #define MOTOR_REVERSE_DEADTIME_MS       100U
+
+/* 0823 TB6612 hardware mapping */
+#define MOTOR_AIN1_GPIO_PORT            GPIOG
+#define MOTOR_AIN1_PIN                  GPIO_PIN_3   /* D2 / PG3 */
+#define MOTOR_AIN2_GPIO_PORT            GPIOA
+#define MOTOR_AIN2_PIN                  GPIO_PIN_6   /* D3 / PA6 */
+#define MOTOR_STBY_GPIO_PORT            GPIOK
+#define MOTOR_STBY_PIN                  GPIO_PIN_1   /* D4 / PK1 */
+#define MOTOR_PWM_CHANNEL               TIM_CHANNEL_1
+#define MOTOR_PWM_FULL_SCALE_CCR        3200U        /* TIM1 ARR=3199 */
+
+/*
+ * 0823 requires an authoritative SuppressionControl AND MotorPositionGuard
+ * before physical motion is permitted. Those authoritative modules are not in
+ * the supplied main.c/tremor_gate files, therefore this integration remains
+ * fail-safe locked until they are integrated.
+ */
+#define SUPPRESSION_CONTROL_INTEGRATED  0U
+#define MOTOR_POSITION_GUARD_INTEGRATED 0U
+
+/*
+ * Communication integration test mode.
+ *
+ * 1U:
+ *   UART packet field motor_enabled reports the hardened 0822 TremorGate
+ *   decision after the gate health checks pass.
+ *
+ *   This is ONLY a communication/status test. It does NOT bypass the 0823
+ *   SuppressionControl / MotorPositionGuard safety locks, so the physical
+ *   TB6612 motor output remains disabled by the existing motor path.
+ *
+ * 0U:
+ *   UART packet field motor_enabled reports the real commanded motor output
+ *   state (motor_output_active_debug).
+ *
+ * Packet size and UART protocol remain unchanged in both modes.
+ */
+#define COMM_TEST_GATE_AS_MOTOR_STATUS   1U
 
 /* 100 Hz */
 #define CONTROL_SAMPLE_RATE_HZ          100.0
@@ -134,27 +180,26 @@ typedef char TremorSample_t_must_be_16_bytes[
 #define LENGTH_TOLERANCE_MM             0.5f
 
 /*
- * REAL ENCODER CALIBRATION
+ * 0823 calibration safety:
+ * Raw encoder rotation has been bench-verified. The final spool/mechanism mm
+ * calibration has NOT been completed, so mm-based motion must remain locked.
  *
- * Measured:
- *   cable pull-in / shorten 10 mm -> encoder_count changes by -762 counts
+ * Bench diagnostic only:
+ *   output shaft ~= 893 counts / revolution (manual 1-rev trials)
  *
- * Therefore:
- *   762 / 10 = 76.2 counts/mm
- *
- * The measured value is used for cable positioning.
+ * Change ENCODER_COUNTS_PER_MM only after the final spool/mechanism is measured.
  */
-#define ENCODER_COUNTS_PER_MM           76.2f
+#define ENCODER_COUNTS_PER_OUTPUT_REV   893.0f
+#define ENCODER_COUNTS_PER_MM           0.0f
 
 /*
- * Direction:
- *   pull-in / shorten cable -> encoder_count becomes NEGATIVE
+ * Encoder electrical direction already bench-verified:
+ *   right turn -> count increases
+ *   left turn  -> count decreases
  *
- * With ENCODER_LENGTH_SIGN = +1.0f:
- *   encoder_count = -762
- *   currentLengthMm = 60 + (-762 / 76.2) = 50 mm
- *
- * Therefore +1.0f is correct for the user's current wiring/direction.
+ * RELEASE/TAKE-UP physical meaning is intentionally NOT frozen here until the
+ * final spool/mechanism direction is confirmed. ENCODER_LENGTH_SIGN is retained
+ * only for the later mm conversion; mm motion is currently locked at 0 counts/mm.
  */
 #define ENCODER_LENGTH_SIGN             1.0f
 
@@ -173,7 +218,11 @@ typedef char TremorSample_t_must_be_16_bytes[
 #define TREMOR_AXIS_Z                   2U
 #define TREMOR_INPUT_AXIS               TREMOR_AXIS_X
 
-/* Tremor detector */
+/*
+ * Legacy eHWFLC/RMS diagnostics only.
+ * 0823 rule: freqEstimate / tremor_active MUST NOT authorize motor actuation.
+ * The hardened TremorGate output below is the gate used by the motor path.
+ */
 #define TREMOR_FREQ_ON_MIN_HZ           3.0
 #define TREMOR_FREQ_ON_MAX_HZ           8.0
 #define TREMOR_FREQ_OFF_MIN_HZ          2.5
@@ -194,9 +243,18 @@ typedef char TremorSample_t_must_be_16_bytes[
 
 /* USER CODE END PD */
 
+/* Private macro -------------------------------------------------------------*/
+/* USER CODE BEGIN PM */
+
+/* USER CODE END PM */
+
 /* Private variables ---------------------------------------------------------*/
+
 I2C_HandleTypeDef hi2c4;
+
+TIM_HandleTypeDef htim1;
 TIM_HandleTypeDef htim6;
+
 UART_HandleTypeDef huart1;
 UART_HandleTypeDef huart3;
 
@@ -284,8 +342,19 @@ volatile uint8_t fakeAppLastValid = 0U;
 /* -------------------------------------------------------------------------- */
 volatile int32_t encoder_count = 0;
 volatile uint32_t encoder_edge_count = 0U;
+volatile uint32_t encoder_valid_transition_count = 0U;
 volatile uint32_t encoder_invalid_transition_count = 0U;
+volatile uint8_t encoder_invalid_latched = 0U;
+volatile uint8_t encoder_overflow_latched = 0U;
+volatile uint8_t encoder_valid = 0U;
 volatile uint8_t encoder_prev_ab = 0U;
+
+/* 0823: reset/brownout/fault requires an explicit neutral SetZero again. */
+volatile uint8_t encoder_set_zero_request = 0U;
+volatile int32_t encoder_set_zero_status = 0; /* 1=PASS, <0=fail */
+volatile int32_t encoder_zero_count = 0;
+volatile uint8_t encoder_position_zeroed = 0U;
+volatile uint8_t calibration_required = 1U;
 
 volatile float currentLengthMm = INITIAL_CABLE_LENGTH_MM;
 volatile float targetLengthMm = INITIAL_CABLE_LENGTH_MM;
@@ -325,6 +394,21 @@ static TremorGate bandpass_tremor_gate;
 static TremorGateConfig bandpass_tremor_gate_config;
 
 volatile uint8_t bandpass_gate_enabled = 0U;
+
+/* 0823 motor-permission diagnostics; not added to the UART packet. */
+volatile uint8_t gate_enabled_debug = 0U;
+volatile uint8_t hardened_gate_ready = 0U;
+volatile uint8_t hardened_gate_fault = (uint8_t)TREMOR_GATE_FAULT_NONE;
+
+/*
+ * 0823 keeps three concepts separate:
+ *   gate_enabled_debug          = hardened 4-6 Hz gate decision
+ *   actuation_permitted_debug   = authoritative suppression permission
+ *   motor_output_active_debug   = actual commanded bridge/PWM state
+ */
+volatile uint8_t gate_precondition_ok_debug = 0U;
+volatile uint8_t suppression_control_ready_debug = 0U;
+volatile uint8_t actuation_permitted_debug = 0U;
 volatile uint8_t suppression_start_allowed = 0U;
 
 volatile float bandpass_tremor_envelope = 0.0f;
@@ -351,6 +435,15 @@ volatile uint8_t motor_reverse_wait_active = 0U;
 volatile uint32_t motor_stop_started_ms = 0U;
 volatile uint32_t motor_reverse_wait_elapsed_ms = 0U;
 volatile uint32_t motor_reverse_event_count = 0U;
+
+/* 0823 actual output diagnostics */
+volatile HAL_StatusTypeDef motor_pwm_start_status = HAL_ERROR;
+volatile uint32_t motor_applied_ccr = 0U;
+volatile uint8_t motor_applied_ain1 = 0U;
+volatile uint8_t motor_applied_ain2 = 0U;
+volatile uint8_t motor_applied_stby = 0U;
+volatile uint8_t motor_output_active_debug = 0U;
+volatile uint8_t motor_output_guard_ready_debug = 0U;
 
 /* -------------------------------------------------------------------------- */
 /* TIM6 / Debug                                                                */
@@ -405,12 +498,16 @@ static void MX_TIM6_Init(void);
 static void MX_USART1_UART_Init(void);
 static void MX_I2C4_Init(void);
 static void MX_USART3_UART_Init(void);
-
+static void MX_TIM1_Init(void);
 /* USER CODE BEGIN PFP */
 
 void Motor_Control(MotorState state);
 void Motor_Deadtime_Reset(void);
 void Motor_UpdateWithDeadtime(MotorState requestedState);
+static void Motor_ForceSafe(void);
+static void Motor_InitSafePwm(void);
+static uint32_t Motor_DutyPercentToCcr(uint8_t dutyPercent);
+static void Encoder_ProcessSetZeroRequest(void);
 
 void Actuator_StateMachine_Reset(void);
 void Actuator_StateMachine_Update(void);
@@ -480,12 +577,36 @@ static void Tremor_TransmitCurrentSample(uint8_t sensorValid)
    * Keep TremorSample_t at 16 bytes so the ESP32 packet format remains
    * unchanged.
    *
-   * motor_enabled semantics:
-   *   0 = motor output is stopped
-   *   1 = motor output is currently driving FORWARD or REVERSE
+   * COMM_TEST_GATE_AS_MOTOR_STATUS == 1U:
+   *   Communication integration test only.
+   *   0 = hardened TremorGate is not enabled / not healthy
+   *   1 = hardened TremorGate is enabled and healthy
+   *
+   *   IMPORTANT:
+   *   This value means "gate condition satisfied" for the software-team test.
+   *   It does NOT mean the physical motor has actually been energized.
+   *   The 0823 physical motor safety chain remains locked separately.
+   *
+   * COMM_TEST_GATE_AS_MOTOR_STATUS == 0U:
+   *   Production-style status.
+   *   Report the actual commanded hardware motor output state.
    */
+#if (COMM_TEST_GATE_AS_MOTOR_STATUS == 1U)
+
   motorEnabledForApp =
-      (motor_applied_state != MOTOR_STOP) ? 1U : 0U;
+      ((hardened_gate_ready != 0U) &&
+       (hardened_gate_fault == (uint8_t)TREMOR_GATE_FAULT_NONE) &&
+       (gate_enabled_debug != 0U) &&
+       (sensorValid != 0U))
+      ? 1U : 0U;
+
+#else
+
+  motorEnabledForApp =
+      (motor_output_active_debug != 0U)
+      ? 1U : 0U;
+
+#endif
 
   sample.motor_enabled = motorEnabledForApp;
 
@@ -870,9 +991,19 @@ static void Encoder_Init(void)
 {
   encoder_count = 0;
   encoder_edge_count = 0U;
+  encoder_valid_transition_count = 0U;
   encoder_invalid_transition_count = 0U;
+  encoder_invalid_latched = 0U;
+  encoder_overflow_latched = 0U;
 
   encoder_prev_ab = Encoder_ReadAB();
+  encoder_valid = 1U;
+
+  encoder_zero_count = 0;
+  encoder_position_zeroed = 0U;
+  calibration_required = 1U;
+  encoder_set_zero_request = 0U;
+  encoder_set_zero_status = 0;
 
   currentLengthMm = INITIAL_CABLE_LENGTH_MM;
   targetLengthMm = INITIAL_CABLE_LENGTH_MM;
@@ -886,13 +1017,46 @@ static void Encoder_Init(void)
       (ENCODER_COUNTS_PER_MM > 0.0f) ? 1U : 0U;
 }
 
+static void Encoder_ProcessSetZeroRequest(void)
+{
+  if (encoder_set_zero_request == 0U)
+  {
+    return;
+  }
+
+  encoder_set_zero_request = 0U;
+  encoder_set_zero_status = 0;
+
+  /*
+   * 0823 SetZero is accepted only while the bridge is forced safe and the
+   * encoder has no latched invalid/overflow condition.
+   */
+  Motor_ForceSafe();
+
+  if ((encoder_valid == 0U) ||
+      (encoder_invalid_latched != 0U) ||
+      (encoder_overflow_latched != 0U))
+  {
+    encoder_position_zeroed = 0U;
+    calibration_required = 1U;
+    encoder_set_zero_status = -1;
+    return;
+  }
+
+  encoder_zero_count = encoder_count;
+  encoder_position_zeroed = 1U;
+  calibration_required = 0U;
+  encoder_set_zero_status = 1;
+}
+
 static void Encoder_UpdateLength(void)
 {
   int32_t countSnapshot;
 
-  countSnapshot = encoder_count;
+  countSnapshot = encoder_count - encoder_zero_count;
 
-  if (ENCODER_COUNTS_PER_MM > 0.0f)
+  if ((ENCODER_COUNTS_PER_MM > 0.0f) &&
+      (encoder_position_zeroed != 0U))
   {
     currentLengthMm =
         INITIAL_CABLE_LENGTH_MM +
@@ -1003,23 +1167,140 @@ static uint8_t Length_Adjustment_Update(void)
 /* MOTOR                                                                       */
 /* ========================================================================== */
 
+static uint32_t Motor_DutyPercentToCcr(uint8_t dutyPercent)
+{
+  uint32_t ccr;
+
+  if (dutyPercent > 100U)
+  {
+    dutyPercent = 100U;
+  }
+
+  ccr =
+      ((uint32_t)dutyPercent * MOTOR_PWM_FULL_SCALE_CCR) /
+      100U;
+
+  if (ccr >= MOTOR_PWM_FULL_SCALE_CCR)
+  {
+    ccr = MOTOR_PWM_FULL_SCALE_CCR - 1U;
+  }
+
+  return ccr;
+}
+
+static void Motor_ForceSafe(void)
+{
+  /*
+   * This may also be called from Error_Handler before all peripherals have
+   * finished initialization, so make the GPIO writes self-contained and touch
+   * TIM1 only after htim1.Instance has been assigned.
+   */
+  __HAL_RCC_GPIOA_CLK_ENABLE();
+  __HAL_RCC_GPIOG_CLK_ENABLE();
+  __HAL_RCC_GPIOK_CLK_ENABLE();
+
+  /* 0823 ForceSafe ordering: STBY low, PWM zero, direction inputs low. */
+  HAL_GPIO_WritePin(MOTOR_STBY_GPIO_PORT, MOTOR_STBY_PIN, GPIO_PIN_RESET);
+
+  if (htim1.Instance == TIM1)
+  {
+    __HAL_TIM_SET_COMPARE(&htim1, MOTOR_PWM_CHANNEL, 0U);
+  }
+
+  HAL_GPIO_WritePin(MOTOR_AIN1_GPIO_PORT, MOTOR_AIN1_PIN, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(MOTOR_AIN2_GPIO_PORT, MOTOR_AIN2_PIN, GPIO_PIN_RESET);
+
+  motor_applied_ccr = 0U;
+  motor_applied_ain1 = 0U;
+  motor_applied_ain2 = 0U;
+  motor_applied_stby = 0U;
+  motor_output_active_debug = 0U;
+  motor_applied_state = MOTOR_STOP;
+}
+
+static void Motor_InitSafePwm(void)
+{
+  Motor_ForceSafe();
+
+  /*
+   * TIM1 is the 20 kHz carrier. Starting the channel with CCR=0 is safe and
+   * allows later updates without software-generated PWM.
+   */
+  motor_pwm_start_status =
+      HAL_TIM_PWM_Start(&htim1, MOTOR_PWM_CHANNEL);
+
+  __HAL_TIM_SET_COMPARE(&htim1, MOTOR_PWM_CHANNEL, 0U);
+  Motor_ForceSafe();
+}
+
 void Motor_Control(MotorState state)
 {
+  uint32_t ccr;
+
+  /*
+   * 0823 authoritative motion chain:
+   * hardened gate -> SuppressionControl -> PositionGuard -> TB6612 output.
+   *
+   * This supplied project does not yet contain the authoritative
+   * SuppressionControl/PositionGuard integration, so physical output remains
+   * fail-safe locked. This prevents a gate result alone from energizing the
+   * bridge.
+   */
+  suppression_control_ready_debug =
+      (SUPPRESSION_CONTROL_INTEGRATED != 0U) ? 1U : 0U;
+
+  motor_output_guard_ready_debug =
+      (MOTOR_POSITION_GUARD_INTEGRATED != 0U) ? 1U : 0U;
+
+  if ((state == MOTOR_STOP) ||
+      (actuation_permitted_debug == 0U) ||
+      (suppression_control_ready_debug == 0U) ||
+      (motor_output_guard_ready_debug == 0U) ||
+      (calibration_required != 0U) ||
+      (encoder_position_zeroed == 0U) ||
+      (encoder_valid == 0U) ||
+      (encoder_invalid_latched != 0U) ||
+      (encoder_overflow_latched != 0U) ||
+      (motor_pwm_start_status != HAL_OK))
+  {
+    Motor_ForceSafe();
+    return;
+  }
+
+  ccr = Motor_DutyPercentToCcr(motorIntensityPercent);
+
+  if (ccr == 0U)
+  {
+    Motor_ForceSafe();
+    return;
+  }
+
   if (state == MOTOR_FORWARD)
   {
-    HAL_GPIO_WritePin(GPIOG, GPIO_PIN_3, GPIO_PIN_SET);
-    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_6, GPIO_PIN_RESET);
+    HAL_GPIO_WritePin(MOTOR_AIN1_GPIO_PORT, MOTOR_AIN1_PIN, GPIO_PIN_SET);
+    HAL_GPIO_WritePin(MOTOR_AIN2_GPIO_PORT, MOTOR_AIN2_PIN, GPIO_PIN_RESET);
+    motor_applied_ain1 = 1U;
+    motor_applied_ain2 = 0U;
   }
   else if (state == MOTOR_REVERSE)
   {
-    HAL_GPIO_WritePin(GPIOG, GPIO_PIN_3, GPIO_PIN_RESET);
-    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_6, GPIO_PIN_SET);
+    HAL_GPIO_WritePin(MOTOR_AIN1_GPIO_PORT, MOTOR_AIN1_PIN, GPIO_PIN_RESET);
+    HAL_GPIO_WritePin(MOTOR_AIN2_GPIO_PORT, MOTOR_AIN2_PIN, GPIO_PIN_SET);
+    motor_applied_ain1 = 0U;
+    motor_applied_ain2 = 1U;
   }
   else
   {
-    HAL_GPIO_WritePin(GPIOG, GPIO_PIN_3, GPIO_PIN_RESET);
-    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_6, GPIO_PIN_RESET);
+    Motor_ForceSafe();
+    return;
   }
+
+  __HAL_TIM_SET_COMPARE(&htim1, MOTOR_PWM_CHANNEL, ccr);
+  HAL_GPIO_WritePin(MOTOR_STBY_GPIO_PORT, MOTOR_STBY_PIN, GPIO_PIN_SET);
+
+  motor_applied_ccr = ccr;
+  motor_applied_stby = 1U;
+  motor_output_active_debug = 1U;
 }
 
 void Motor_Deadtime_Reset(void)
@@ -1090,8 +1371,17 @@ void Motor_UpdateWithDeadtime(MotorState requestedState)
   {
     Motor_Control(requestedState);
 
-    motor_applied_state = requestedState;
-    motor_last_drive_direction = requestedState;
+    if (motor_output_active_debug != 0U)
+    {
+      motor_applied_state = requestedState;
+      motor_last_drive_direction = requestedState;
+    }
+    else
+    {
+      motor_applied_state = MOTOR_STOP;
+      motor_last_drive_direction = MOTOR_STOP;
+    }
+
     motor_pending_direction = MOTOR_STOP;
 
     motor_reverse_wait_active = 0U;
@@ -1128,8 +1418,17 @@ void Motor_UpdateWithDeadtime(MotorState requestedState)
   {
     Motor_Control(requestedState);
 
-    motor_applied_state = requestedState;
-    motor_last_drive_direction = requestedState;
+    if (motor_output_active_debug != 0U)
+    {
+      motor_applied_state = requestedState;
+      motor_last_drive_direction = requestedState;
+    }
+    else
+    {
+      motor_applied_state = MOTOR_STOP;
+      motor_last_drive_direction = MOTOR_STOP;
+    }
+
     motor_pending_direction = MOTOR_STOP;
 
     motor_reverse_wait_active = 0U;
@@ -1232,7 +1531,11 @@ void Actuator_StateMachine_Update(void)
        * If tremor disappeared, finish normal RETURNING first.
        * Pending App adjustment is kept and will run in IDLE.
        */
-      if (tremor_active == 0U)
+      /*
+       * 0823: legacy tremor_active / freqEstimate are diagnostics only.
+       * Leave HOLDING when the hardened gate-level permission disappears.
+       */
+      if (suppression_start_allowed == 0U)
       {
         if (lengthAdjustPending != 0U)
         {
@@ -1337,6 +1640,13 @@ void Bandpass_TremorGate_Reset(void)
   TremorGate_Reset(&bandpass_tremor_gate);
 
   bandpass_gate_enabled = 0U;
+  gate_enabled_debug = 0U;
+  hardened_gate_ready = 0U;
+  hardened_gate_fault = (uint8_t)TREMOR_GATE_FAULT_NONE;
+  gate_precondition_ok_debug = 0U;
+  suppression_control_ready_debug =
+      (SUPPRESSION_CONTROL_INTEGRATED != 0U) ? 1U : 0U;
+  actuation_permitted_debug = 0U;
   suppression_start_allowed = 0U;
 
   bandpass_tremor_envelope = 0.0f;
@@ -1370,10 +1680,37 @@ void Bandpass_TremorGate_Update(double gyroDps)
   bandpass_off_count =
       bandpass_tremor_gate.off_count;
 
-  suppression_start_allowed =
-      ((tremor_active != 0U) &&
-       (bandpass_gate_enabled != 0U))
+  /*
+   * 0823 motor-start condition at the gate layer:
+   *   - hardened TremorGate must be healthy
+   *   - hardened TremorGate must be enabled
+   *   - eHWFLC freqEstimate / tremor_active do not authorize the motor
+   *
+   * Full 0823 final integration requires the authoritative SuppressionControl
+   * output and MotorPositionGuard before physical motion is permitted.
+   */
+  hardened_gate_ready = TremorGate_IsReady(&bandpass_tremor_gate);
+  hardened_gate_fault = bandpass_tremor_gate.last_fault;
+  gate_enabled_debug = bandpass_gate_enabled;
+
+  gate_precondition_ok_debug =
+      ((hardened_gate_ready != 0U) &&
+       (hardened_gate_fault == (uint8_t)TREMOR_GATE_FAULT_NONE) &&
+       (gate_enabled_debug != 0U))
       ? 1U : 0U;
+
+  /*
+   * 0823 explicitly separates gate_enabled from actuation_permitted.
+   * Do NOT promote the gate directly to motor permission.
+   *
+   * The authoritative SuppressionControl source/API was not supplied, so the
+   * only compliant fail-safe value here is 0 until that module is integrated.
+   */
+  suppression_control_ready_debug =
+      (SUPPRESSION_CONTROL_INTEGRATED != 0U) ? 1U : 0U;
+
+  actuation_permitted_debug = 0U;
+  suppression_start_allowed = 0U;
 }
 
 void Tremor_Detector_Update(float gx, float gy, float gz)
@@ -1630,7 +1967,6 @@ int main(void)
   /* USER CODE BEGIN 1 */
 
   /* USER CODE END 1 */
-
 /* USER CODE BEGIN Boot_Mode_Sequence_0 */
   int32_t timeout;
 /* USER CODE END Boot_Mode_Sequence_0 */
@@ -1648,11 +1984,17 @@ int main(void)
     Error_Handler();
   }
 /* USER CODE END Boot_Mode_Sequence_1 */
+  /* MCU Configuration--------------------------------------------------------*/
 
+  /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
   HAL_Init();
 
-  SystemClock_Config();
+  /* USER CODE BEGIN Init */
 
+  /* USER CODE END Init */
+
+  /* Configure the system clock */
+  SystemClock_Config();
 /* USER CODE BEGIN Boot_Mode_Sequence_2 */
 
   __HAL_RCC_HSEM_CLK_ENABLE();
@@ -1675,14 +2017,21 @@ int main(void)
 
 /* USER CODE END Boot_Mode_Sequence_2 */
 
-  /* Initialize peripherals */
+  /* USER CODE BEGIN SysInit */
+
+  /* USER CODE END SysInit */
+
+  /* Initialize all configured peripherals */
   MX_GPIO_Init();
   MX_TIM6_Init();
   MX_USART1_UART_Init();
   MX_I2C4_Init();
   MX_USART3_UART_Init();
-
+  MX_TIM1_Init();
   /* USER CODE BEGIN 2 */
+
+  /* 0823 boot-safe motor state before any control logic is allowed to run. */
+  Motor_InitSafePwm();
 
   Encoder_Init();
 
@@ -1881,6 +2230,7 @@ int main(void)
      * this function processes the request once and clears trigger back to 0.
      */
     FakeApp_Process();
+    Encoder_ProcessSetZeroRequest();
 
     if (tick_flag != 0U)
     {
@@ -1915,6 +2265,7 @@ int main(void)
 
             Tremor_Gate_Reset();
             Bandpass_TremorGate_Reset();
+            Motor_ForceSafe();
           }
         }
       }
@@ -1947,14 +2298,22 @@ int main(void)
 
       Encoder_UpdateLength();
 
+      /*
+       * 0823: fake/test IMU data may exercise algorithms, but may never drive
+       * the real actuator. Also, because authoritative SuppressionControl and
+       * PositionGuard are not yet integrated, the physical output remains safe.
+       */
       if ((imu_ready != 0U) &&
-          (bno_read_status == HAL_OK))
+          (bno_read_status == HAL_OK) &&
+          (suppression_control_ready_debug != 0U) &&
+          (motor_output_guard_ready_debug != 0U))
       {
         Actuator_StateMachine_Update();
       }
       else
       {
         Actuator_StateMachine_Reset();
+        Motor_ForceSafe();
       }
 
       Tremor_TransmitCurrentSample(
@@ -1981,95 +2340,52 @@ void SystemClock_Config(void)
   RCC_OscInitTypeDef RCC_OscInitStruct = {0};
   RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
 
-  HAL_PWREx_ConfigSupply(
-      PWR_DIRECT_SMPS_SUPPLY
-  );
+  /** Supply configuration update enable
+  */
+  HAL_PWREx_ConfigSupply(PWR_DIRECT_SMPS_SUPPLY);
+  /** Configure the main internal regulator output voltage
+  */
+  __HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE2);
 
-  __HAL_PWR_VOLTAGESCALING_CONFIG(
-      PWR_REGULATOR_VOLTAGE_SCALE2
-  );
-
-  while (!__HAL_PWR_GET_FLAG(PWR_FLAG_VOSRDY))
-  {
-  }
-
-  __HAL_RCC_PLL_PLLSOURCE_CONFIG(
-      RCC_PLLSOURCE_HSE
-  );
-
-  RCC_OscInitStruct.OscillatorType =
-      RCC_OSCILLATORTYPE_HSI |
-      RCC_OSCILLATORTYPE_HSE;
-
-  RCC_OscInitStruct.HSEState =
-      RCC_HSE_BYPASS;
-
-  RCC_OscInitStruct.HSIState =
-      RCC_HSI_DIV1;
-
-  RCC_OscInitStruct.HSICalibrationValue =
-      RCC_HSICALIBRATION_DEFAULT;
-
-  RCC_OscInitStruct.PLL.PLLState =
-      RCC_PLL_ON;
-
-  RCC_OscInitStruct.PLL.PLLSource =
-      RCC_PLLSOURCE_HSE;
-
+  while(!__HAL_PWR_GET_FLAG(PWR_FLAG_VOSRDY)) {}
+  /** Macro to configure the PLL clock source
+  */
+  __HAL_RCC_PLL_PLLSOURCE_CONFIG(RCC_PLLSOURCE_HSE);
+  /** Initializes the RCC Oscillators according to the specified parameters
+  * in the RCC_OscInitTypeDef structure.
+  */
+  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI|RCC_OSCILLATORTYPE_HSE;
+  RCC_OscInitStruct.HSEState = RCC_HSE_BYPASS;
+  RCC_OscInitStruct.HSIState = RCC_HSI_DIV1;
+  RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
+  RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
+  RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSE;
   RCC_OscInitStruct.PLL.PLLM = 23;
   RCC_OscInitStruct.PLL.PLLN = 177;
   RCC_OscInitStruct.PLL.PLLP = 2;
   RCC_OscInitStruct.PLL.PLLQ = 4;
   RCC_OscInitStruct.PLL.PLLR = 4;
-
-  RCC_OscInitStruct.PLL.PLLRGE =
-      RCC_PLL1VCIRANGE_0;
-
-  RCC_OscInitStruct.PLL.PLLVCOSEL =
-      RCC_PLL1VCOWIDE;
-
+  RCC_OscInitStruct.PLL.PLLRGE = RCC_PLL1VCIRANGE_0;
+  RCC_OscInitStruct.PLL.PLLVCOSEL = RCC_PLL1VCOWIDE;
   RCC_OscInitStruct.PLL.PLLFRACN = 0;
-
-  if (HAL_RCC_OscConfig(
-          &RCC_OscInitStruct
-      ) != HAL_OK)
+  if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
   {
     Error_Handler();
   }
+  /** Initializes the CPU, AHB and APB buses clocks
+  */
+  RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
+                              |RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2
+                              |RCC_CLOCKTYPE_D3PCLK1|RCC_CLOCKTYPE_D1PCLK1;
+  RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_HSI;
+  RCC_ClkInitStruct.SYSCLKDivider = RCC_SYSCLK_DIV1;
+  RCC_ClkInitStruct.AHBCLKDivider = RCC_HCLK_DIV1;
+  RCC_ClkInitStruct.APB3CLKDivider = RCC_APB3_DIV1;
+  RCC_ClkInitStruct.APB1CLKDivider = RCC_APB1_DIV1;
+  RCC_ClkInitStruct.APB2CLKDivider = RCC_APB2_DIV1;
+  RCC_ClkInitStruct.APB4CLKDivider = RCC_APB4_DIV1;
 
-  RCC_ClkInitStruct.ClockType =
-      RCC_CLOCKTYPE_HCLK |
-      RCC_CLOCKTYPE_SYSCLK |
-      RCC_CLOCKTYPE_PCLK1 |
-      RCC_CLOCKTYPE_PCLK2 |
-      RCC_CLOCKTYPE_D3PCLK1 |
-      RCC_CLOCKTYPE_D1PCLK1;
-
-  RCC_ClkInitStruct.SYSCLKSource =
-      RCC_SYSCLKSOURCE_HSI;
-
-  RCC_ClkInitStruct.SYSCLKDivider =
-      RCC_SYSCLK_DIV1;
-
-  RCC_ClkInitStruct.AHBCLKDivider =
-      RCC_HCLK_DIV1;
-
-  RCC_ClkInitStruct.APB3CLKDivider =
-      RCC_APB3_DIV1;
-
-  RCC_ClkInitStruct.APB1CLKDivider =
-      RCC_APB1_DIV1;
-
-  RCC_ClkInitStruct.APB2CLKDivider =
-      RCC_APB2_DIV1;
-
-  RCC_ClkInitStruct.APB4CLKDivider =
-      RCC_APB4_DIV1;
-
-  if (HAL_RCC_ClockConfig(
-          &RCC_ClkInitStruct,
-          FLASH_LATENCY_1
-      ) != HAL_OK)
+  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_1) != HAL_OK)
   {
     Error_Handler();
   }
@@ -2077,11 +2393,20 @@ void SystemClock_Config(void)
 
 /**
   * @brief I2C4 Initialization Function
+  * @param None
+  * @retval None
   */
 static void MX_I2C4_Init(void)
 {
-  hi2c4.Instance = I2C4;
 
+  /* USER CODE BEGIN I2C4_Init 0 */
+
+  /* USER CODE END I2C4_Init 0 */
+
+  /* USER CODE BEGIN I2C4_Init 1 */
+
+  /* USER CODE END I2C4_Init 1 */
+  hi2c4.Instance = I2C4;
   hi2c4.Init.Timing = 0x00602173;
   hi2c4.Init.OwnAddress1 = 0;
   hi2c4.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
@@ -2090,71 +2415,162 @@ static void MX_I2C4_Init(void)
   hi2c4.Init.OwnAddress2Masks = I2C_OA2_NOMASK;
   hi2c4.Init.GeneralCallMode = I2C_GENERALCALL_DISABLE;
   hi2c4.Init.NoStretchMode = I2C_NOSTRETCH_DISABLE;
-
   if (HAL_I2C_Init(&hi2c4) != HAL_OK)
   {
     Error_Handler();
   }
-
-  if (HAL_I2CEx_ConfigAnalogFilter(
-          &hi2c4,
-          I2C_ANALOGFILTER_ENABLE
-      ) != HAL_OK)
+  /** Configure Analogue filter
+  */
+  if (HAL_I2CEx_ConfigAnalogFilter(&hi2c4, I2C_ANALOGFILTER_ENABLE) != HAL_OK)
   {
     Error_Handler();
   }
-
-  if (HAL_I2CEx_ConfigDigitalFilter(
-          &hi2c4,
-          0
-      ) != HAL_OK)
+  /** Configure Digital filter
+  */
+  if (HAL_I2CEx_ConfigDigitalFilter(&hi2c4, 0) != HAL_OK)
   {
     Error_Handler();
   }
+  /* USER CODE BEGIN I2C4_Init 2 */
+
+  /* USER CODE END I2C4_Init 2 */
+
+}
+
+/**
+  * @brief TIM1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM1_Init(void)
+{
+
+  /* USER CODE BEGIN TIM1_Init 0 */
+
+  /* USER CODE END TIM1_Init 0 */
+
+  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+  TIM_OC_InitTypeDef sConfigOC = {0};
+  TIM_BreakDeadTimeConfigTypeDef sBreakDeadTimeConfig = {0};
+
+  /* USER CODE BEGIN TIM1_Init 1 */
+
+  /* USER CODE END TIM1_Init 1 */
+  htim1.Instance = TIM1;
+  htim1.Init.Prescaler = 0;
+  htim1.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim1.Init.Period = 3199;
+  htim1.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim1.Init.RepetitionCounter = 0;
+  htim1.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+  if (HAL_TIM_ConfigClockSource(&htim1, &sClockSourceConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_TIM_PWM_Init(&htim1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterOutputTrigger2 = TIM_TRGO2_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim1, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sConfigOC.OCMode = TIM_OCMODE_PWM1;
+  sConfigOC.Pulse = 0;
+  sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
+  sConfigOC.OCNPolarity = TIM_OCNPOLARITY_HIGH;
+  sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
+  sConfigOC.OCIdleState = TIM_OCIDLESTATE_RESET;
+  sConfigOC.OCNIdleState = TIM_OCNIDLESTATE_RESET;
+  if (HAL_TIM_PWM_ConfigChannel(&htim1, &sConfigOC, TIM_CHANNEL_1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sBreakDeadTimeConfig.OffStateRunMode = TIM_OSSR_DISABLE;
+  sBreakDeadTimeConfig.OffStateIDLEMode = TIM_OSSI_DISABLE;
+  sBreakDeadTimeConfig.LockLevel = TIM_LOCKLEVEL_OFF;
+  sBreakDeadTimeConfig.DeadTime = 0;
+  sBreakDeadTimeConfig.BreakState = TIM_BREAK_DISABLE;
+  sBreakDeadTimeConfig.BreakPolarity = TIM_BREAKPOLARITY_HIGH;
+  sBreakDeadTimeConfig.BreakFilter = 0;
+  sBreakDeadTimeConfig.Break2State = TIM_BREAK2_DISABLE;
+  sBreakDeadTimeConfig.Break2Polarity = TIM_BREAK2POLARITY_HIGH;
+  sBreakDeadTimeConfig.Break2Filter = 0;
+  sBreakDeadTimeConfig.AutomaticOutput = TIM_AUTOMATICOUTPUT_DISABLE;
+  if (HAL_TIMEx_ConfigBreakDeadTime(&htim1, &sBreakDeadTimeConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM1_Init 2 */
+
+  /* USER CODE END TIM1_Init 2 */
+  HAL_TIM_MspPostInit(&htim1);
+
 }
 
 /**
   * @brief TIM6 Initialization Function
+  * @param None
+  * @retval None
   */
 static void MX_TIM6_Init(void)
 {
+
+  /* USER CODE BEGIN TIM6_Init 0 */
+
+  /* USER CODE END TIM6_Init 0 */
+
   TIM_MasterConfigTypeDef sMasterConfig = {0};
 
-  htim6.Instance = TIM6;
+  /* USER CODE BEGIN TIM6_Init 1 */
 
+  /* USER CODE END TIM6_Init 1 */
+  htim6.Instance = TIM6;
   htim6.Init.Prescaler = 6399;
   htim6.Init.CounterMode = TIM_COUNTERMODE_UP;
   htim6.Init.Period = 99;
-  htim6.Init.AutoReloadPreload =
-      TIM_AUTORELOAD_PRELOAD_DISABLE;
-
+  htim6.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_Base_Init(&htim6) != HAL_OK)
   {
     Error_Handler();
   }
-
-  sMasterConfig.MasterOutputTrigger =
-      TIM_TRGO_RESET;
-
-  sMasterConfig.MasterSlaveMode =
-      TIM_MASTERSLAVEMODE_DISABLE;
-
-  if (HAL_TIMEx_MasterConfigSynchronization(
-          &htim6,
-          &sMasterConfig
-      ) != HAL_OK)
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim6, &sMasterConfig) != HAL_OK)
   {
     Error_Handler();
   }
+  /* USER CODE BEGIN TIM6_Init 2 */
+
+  /* USER CODE END TIM6_Init 2 */
+
 }
 
 /**
   * @brief USART1 Initialization Function
+  * @param None
+  * @retval None
   */
 static void MX_USART1_UART_Init(void)
 {
-  huart1.Instance = USART1;
 
+  /* USER CODE BEGIN USART1_Init 0 */
+
+  /* USER CODE END USART1_Init 0 */
+
+  /* USER CODE BEGIN USART1_Init 1 */
+
+  /* USER CODE END USART1_Init 1 */
+  huart1.Instance = USART1;
   huart1.Init.BaudRate = 115200;
   huart1.Init.WordLength = UART_WORDLENGTH_8B;
   huart1.Init.StopBits = UART_STOPBITS_1;
@@ -2164,45 +2580,45 @@ static void MX_USART1_UART_Init(void)
   huart1.Init.OverSampling = UART_OVERSAMPLING_16;
   huart1.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
   huart1.Init.ClockPrescaler = UART_PRESCALER_DIV1;
-  huart1.AdvancedInit.AdvFeatureInit =
-      UART_ADVFEATURE_NO_INIT;
-
+  huart1.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
   if (HAL_UART_Init(&huart1) != HAL_OK)
   {
     Error_Handler();
   }
-
-  if (HAL_UARTEx_SetTxFifoThreshold(
-          &huart1,
-          UART_TXFIFO_THRESHOLD_1_8
-      ) != HAL_OK)
+  if (HAL_UARTEx_SetTxFifoThreshold(&huart1, UART_TXFIFO_THRESHOLD_1_8) != HAL_OK)
   {
     Error_Handler();
   }
-
-  if (HAL_UARTEx_SetRxFifoThreshold(
-          &huart1,
-          UART_RXFIFO_THRESHOLD_1_8
-      ) != HAL_OK)
+  if (HAL_UARTEx_SetRxFifoThreshold(&huart1, UART_RXFIFO_THRESHOLD_1_8) != HAL_OK)
   {
     Error_Handler();
   }
-
-  if (HAL_UARTEx_DisableFifoMode(
-          &huart1
-      ) != HAL_OK)
+  if (HAL_UARTEx_DisableFifoMode(&huart1) != HAL_OK)
   {
     Error_Handler();
   }
+  /* USER CODE BEGIN USART1_Init 2 */
+
+  /* USER CODE END USART1_Init 2 */
+
 }
 
 /**
   * @brief USART3 Initialization Function
+  * @param None
+  * @retval None
   */
 static void MX_USART3_UART_Init(void)
 {
-  huart3.Instance = USART3;
 
+  /* USER CODE BEGIN USART3_Init 0 */
+
+  /* USER CODE END USART3_Init 0 */
+
+  /* USER CODE BEGIN USART3_Init 1 */
+
+  /* USER CODE END USART3_Init 1 */
+  huart3.Instance = USART3;
   huart3.Init.BaudRate = 115200;
   huart3.Init.WordLength = UART_WORDLENGTH_8B;
   huart3.Init.StopBits = UART_STOPBITS_1;
@@ -2212,139 +2628,87 @@ static void MX_USART3_UART_Init(void)
   huart3.Init.OverSampling = UART_OVERSAMPLING_16;
   huart3.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
   huart3.Init.ClockPrescaler = UART_PRESCALER_DIV1;
-  huart3.AdvancedInit.AdvFeatureInit =
-      UART_ADVFEATURE_NO_INIT;
-
+  huart3.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
   if (HAL_UART_Init(&huart3) != HAL_OK)
   {
     Error_Handler();
   }
-
-  if (HAL_UARTEx_SetTxFifoThreshold(
-          &huart3,
-          UART_TXFIFO_THRESHOLD_1_8
-      ) != HAL_OK)
+  if (HAL_UARTEx_SetTxFifoThreshold(&huart3, UART_TXFIFO_THRESHOLD_1_8) != HAL_OK)
   {
     Error_Handler();
   }
-
-  if (HAL_UARTEx_SetRxFifoThreshold(
-          &huart3,
-          UART_RXFIFO_THRESHOLD_1_8
-      ) != HAL_OK)
+  if (HAL_UARTEx_SetRxFifoThreshold(&huart3, UART_RXFIFO_THRESHOLD_1_8) != HAL_OK)
   {
     Error_Handler();
   }
-
-  if (HAL_UARTEx_DisableFifoMode(
-          &huart3
-      ) != HAL_OK)
+  if (HAL_UARTEx_DisableFifoMode(&huart3) != HAL_OK)
   {
     Error_Handler();
   }
+  /* USER CODE BEGIN USART3_Init 2 */
+
+  /* USER CODE END USART3_Init 2 */
+
 }
 
 /**
   * @brief GPIO Initialization Function
+  * @param None
+  * @retval None
   */
 static void MX_GPIO_Init(void)
 {
   GPIO_InitTypeDef GPIO_InitStruct = {0};
 
-  __HAL_RCC_GPIOA_CLK_ENABLE();
+  /* GPIO Ports Clock Enable */
   __HAL_RCC_GPIOB_CLK_ENABLE();
   __HAL_RCC_GPIOC_CLK_ENABLE();
-  __HAL_RCC_GPIOD_CLK_ENABLE();
+  __HAL_RCC_GPIOI_CLK_ENABLE();
   __HAL_RCC_GPIOE_CLK_ENABLE();
+  __HAL_RCC_GPIOA_CLK_ENABLE();
   __HAL_RCC_GPIOG_CLK_ENABLE();
   __HAL_RCC_GPIOH_CLK_ENABLE();
-  __HAL_RCC_GPIOI_CLK_ENABLE();
+  __HAL_RCC_GPIOD_CLK_ENABLE();
+  __HAL_RCC_GPIOK_CLK_ENABLE();
 
   /*
-   * TB6612:
-   * PG3 = AIN1
-   * PA6 = AIN2
-   * PA8 = PWMA
-   *
-   * PWM not used yet.
-   * PWMA remains HIGH.
+   * 0823 boot-safe bridge levels MUST be established before enabling outputs.
+   * STBY also requires the external ~10 kOhm pulldown to GND.
    */
-  HAL_GPIO_WritePin(
-      GPIOG,
-      GPIO_PIN_3,
-      GPIO_PIN_RESET
-  );
+  HAL_GPIO_WritePin(MOTOR_AIN1_GPIO_PORT, MOTOR_AIN1_PIN, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(MOTOR_AIN2_GPIO_PORT, MOTOR_AIN2_PIN, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(MOTOR_STBY_GPIO_PORT, MOTOR_STBY_PIN, GPIO_PIN_RESET);
 
-  HAL_GPIO_WritePin(
-      GPIOA,
-      GPIO_PIN_6,
-      GPIO_PIN_RESET
-  );
-
-  HAL_GPIO_WritePin(
-      GPIOA,
-      GPIO_PIN_8,
-      GPIO_PIN_SET
-  );
-
-  GPIO_InitStruct.Pin = GPIO_PIN_3;
+  /* AIN1 PG3, AIN2 PA6, STBY PK1 */
+  GPIO_InitStruct.Pin = MOTOR_AIN1_PIN;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(MOTOR_AIN1_GPIO_PORT, &GPIO_InitStruct);
 
-  HAL_GPIO_Init(
-      GPIOG,
-      &GPIO_InitStruct
-  );
+  GPIO_InitStruct.Pin = MOTOR_AIN2_PIN;
+  HAL_GPIO_Init(MOTOR_AIN2_GPIO_PORT, &GPIO_InitStruct);
 
-  GPIO_InitStruct.Pin =
-      GPIO_PIN_6 |
-      GPIO_PIN_8;
-
-  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-
-  HAL_GPIO_Init(
-      GPIOA,
-      &GPIO_InitStruct
-  );
+  GPIO_InitStruct.Pin = MOTOR_STBY_PIN;
+  HAL_GPIO_Init(MOTOR_STBY_GPIO_PORT, &GPIO_InitStruct);
 
   /*
-   * Encoder A: PE6
-   */
-  GPIO_InitStruct.Pin = ENCODER_A_PIN;
-  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING_FALLING;
-  GPIO_InitStruct.Pull = GPIO_PULLUP;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
-
-  HAL_GPIO_Init(
-      ENCODER_A_GPIO_PORT,
-      &GPIO_InitStruct
-  );
-
-  /*
-   * Encoder B: PI8
+   * Encoder x4 path: both A/B edges trigger EXTI; callback reads both levels
+   * and applies the quadrature transition table.
    */
   GPIO_InitStruct.Pin = ENCODER_B_PIN;
   GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING_FALLING;
-  GPIO_InitStruct.Pull = GPIO_PULLUP;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(ENCODER_B_GPIO_PORT, &GPIO_InitStruct);
 
-  HAL_GPIO_Init(
-      ENCODER_B_GPIO_PORT,
-      &GPIO_InitStruct
-  );
+  GPIO_InitStruct.Pin = ENCODER_A_PIN;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING_FALLING;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(ENCODER_A_GPIO_PORT, &GPIO_InitStruct);
 
-  HAL_NVIC_SetPriority(
-      EXTI9_5_IRQn,
-      6,
-      0
-  );
-
-  HAL_NVIC_EnableIRQ(
-      EXTI9_5_IRQn
-  );
+  /* EXTI interrupt init */
+  HAL_NVIC_SetPriority(EXTI9_5_IRQn, 5, 0);
+  HAL_NVIC_EnableIRQ(EXTI9_5_IRQn);
 }
 
 /* USER CODE BEGIN 4 */
@@ -2405,17 +2769,40 @@ void HAL_GPIO_EXTI_Callback(
 
   if (delta > 0)
   {
-    encoder_count++;
+    if (encoder_count == INT32_MAX)
+    {
+      encoder_overflow_latched = 1U;
+      encoder_valid = 0U;
+      Motor_ForceSafe();
+    }
+    else
+    {
+      encoder_count++;
+      encoder_valid_transition_count++;
+    }
   }
   else if (delta < 0)
   {
-    encoder_count--;
+    if (encoder_count == INT32_MIN)
+    {
+      encoder_overflow_latched = 1U;
+      encoder_valid = 0U;
+      Motor_ForceSafe();
+    }
+    else
+    {
+      encoder_count--;
+      encoder_valid_transition_count++;
+    }
   }
   else
   {
     if (encoder_prev_ab != currentAB)
     {
       encoder_invalid_transition_count++;
+      encoder_invalid_latched = 1U;
+      encoder_valid = 0U;
+      Motor_ForceSafe();
     }
   }
 
@@ -2425,28 +2812,40 @@ void HAL_GPIO_EXTI_Callback(
 /* USER CODE END 4 */
 
 /**
-  * @brief Error Handler
+  * @brief  This function is executed in case of error occurrence.
+  * @retval None
   */
 void Error_Handler(void)
 {
-  Motor_Control(MOTOR_STOP);
-
+  /* USER CODE BEGIN Error_Handler_Debug */
+  /*
+   * 0823 fail-safe: any fatal main-level error must remove bridge/PWM output
+   * before the CPU enters the permanent error loop.
+   */
+  Motor_ForceSafe();
   __disable_irq();
 
   while (1)
   {
   }
+  /* USER CODE END Error_Handler_Debug */
 }
 
-#ifdef USE_FULL_ASSERT
-
-void assert_failed(
-    uint8_t *file,
-    uint32_t line
-)
+#ifdef  USE_FULL_ASSERT
+/**
+  * @brief  Reports the name of the source file and the source line number
+  *         where the assert_param error has occurred.
+  * @param  file: pointer to the source file name
+  * @param  line: assert_param error line source number
+  * @retval None
+  */
+void assert_failed(uint8_t *file, uint32_t line)
 {
-  (void)file;
-  (void)line;
+  /* USER CODE BEGIN 6 */
+  /* User can add his own implementation to report the file name and line number,
+     ex: printf("Wrong parameters value: file %s on line %d\r\n", file, line) */
+  /* USER CODE END 6 */
 }
+#endif /* USE_FULL_ASSERT */
 
-#endif
+/************************ (C) COPYRIGHT STMicroelectronics *****END OF FILE****/
