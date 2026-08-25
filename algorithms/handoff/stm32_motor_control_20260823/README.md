@@ -2,7 +2,7 @@
 
 ## 定位
 
-這是給瑋哲做 **6 V、離架、限流台架整合** 的手動交付說明，不是已上板驗證、可配戴、可醫療使用或可販售的版本。目前 repo 沒有瑋哲最新的 STM32CubeIDE 專案，所以無法聲稱 target build 或燒錄通過；必須在他的 branch 手動整合並補齊量測紀錄。
+這是給瑋哲使用的 **STM32 motor-control canonical integration reference**。目前預設是 motor-off／ForceSafe 整合基準，不是可直接接 VM、驅動馬達、配戴、醫療使用或販售的版本。目前 repo 沒有瑋哲最新的 STM32CubeIDE 專案，所以無法聲稱 target build 或燒錄通過；必須先在他的 branch 手動整合並補齊非供電驗證。後續 6 V、離架、限流台架試驗是另一個需要 reviewed bench config 與明確核准的階段，不能把 canonical 檔案直接燒錄後就上電或上手。
 
 目前同一個 Git branch 也包含 authoritative 的 **4–6 Hz hardened gate**：
 
@@ -15,17 +15,71 @@
 最先要改的是：**TB6612FNG `STBY` 不得再硬接 3V3**。改接 `D4 / PK1` GPIO，並在 `STBY` 對 GND 加約 `10 kΩ` pulldown。未改完前不得連接馬達電源進行本設計測試。
 
 - [QUICK_START_給瑋哲.md](QUICK_START_%E7%B5%A6%E7%91%8B%E5%93%B2.md)：接線、CubeMX、校正與台架驗收步驟。
+- [`reference/main.c`](reference/main.c)：0823 唯一 canonical `main.c`，整合最新版 gate、`SuppressionControl`、mapper、encoder、position guard、TB6612 driver 與 HAL adapter；它位於文件目錄，**不會自動被 CubeIDE 編譯**。
 - [`example/stm32_motor_integration_example.c`](example/stm32_motor_integration_example.c)：依目前 actuator API 寫的說明性 glue code；不是可直接上電的完整 `main.c`。
 
 portable 實作位於 `../src/actuator/`：`quadrature_encoder`、`motor_position_guard`、`tb6612_driver`；最新版 gate 與控制 wrapper 位於 `../src/gating/`、`../src/control/`；STM32 專用 adapter 位於本包的 `src/actuator/stm32_tb6612_hal.c/.h`。
 
-先在 Windows 從 `algorithms/handoff/` 執行：
+## Canonical `main.c` 的使用方式
 
-```powershell
-.\test\run_actuator_tests.bat
+不要再把 0822 shadow reference、Ryan branch 的舊 `main.c` 或 example 當成最新版。0822 包是 sealed historical evidence；0823 的 canonical source 只有：
+
+```text
+algorithms/handoff/stm32_motor_control_20260823/reference/main.c
 ```
 
-這會嚴格編譯並執行 suppression wrapper、motor mapper、encoder、position guard、TB6612 driver、假的 HAL 呼叫順序及整合鏈測試，也會對範例做 syntax compile。全部通過只代表 host implementation check；不代表 CubeIDE target build、實際 GPIO/PWM 波形或馬達台架已通過。
+它必須由瑋哲明確整合到自己 branch 實際會編譯的：
+
+```text
+firmware/algo/CM7/Core/Src/main.c
+```
+
+若 target `.ioc`、peripheral handle 與 canonical 所依據的 Ryan 版本一致，可以先保留 target 檔案的 Git diff／build ID，再複製 canonical 檔覆蓋並檢查差異。若 CubeMX 產生區、timer、UART、I2C 或 pin mapping 已不同，不可盲目覆蓋；應保留 target 產生區，只移植 canonical 的 USER CODE、100 Hz fresh-sample pipeline、encoder callbacks、ForceSafe 與 telemetry 語意。無論採哪一種方式，整合後都要用 validator 對實際 target `main.c` 再驗一次。
+
+Canonical 使用 header basename，不含任何電腦專屬絕對路徑。CubeIDE 的 CM7 include search paths 至少要包含：
+
+```text
+firmware/algo/CM7/Core/Inc
+algorithms/handoff/src/control
+algorithms/handoff/src/gating
+algorithms/handoff/src/actuator
+algorithms/handoff/src/bmflc
+algorithms/handoff/src/ehwflc
+algorithms/handoff/stm32_motor_control_20260823/src/actuator
+```
+
+另須加入實際存放 `BNO055_STM32.h` 的目錄。上述 portable/adapter `.c` 也要加入 CM7 build；只新增 include path 不會自動編譯 source。禁止在 `main.c` 補回 `C:/Users/...` 類絕對 include。
+
+Canonical 內的安全鎖預設為：
+
+```c
+#define MOTOR_BENCH_CONFIG_APPROVED 0U
+```
+
+這不是待修 bug。當它為 0 時，runtime arm、gate 或 App 指令都不能取得 bridge authority，控制鏈會維持 ForceSafe，`motor_output_active=0`、`STBY=LOW`、`CCR=0`。開機的 `motorIntensityPercent` 也是 0，必須由已審核的 App／台架操作明確設定，且強度指令不會繞過上述安全鎖。不得只為了看到馬達轉動就改成 1；必須先以最終硬體完成每一個 mapper、PWM、方向、encoder、行程、timeout 與 fault 參數的台架證據及 review，另行核准後才可建立 powered-bench build。即使日後核准，也仍不是人體或上手測試許可。
+
+## 驗證順序
+
+先從 repo root 執行 canonical validator：
+
+```powershell
+python .\algorithms\validation\validate_stm32_motor_main.py
+```
+
+整合到 target 後，再對實際編譯檔執行：
+
+```powershell
+python .\algorithms\validation\validate_stm32_motor_main.py `
+  --main .\firmware\algo\CM7\Core\Src\main.c
+```
+
+兩次 validator 都通過後，才執行 host tests：
+
+```powershell
+.\algorithms\handoff\test\run_actuator_tests.bat
+```
+
+Validator 會檢查 canonical module manifest、禁止的 legacy／`freqEstimate` authority、fresh-sample ownership、ForceSafe 與 telemetry contract；host tests 會嚴格編譯並執行 suppression wrapper、motor mapper、encoder、position guard、TB6612 driver、假的 HAL 呼叫順序及整合鏈測試，也會對範例做 syntax compile。全部通過只代表 static/host implementation check；不代表 CubeIDE target build、實際 GPIO/PWM 波形、馬達台架或人體測試已通過。
 
 ## 接線契約
 
