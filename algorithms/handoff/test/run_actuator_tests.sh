@@ -22,6 +22,13 @@ mkdir -p "$OUT"
 "$OUT/test_suppression_control"
 
 "$CC" -O2 -std=c11 -Wall -Wextra -Werror -pedantic \
+  -I"$SRC/control" -I"$SRC/gating" -I"$SRC/bmflc" -I"$SRC/ehwflc" \
+  "$HERE/test_diagnostic_frequency_isolation.c" \
+  "$SRC/control/suppression_control.c" "$SRC/gating/tremor_gate.c" \
+  -lm -o "$OUT/test_diagnostic_frequency_isolation"
+"$OUT/test_diagnostic_frequency_isolation"
+
+"$CC" -O2 -std=c11 -Wall -Wextra -Werror -pedantic \
   -I"$SRC/control" \
   "$HERE/test_motor_command_mapper.c" \
   "$SRC/control/motor_command_mapper.c" \
@@ -60,6 +67,14 @@ mkdir -p "$OUT"
   "$SRC/actuator/tb6612_driver.c" \
   -lm -o "$OUT/test_tb6612_driver"
 "$OUT/test_tb6612_driver"
+
+"$CC" -O2 -std=c11 -Wall -Wextra -Werror -pedantic \
+  -I"$SRC/actuator" -I"$SRC/control" \
+  "$HERE/test_motor_mapper_driver_chain.c" \
+  "$SRC/control/motor_command_mapper.c" \
+  "$SRC/actuator/tb6612_driver.c" \
+  -lm -o "$OUT/test_motor_mapper_driver_chain"
+"$OUT/test_motor_mapper_driver_chain"
 
 "$CC" -O2 -std=c11 -Wall -Wextra -Werror -pedantic \
   -I"$HERE/fakes" -I"$STM32_SRC" -I"$SRC/actuator" \

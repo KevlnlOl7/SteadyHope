@@ -58,6 +58,7 @@ typedef struct {
     Tb6612DriverConfig initialized_config;
     uint64_t runtime_guard[2];
     uint16_t reversal_dead_ticks_remaining;
+    uint16_t safe_ticks_since_energized;
     int8_t last_energized_direction;
     int8_t pending_direction;
     uint8_t initialized;
@@ -80,6 +81,12 @@ Tb6612DriverResult TB6612Driver_Init(
  * and in range.  Any invalid input, configuration, or runtime state returns
  * ERROR, emits a safe output, and latches the driver uninitialized.  The
  * caller must clear the upstream fault and explicitly call Init again.
+ *
+ * Every consecutive SAFE output after an energized command counts toward
+ * reversal_dead_ticks.  An opposite active request receives credit for SAFE
+ * ticks already imposed upstream; the driver emits only the missing ticks.
+ * A direct reversal with no preceding SAFE tick still receives the complete
+ * configured dead time.  Any active output resets the accumulated credit.
  */
 Tb6612DriverResult TB6612Driver_Update(
     Tb6612Driver *driver,

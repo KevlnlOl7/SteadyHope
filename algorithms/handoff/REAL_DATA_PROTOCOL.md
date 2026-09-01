@@ -20,7 +20,9 @@
 2. `recording_segment_plan.csv`：每段動作、trial、期望gating與是否納入計分。
 3. `recording_<session_id>.csv`：STM32／PC實際保存的100 Hz逐筆資料。
 
-BLE最小16-byte封包只傳sequence、tick、三軸raw、`sensor_valid`與`motor_enabled`；
+BLE最小16-byte封包只傳sequence、tick、三軸raw、`sensor_valid`與`motor_enabled`；其中
+`motor_enabled` 是相容既有 App 的 wire 名稱，現行韌體送的是 `motor_output_active`：完整
+安全鏈接受並套用非零 command。它不是 `gate_enabled`，也不證明馬達真的移動；
 session與動作標籤由App或PC錄製工作階段另外附加。工程`activity_label`不等於App讓
 使用者選擇的生活情境tag，兩者不得混成疾病診斷標籤。
 
@@ -48,7 +50,7 @@ session與動作標籤由App或PC錄製工作階段另外附加。工程`activit
 | `tremor_envelope` | `float` / deg/s | 是 | 4–6 Hz震顫帶包絡強度 |
 | `voluntary_envelope` | `float` / deg/s | 是 | 1–3 Hz自主動作帶包絡強度 |
 | `tremor_ratio` | `float` / 0–1 | 是 | 震顫帶相對於兩頻帶包絡總和的比例 |
-| `enabled` | `uint8` 0/1 | 是 | gating是否允許馬達控制；不是抑震率 |
+| `enabled` | `uint8` 0/1 | 是 | 離線/工程 CSV 的 gate 狀態；不是 BLE wire `motor_enabled`，也不是抑震率 |
 | `tremor_estimate` | `float` / deg/s | 建議 | eHWFLC-KF估測波形；不使用`freqEstimate` |
 | `pwm_percent` | `float` / 0–100 | 通電時 | 實際PWM duty，不是拉力或位移 |
 | `motor_direction` | `int8` -1/0/1 | 通電時 | 反向、停止、正向；實際極性需標定 |

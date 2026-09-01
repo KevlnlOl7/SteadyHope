@@ -2,7 +2,7 @@
 
 ## 0. 這次只驗證什麼
 
-本輪第一個目標是把 0823 canonical `main.c` 正確整合進瑋哲實際編譯的 CM7 專案，確認最新版控制鏈、fresh-sample contract、telemetry 與 ForceSafe。**目前不是直接驅動馬達或上手測試。**
+0823 canonical `main.c` 已整合進 repo 的 `firmware/algo` CM7 target；本輪確認最新版控制鏈、fresh-sample contract、telemetry、ForceSafe 與四組 target build。**目前仍不是直接驅動馬達或上手測試。**
 
 Canonical 預設：
 
@@ -40,13 +40,13 @@ Validator 通過後，再跑 host tests：
 algorithms/handoff/stm32_motor_control_20260823/reference/main.c
 ```
 
-0822 shadow 是 sealed historical evidence；`example/stm32_motor_integration_example.c` 也不是完整 `main.c`。上述 canonical 檔位於演算法交接目錄，**CubeIDE 不會自動編譯它**。瑋哲必須明確將它整合到自己 branch 的：
+0822 shadow 是 sealed historical evidence；`example/stm32_motor_integration_example.c` 也不是完整 `main.c`。CubeIDE 編譯的是下列 mirror，integration validator 會強制它與上述 canonical byte-identical：
 
 ```text
 firmware/algo/CM7/Core/Src/main.c
 ```
 
-若 `.ioc`、peripheral handles 與 canonical 基底完全一致，可保留原檔 Git diff/build ID 後複製覆蓋；若 CubeMX 產生區、timer、UART、I2C 或 pin mapping 不同，只移植 canonical 的 USER CODE 與 pipeline，不可盲目覆蓋產生區。整合後立即對真正要編譯的檔案再跑：
+若日後 `.ioc`、peripheral handles、timer、UART、I2C 或 pin mapping 改變，不可盲目覆蓋或只改一份 main；須 review 產生區、同步 canonical/target，並立即對真正要編譯的檔案再跑：
 
 ```powershell
 python .\algorithms\validation\validate_stm32_motor_main.py `
@@ -78,16 +78,18 @@ python .\algorithms\validation\validate_stm32_motor_main.py `
 2. `PA6`：label `MOTOR_AIN2`，GPIO output，initial LOW。
 3. `PK1`：label `MOTOR_STBY`，GPIO output，initial LOW。
 4. `PA8`：`TIM1_CH1` PWM，不再當 fixed-HIGH GPIO；initial Pulse/CCR = 0。
-5. 先量測 TIM1 kernel clock。只有 64 MHz、edge-aligned up-counting 時才設 `PSC=0`, `ARR=3199`；此時 driver/HAL 的 `pwm_full_scale_ccr` 應一致為 `ARR+1=3200`，但實際 max duty 仍須另行限制。否則依實際 clock 重算 20 kHz。
+5. 先量測 TIM1 kernel clock。只有 64 MHz、edge-aligned up-counting 時才設 `PSC=0`, `ARR=3199`；此時 driver/HAL 的 `pwm_full_scale_ccr` 應一致為 `ARR+1=3200`。HAL 的 integer `max_active_ccr` 是另一層限制；目前 0 代表 motor lock。Powered bench 必須由 reviewed config 明確提供不向上超限的整數 cap，不可在 glue code 用浮點四捨五入猜值。否則依實際 clock 重算 20 kHz。
 6. 啟動後用 scope/logic analyzer 量 PA8，確認 20 kHz；safe state duty 必須為 0。
 
 ### Encoder EXTI
 
 1. `PE6 / ENCODER_A`：rising + falling EXTI。
 2. `PI8 / ENCODER_B`：rising + falling EXTI。
-3. 啟用 `EXTI9_5_IRQn`。
-4. 每次 A 或 B 中斷都立即重讀 A/B 兩腳，再呼叫 `QuadratureEncoder_OnEdge()`。
-5. ISR 不做 `printf`、blocking UART、delay 或分析運算。不能改成 100 Hz polling。
+3. 目前 target 使用內部 `GPIO_PULLUP` 防止斷線浮動；上電前仍須由 encoder datasheet
+   確認輸出級與 3.3 V 相容，不可直接接未知的 5 V push-pull output。
+4. 啟用 `EXTI9_5_IRQn`。
+5. 每次 A 或 B 中斷都立即重讀 A/B 兩腳，再呼叫 `QuadratureEncoder_OnEdge()`。
+6. ISR 不做 `printf`、blocking UART、delay 或分析運算。不能改成 100 Hz polling。
 
 ### Control tick
 
@@ -95,23 +97,26 @@ python .\algorithms\validation\validate_stm32_motor_main.py `
 - PWM channel 啟動一次；100 Hz tick 只更新 CCR/GPIO command。
 - 傳輸和檔案輸出放在非 ISR 工作中，並量測 scheduler overrun。
 
-## 3. 加入 CM7 build
+## 3. 確認 CM7 build 的 source ownership
 
-Canonical source 使用 header basename，禁止改成任何人的 `C:/Users/...` 絕對 include。CubeIDE 的 CM7 include search paths 至少加入：
+Canonical source 使用 header basename，禁止改成任何人的 `C:/Users/...` 絕對 include。
+目前 repo 的 `firmware/algo` target **已經完成整合**，實際 ownership 是：
 
 ```text
-firmware/algo/CM7/Core/Inc
-algorithms/handoff/src/control
-algorithms/handoff/src/gating
-algorithms/handoff/src/actuator
-algorithms/handoff/src/bmflc
-algorithms/handoff/src/ehwflc
-algorithms/handoff/stm32_motor_control_20260823/src/actuator
+firmware/algo/CM7/Core/Src + Core/Inc       tremor_gate mirror
+firmware/algo/CM7/Core/Algo/bmflc          BMFLC target copy
+firmware/algo/CM7/Core/Algo/ehwflc         eHWFLC-KF target copy
+Eclipse linked resource Handoff_Control     handoff/src/control
+Eclipse linked resource Handoff_Actuator    handoff/src/actuator
+Eclipse linked resource Handoff_STM32_Actuator  STM32 HAL adapter
 ```
 
-另加入實際存放 `BNO055_STM32.h` 的目錄。Include path 只解決 header；下列 portable/adapter `.c` 仍須明確加入 CM7 build。
+Debug/Release 的 `.cproject` 已含相符 include path 與 source entry；直接跑 integration
+validator 與 clean build，不要再把 handoff 的 gate、BMFLC 或 eHWFLC source 加進這個
+target，否則會和 target-local copy 產生 duplicate symbols。
 
-由 repo 加入：
+若是移植到**另一個** CubeIDE target，每個 module 只能選一個 owner：保留 target-local
+copy，或排除它後改編譯下列 handoff source，不能兩者並存：
 
 ```text
 algorithms/handoff/src/gating/tremor_gate.c/.h
@@ -125,41 +130,47 @@ algorithms/handoff/src/bmflc/*
 algorithms/handoff/src/ehwflc/*
 ```
 
-其中 `tremor_gate.c/.h` 是 4–6 Hz hardened 版本，必須成對取代 8/18 branch 的 3–8 Hz舊檔，再執行 CubeIDE Clean Build。禁止只換 `.c`、只貼濾波係數或沿用舊 object。不要復活舊的低通-相減前處理，不要用 `freqEstimate` 做 gating。
+其他 target 也要加入它自己的 `BNO055_STM32.h` 目錄與所選 module 的 include path；
+只新增 include path 不會自動編譯 `.c`。其中 `tremor_gate.c/.h` 是 4–6 Hz hardened
+版本，必須成對取代 8/18 branch 的 3–8 Hz 舊檔，再執行 CubeIDE Clean Build。禁止只換
+`.c`、只貼濾波係數、沿用舊 object 或讓同名 module 同時出現兩份。不要復活舊的
+低通-相減前處理，不要用 `freqEstimate` 做 gating。
 
 先保持 H-bridge／motor power 實體斷開，以 21 組 6–7 Hz boundary vectors 驗證板上逐筆輸出。只有 C/Python 的 raw、envelope、ratio、on-count、enabled 全部一致，才能宣稱「最新版 gate 已成功移植」；這仍不等於取得接馬達或人體測試權限。
 
 測資位於：
 
 ```text
-algorithms/handoff/test_vectors/gating_6to7_boundary/
+algorithms/handoff/stm32_gate_upgrade_20260822/target_test/
 ```
 
-STM32 test mode 每個 case 都要重新 `TremorGate_Init()`，以 100 Hz 依序注入 header 內的 700 筆 raw sample，並輸出合計 14,700 筆 CSV。至少包含：
+使用包內 `gate_boundary_runner.c/.h`；runner 會在每個 case 重新初始化 gate，以 100 Hz
+依序注入 header 內的 700 筆 raw sample，並輸出合計 14,700 筆 CSV。欄位必須是：
 
 ```text
 test_case_id,sample_index,sample_tick_ms,gyro_x_raw_lsb,
-tremor_envelope,voluntary_envelope,tremor_ratio,on_count,gate_enabled
+tremor_envelope,voluntary_envelope,tremor_ratio,on_count,off_count,
+gate_enabled,gate_config_valid,gate_last_fault,actuation_authority
 ```
 
 不要把最後一欄命名成 `motor_enabled`；這一輪比的是 gate，不是實際馬達。將 STM32 log 拿回 PC 後，從 repo root 執行：
 
 ```powershell
-python algorithms/validation/compare_stm32_6to7_boundary_log.py `
+python algorithms/handoff/stm32_gate_upgrade_20260822/tools/compare_stm32_gate_log.py `
   --input stm32_6to7_log.csv `
   --output-json stm32_6to7_comparison.json
 ```
 
 驗收必須是 `pass=true`、`expected_rows=actual_rows=14700`，且 missing、unexpected、duplicate、tick、raw、on-count、enabled 與三個 float mismatch 全為 0。這段 test mode 仍須在瑋哲的實際 `main.c`／scheduler 接上，交付 ZIP 不是可直接 flash 的 `.bin`。
 
-目前 repo 沒有你的最新 CubeIDE 專案，這步必須在你的 branch 手動整合。整合後保留 `.ioc`、CM7 Release build log、ELF/MAP hash、source hash 和實測波形。
+目前 repo 已有 `firmware/algo` CubeIDE target 與 headless build script；先跑 static validator 與 CM7/CM4 Debug/Release build。上板後仍須另外保留 `.ioc`、雙核心 flash 紀錄、CM7/CM4 ELF/MAP hash、source hash 和實測波形，不能用 PC build 取代。
 
 ## 4. 所有控制值都要由 bench 證據決定
 
 不可從 unit test 或範例複製以下值：
 
 - mapper 的 deadband、gain、max duty、slew、max request、direction polarity、reversal dead ticks；
-- TB6612 的 CCR ceiling、max duty、release polarity、reversal dead ticks；
+- TB6612 driver 的 max duty、release polarity、reversal dead ticks，以及與它綁定的 HAL integer `max_active_ccr`；
 - position guard 的正負行程、每 tick 最大位移、no-motion 視窗、最大 active ticks；
 - encoder count polarity 和 counts per output revolution。
 

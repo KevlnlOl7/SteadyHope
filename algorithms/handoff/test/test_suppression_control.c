@@ -153,6 +153,20 @@ static int test_external_inhibits_and_config_corruption(void)
         !output_is_safely_inhibited(&output)) {
         return 0;
     }
+    if ((SuppressionControl_Update(&control, 0.0, 2U, 0U, 0U, 0U,
+                                   &output) != 0U) ||
+        (output.current_fault !=
+         (uint8_t)SUPPRESSION_CONTROL_FAULT_SENSOR_INVALID) ||
+        !output_is_safely_inhibited(&output)) {
+        return 0;
+    }
+    if ((SuppressionControl_Update(&control, 0.0, UINT8_MAX, 0U, 0U, 0U,
+                                   &output) != 0U) ||
+        (output.current_fault !=
+         (uint8_t)SUPPRESSION_CONTROL_FAULT_SENSOR_INVALID) ||
+        !output_is_safely_inhibited(&output)) {
+        return 0;
+    }
     if ((SuppressionControl_Update(&control, 0.0, 1U, 1U, 0U, 0U,
                                    &output) != 0U) ||
         (output.current_fault !=
@@ -376,7 +390,7 @@ static int test_fault_injection_soak(SuppressionEstimatorKind kind)
             return 0;
         }
         if (permitted != 0U) {
-            if ((sensor_valid == 0U) || (sensor_stale != 0U) ||
+            if ((sensor_valid != 1U) || (sensor_stale != 0U) ||
                 (driver_fault != 0U) || (inhibit_flags != 0U) ||
                 (output.gate_enabled == 0U) ||
                 (output.current_fault !=
