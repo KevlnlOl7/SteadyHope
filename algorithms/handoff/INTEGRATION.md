@@ -6,6 +6,11 @@
 > `src/` 的 C 已是 **ARM-safe 版**（以 ARM 目標重產生、無 x86 SSE2），BMFLC 與 eHWFLC 都可直接編。
 > 日後改演算法/參數要重新產生時，見 [README.md](README.md) §4（`../matlab/codegen_arm.m` 一鍵）。
 
+> **現有 `firmware/algo` 已完成整合。** 該 target 的 BMFLC、eHWFLC 與 gate 是
+> target-local mirror，control/actuator/HAL 則由 linked resources 編譯 canonical handoff
+> source。不要再照 §1–2 複製或加入第二份同名 `.c`，否則會產生 duplicate symbols。
+> §1–2 只適用於建立另一個尚未整合的 CubeIDE target。
+
 ---
 
 ## 0. 大前提：放進 **CM7** 核專案（不是 CM4！）
@@ -54,44 +59,42 @@ Core/Algo/gating
 - `sin`/`cos`（double）來自 newlib 的 `libm`，CubeIDE 預設會連，不用額外設定。
 - 演算法本身不需 `printf`；若你要用 `printf("%f")` 除錯，才需在 Linker flags 加 `-u _printf_float`。
 
-## 4. 呼叫估測器與 V2 gating
+## 4. 呼叫估測器與 V2 gating（演算法觀測，不授權馬達）
+
+> 下列片段只說明 estimator/gate 的 100 Hz 呼叫關係。powered integration 不得自行加
+> `motor_pwm_apply()`；現行唯一 motor path 是 0823 canonical 的
+> `SuppressionControl → mapper → SetZero/position guard → TB6612 driver → STM32 HAL`。
+> 見 [`stm32_motor_control_20260823/README.md`](stm32_motor_control_20260823/README.md)。
 
 ```c
 #include "BMFLC_step.h"
 #include "eHWFLC_KF_step.h"
+#include "eHWFLC_KF_step_initialize.h"
 #include "tremor_gate.h"
 
 static TremorGate tremor_gate;
 
 void tremor_control_init(void) {
     TremorGateConfig cfg = TremorGate_DefaultConfig();
-    eHWFLC_KF_step_init();
+    eHWFLC_KF_step_initialize();
     TremorGate_Init(&tremor_gate, &cfg);
-    motor_pwm_init_and_start();       /* PWM timer 開機 start 一次 */
-    motor_pwm_stop();
 }
 
-/* 每個 100 Hz tick 呼叫一次；sensor_stale/driver_fault 由韌體層維護。 */
+/* 每個 100 Hz fresh-sample tick 呼叫一次；此函式不驅動馬達。 */
 void tremor_tick(double gyro_dps_one_axis) {
     double tremor_est, freq_hz;
-    uint8_t enabled;
+    uint8_t gate_enabled;
 
     eHWFLC_KF_step(gyro_dps_one_axis, &tremor_est, &freq_hz);
-    enabled = TremorGate_Update(&tremor_gate, gyro_dps_one_axis);
-
-    if (!enabled || sensor_stale || driver_fault) {
-        motor_pwm_stop();
-        return;
-    }
-
-    motor_pwm_apply(-tremor_est);     /* K_PWM 只在 motor_pwm_apply() 內乘一次 */
+    gate_enabled = TremorGate_Update(&tremor_gate, gyro_dps_one_axis);
+    publish_algorithm_diagnostics(tremor_est, gate_enabled);
 }
 ```
 
 `freq_hz` 僅為相容既有 Coder API 保留，**不可用於 gating、PWM 或 App biomarker**。
-`motor_pwm_*()`、N20 loaded bandwidth test、P gain／deadband／saturation 與替代 actuator
-選型見 [ACTUATOR_CONTROL.md](ACTUATOR_CONTROL.md)。目前 `control_sim.m` 是 P-only，未取得
-actuator 實測模型前不要直接照抄 `Kp`，也不要先加 `Ki/Kd`。
+N20 loaded bandwidth test、P gain／deadband／saturation 與替代 actuator 選型見
+[ACTUATOR_CONTROL.md](ACTUATOR_CONTROL.md)。目前 `control_sim.m` 是 P-only，未取得 actuator
+實測模型前不要直接照抄 `Kp`，也不要先加 `Ki/Kd`。
 
 > **單例**：`eHWFLC_KF_step` / `BMFLC_step` 內部是 file-scope `static` 狀態，
 > **只能餵一軸**。不要同一顆同時對 X 和 Y 呼叫同一個 step，狀態會互相污染。
@@ -160,8 +163,12 @@ DWT->CYCCNT = 0;  DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
 uint32_t t0 = DWT->CYCCNT;
 eHWFLC_KF_step(sample, &tr, &fr);
 uint32_t cyc = DWT->CYCCNT - t0;
-/* 微秒 = cyc / (SystemCoreClock / 1e6)；預期 ~10–30 µs @ 480 MHz */
+/* 微秒 = cyc / (SystemCoreClock / 1e6)；以實機數值確認最壞情況 < 10 ms */
 ```
+
+不要用 clock 比例推估或宣稱固定耗時；量測紀錄必須一併標示 clock、cache、build
+configuration 與輸入範圍。現有已知紀錄見 [GATING_DESIGN.md](GATING_DESIGN.md) §2，
+它是在不同 clock/configuration 下取得，不能直接當成本 target 的結果。
 
 ## 8. 上板後先做「板上 Stage 1」再談閉迴路
 

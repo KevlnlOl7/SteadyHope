@@ -54,7 +54,7 @@ SteadyHope V1 依照上述資料流，採用：
 | `gyro_y_raw` | `int16` | 1/16 deg/s | BNO055 Y軸Gyro原始值 |
 | `gyro_z_raw` | `int16` | 1/16 deg/s | BNO055 Z軸Gyro原始值 |
 | `sensor_valid` | `uint8` | 0/1 | 這筆 IMU 資料是否讀取成功 |
-| `motor_enabled` | `uint8` | 0/1 | 當下 gating 是否允許馬達作動 |
+| `motor_enabled` | `uint8` | 0/1 | wire 相容名稱；實際語意是 `motor_output_active`（完整安全鏈套用非零 command），不是 gate，也不證明馬達有移動 |
 
 每筆固定16 bytes，採little-endian：
 
@@ -79,7 +79,8 @@ gyro_z_dps = gyro_z_raw / 16.0
 - 每一筆是16 bytes邏輯紀錄；BLE一包放幾筆由實際MTU決定，不可拆壞單筆欄位順序。
 - 若要批次傳送，目標傳輸延遲不超過50 ms；無論如何都必須保持100 Hz取樣。
 - 即使分批傳送，每一筆仍要保留自己的`sequence`與`sample_tick_ms`。
-- `motor_enabled` 只供 App 疊圖，不可拿來修改 PSD 計算結果。
+- `motor_enabled` 是歷史 wire field 名稱；目前只能解讀成 command-active 狀態，不可稱為
+  gate permission、實際馬達轉動或抑震成功，也不可拿來修改 PSD 計算結果。
 - `sensor_valid`與`motor_enabled`在STM32內可用Boolean語意；BLE封包固定用`uint8`的0或1。
 
 ### 3.1 真實日期時間與使用情境
@@ -162,7 +163,7 @@ tremor_strength_rms_dps = sqrt(P_4_6)
 | X軸 | 實際日期時間，使用每個視窗的`recorded_at_utc_ms`轉為當地時間 |
 | Y軸 | `tremor_strength_rms_dps`，單位`deg/s`，從0開始 |
 | 更新頻率 | 每0.5秒新增一點，60秒共最多120點 |
-| 馬達區段 | 依原始`motor_enabled`時間區段加背景色，不改變曲線數值 |
+| command 區段 | 依原始 `motor_enabled`（=`motor_output_active`）時間區段加背景色，不改變曲線數值 |
 | 無效資料 | 曲線中斷並顯示資料不足，不連線、不補值 |
 | 主要頻率 | 另外以數字顯示`dominant_frequency_hz`，不當作主圖Y軸 |
 
@@ -173,7 +174,7 @@ App可以把最近4秒的三軸raw Gyro與PSD放在「工程／詳細資料」�
 目前主要頻率、目前震顫強度、60秒強度趨勢、馬達開啟區段及資料品質為主。
 
 每0.5秒的歷史結果至少儲存：`recorded_at_utc_ms`、`dominant_frequency_hz`、
-`tremor_strength_rms_dps`、`motor_on_fraction`、`data_valid`、`frequency_reliable`、
+`tremor_strength_rms_dps`、`motor_command_active_fraction`、`data_valid`、`frequency_reliable`、
 `activity_tag`與`note`。歷史頁才可以依時段或活動比較震顫，而不是只看即時60秒。
 
 ## 6. 輸出定義

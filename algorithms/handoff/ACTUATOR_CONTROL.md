@@ -6,44 +6,34 @@
 
 ## 1. 邊界與目前狀態
 
-- V2 gating 只輸出 `enabled`，決定馬達能不能動。
+- V2 gating 只輸出 `gate_enabled`，它只是完整權限鏈的一個條件，不能直接決定馬達動。
 - `tremor_est` 的正負決定反相補償方向，絕對值映射為 PWM duty。
 - `freq_hz` 已知不可靠，不可參與 gating、PWM 或 App biomarker。
 - `control_sim.m` 目前名義上比較 PID，實作其實是 **P-only**（`Ki=Kd=0`）。在取得
   actuator gain、頻寬與延遲前，不應直接加入 integral/derivative，也不可把模擬的
   `Kp=0.8/1.2` 解讀成 80%/120% duty。
 
-控制資料流：
+目前 authoritative 控制資料流：
 
 ```text
-raw gyro ─┬─> eHWFLC-KF ─> tremor_est ─> P gain ─> saturation ─> PWM/H-bridge
-          └─> V2 gating ───────────────────────────> enable / force stop
+raw gyro → SuppressionControl(estimator + V2 gate + freshness/fault checks)
+         → MotorCommandMapper → encoder SetZero / MotorPositionGuard
+         → TB6612Driver → STM32_TB6612_HAL → PWM/H-bridge
 ```
 
-## 2. 建議的第一版控制律
+## 2. 控制律設計輸入（不可繞過 canonical safety chain）
 
 控制迴路仍以 **100 Hz** 更新；PWM carrier 是另一個較高頻率的 timer output，起始候選可用
 約 **20 kHz**，但最終值須符合 H-bridge 與馬達 driver datasheet。
 
-```c
-eHWFLC_KF_step(raw_gyro_dps, &tremor_est, &freq_hz);
-enabled = TremorGate_Update(&gate, raw_gyro_dps);
+舊文件曾用單一 `motor_pwm_apply()` 表示整層致動器；那只是概念圖，不能實作成繞過安全
+模組的捷徑。現在每個 100 Hz fresh tick 必須由 canonical pipeline 完成：
 
-if (!enabled || sensor_stale || driver_fault) {
-    motor_pwm_stop();
-} else {
-    double command = -tremor_est;   /* 極性須由實機確認 */
-    motor_pwm_apply(command);       /* 內部只乘一次 K_PWM */
-}
-```
-
-`motor_pwm_apply()` 至少要包含：
-
-1. 過零 deadband，降低零點附近反覆換向。
-2. `duty = K_PWM * max(|command| - deadband, 0)`。
-3. `duty` saturation（bring-up 先限制較低最大值）。
-4. 依 command 正負設定 H-bridge 方向。
-5. command 為零、gate 關閉、sensor timeout 或 driver fault 時，CCR 立即歸零。
+1. `SuppressionControl` 檢查 fresh sample、estimator、gate 與 inhibit/fault。
+2. mapper 套用經台架審核的 deadband、gain、saturation、slew 與方向 polarity。
+3. 未 ARM、未 `SetZero`、encoder/position fault 或超行程時，position guard veto。
+4. TB6612 driver 執行 duty ceiling 與 reversal safe-time；final HAL 驗證方向/AIN 並套用。
+5. 任一無效狀態立即 `STBY=LOW`、`CCR=0`、`AIN1=AIN2=LOW`，必要時 latch fault。
 
 若 driver 是 DIR+PWM、IN1/IN2 或兩顆單向線纜馬達，方向層接法不同；必須以實際 H-bridge
 型號決定。PWM timer 應在開機時 start 一次，100 Hz tick 只更新 CCR，不要每 tick 重新

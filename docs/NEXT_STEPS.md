@@ -39,8 +39,8 @@
 
 | # | 事項 | 負責 | 預估 | 說明 |
 |---|---|---|---|---|
-| M1 | 修 main.c 絕對路徑 include（阻斷項） | 硬體組 | 10 分鐘 | L27-28 指向 `C:/Users/banny/...`，其他人無法編譯。標頭已在 `CM7/Core/Algo/`，改相對 include。擋全隊，先清。 |
-| M2 | V2 gating 上板 + 手測 | 硬體組＋演算法組 | 0.5–1 天 | 照 GATING_DESIGN.md §5 貼 C、§6 驗收（慢揮不動、快抖才動）。合成訊號已驗證誤觸發 89%→0%。 |
+| M1 | ✅ CubeIDE target portable integration | 硬體組 | 已完成（待上板） | `firmware/algo` 已移除個人絕對路徑，整合 canonical CM7 + idle CM4，並提供 static validator 與四組 headless build；仍缺 dual-core flash/board evidence。 |
+| M2 | V2 gating 上板測資比對 | 硬體組＋演算法組 | 0.5–1 天 | Target source/compile 已整合；下一步保持 VM 斷開，燒錄 CM7+CM4，跑 committed boundary vectors 逐筆比對。慢揮/快抖只能作補充觀察，不能以「馬達有轉」當 gate 驗收。 |
 | M3 | **N20 loaded bandwidth test → PWM/P control** | 硬體組＋演算法組 | 數天–1.5 週 | ★ 先補齊 N20 型號、gear ratio、供電、H-bridge、spool/線纜規格；裝實際負載測 4/5/6 Hz gain、phase、延遲、backlash、電流與溫升。通過才調 PWM/P gain；失敗先換 actuator/transmission。`control_sim.m` 目前是 P-only，實測 plant 前不直接加 Ki/Kd。詳見 `algorithms/handoff/ACTUATOR_CONTROL.md`。 |
 | M4 | **bench 抑震量測 protocol + 執行** | 演算法組＋機構組 | 1–2 週 | ★**9 月主證據**。見下方「量測 protocol」。前置：L1 實體手套、L2 第二顆 IMU。 |
 | M5 | 機構手套實體（承 L1） | 機構組 | 持續 | 列印→組裝→線纜牽引可動→調校。9 月 demo 硬體本體，關鍵路徑。 |

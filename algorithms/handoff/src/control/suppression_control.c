@@ -22,6 +22,16 @@ static uint8_t estimator_kind_is_valid(uint8_t estimator_kind)
                       (uint8_t)SUPPRESSION_ESTIMATOR_EHWFLC_KF));
 }
 
+static double sanitize_diagnostic_frequency(double frequency_hz)
+{
+    if (!isfinite(frequency_hz) ||
+        (frequency_hz < 0.0) ||
+        (frequency_hz > SUPPRESSION_CONTROL_MAX_DIAGNOSTIC_FREQUENCY_HZ)) {
+        return 0.0;
+    }
+    return frequency_hz;
+}
+
 static void estimator_reset(uint8_t estimator_kind)
 {
     if (estimator_kind == (uint8_t)SUPPRESSION_ESTIMATOR_BMFLC) {
@@ -186,7 +196,7 @@ uint8_t SuppressionControl_Update(SuppressionControl *control,
         return inhibit_and_reset(control, output,
                                  SUPPRESSION_CONTROL_FAULT_GATE, 0U);
     }
-    if (sensor_valid == 0U) {
+    if (sensor_valid != 1U) {
         return inhibit_and_reset(control, output,
                                  SUPPRESSION_CONTROL_FAULT_SENSOR_INVALID, 0U);
     }
@@ -216,14 +226,14 @@ uint8_t SuppressionControl_Update(SuppressionControl *control,
         eHWFLC_KF_step(raw_gyro_dps, &tremor_estimate, &diagnostic_frequency);
     }
     if (!isfinite(tremor_estimate) ||
-        (fabs(tremor_estimate) > TREMOR_GATE_MAX_ABS_INPUT_DPS) ||
-        !isfinite(diagnostic_frequency) ||
-        (diagnostic_frequency < 0.0) ||
-        (diagnostic_frequency >
-         SUPPRESSION_CONTROL_MAX_DIAGNOSTIC_FREQUENCY_HZ)) {
+        (fabs(tremor_estimate) > TREMOR_GATE_MAX_ABS_INPUT_DPS)) {
         return inhibit_and_reset(
             control, output, SUPPRESSION_CONTROL_FAULT_ESTIMATOR_OUTPUT, 0U);
     }
+    /* eHWFLC frequency is local telemetry only.  It is known to clamp or
+     * mis-track outside its capture band, so an invalid diagnostic value must
+     * never influence gate state or actuator authority. */
+    diagnostic_frequency = sanitize_diagnostic_frequency(diagnostic_frequency);
 
     gate_enabled = TremorGate_Update(&control->gate, raw_gyro_dps);
     if ((TremorGate_IsReady(&control->gate) == 0U) ||

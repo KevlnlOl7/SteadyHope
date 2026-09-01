@@ -152,7 +152,9 @@ uint32_t t0 = DWT->CYCCNT;
 eHWFLC_KF_step(sample, &tr, &fr);
 uint32_t cyc = DWT->CYCCNT - t0;   /* 時間(us) = cyc / (SystemCoreClock/1e6) */
 ```
-粗估每步 ~10–30 µs @ 480 MHz（含數十個 `sin`/`cos`），裕度很大，但請**實測**。
+不要用 clock 比例粗估耗時。請在實機記錄 clock、cache、build configuration 與輸入範圍，
+並確認最壞情況小於 10 ms；不同設定的量測不能直接互相代用（現有紀錄見
+[GATING_DESIGN.md](GATING_DESIGN.md) §2）。
 另：把 `golden/input.csv` 存成陣列在板上跑，輸出對 `golden/*.csv` 比對，
 確認 ARM build 也數值一致。
 

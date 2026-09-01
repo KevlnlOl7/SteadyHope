@@ -4,7 +4,14 @@
 ![Platform](https://img.shields.io/badge/Platform-STM32%20%7C%20Python-green)
 
 ## 📌 專案簡介
-SteadyHope 是一款專為帕金森氏症患者設計的智慧型避震手套。透過感測器捕捉手部震顫頻率，並利用演算法控制致動器產生補償力量，藉此減緩手部抖動，協助患者重拾日常生活品質。
+SteadyHope 是穿戴式顫抖抑制裝置的畢業專題原型，目標是以 IMU、估測演算法與主動
+致動器降低 4–6 Hz 手部顫抖。目前 repo 已有 STM32H745I-DISCO 雙核心 target 專案與
+motor-off／ForceSafe 控制鏈，但尚未完成燒錄、馬達台架或人體成效驗證，不能把開發版
+描述成醫療產品或已證實可抑震。
+
+> 馬達整合入口：[`firmware/algo/README.md`](firmware/algo/README.md)。`D2`–`D7` 是
+> STM32H745I-DISCO 的 Arduino header label，不是 GPIO 名稱；真正接腳與目前安全鎖請以
+> 該文件及 `.ioc` 為準。現在的 canonical build 刻意保持 `STBY=LOW`、`CCR=0`。
 
 
 ---
@@ -13,43 +20,40 @@ SteadyHope 是一款專為帕金森氏症患者設計的智慧型避震手套。
 
 ```
 SteadyHope/
-├── firmware/                # 【嵌入式系統】STM32 核心程式
-│   ├── src/                 # 原始碼 (.cpp, .ino)
-│   │   ├── main.cpp         # 程式入口與多執行緒排程
-│   │   ├── IMU_Handler.cpp  # BNO055 數據讀取與校準
-│   │   └── Motor_Control.cpp# PWM 致動器控制邏輯
-│   ├── lib/                 # 第三方或自定義函式庫 (如 KalmanFilter)
-│   └── include/             # 標頭檔 (定義引腳、PID 參數常數)
-├── software/                # 【軟體系統】iOS 與 雲端後端
-│   ├── iOS-App/             # Swift 原生開發應用程式
-│   │   ├── SteadyHope/      
-│   │   │   ├── Models/      # 數據模型 (患者資訊、震顫紀錄)
-│   │   │   ├── ViewModels/  # MVVM 邏輯層 (處理 BLE 通訊與 API 請求)
-│   │   │   ├── Views/       # SwiftUI 介面 (Dashboard, Setting)
-│   │   │   └── Services/    # 核心服務 (NetworkManager, BluetoothManager)
-│   │   └── SteadyHope.xcodeproj
-│   └── backend/             # Oracle Cloud (OCI) 伺服器端
-│       ├── src/             # API 邏輯 (Node.js/Express 或 Python/FastAPI)
-│       ├── db/              # Oracle DB Schema 與 SQL 腳本
-│       ├── Dockerfile       # 容器化部署設定
-│       └── .env.example     # 環境變數範本 (防止密碼外洩)
-├── algorithms/              # 【演算法】MATLAB 原始碼與交付 C
-│   ├── matlab/              # 權威 MATLAB 原始碼 (BMFLC / eHWFLC-KF) + codegen_arm.m
-│   └── handoff/             # 交給韌體組的交付包 (ARM-safe C + 介面契約 + golden 測試 + 整合教學)
-├── hardware/                # 【硬體設計】機構與電路
-│   ├── mechanical/          # 3D 列印相關
-│   │   ├── stl/             # 最終輸出列印檔 (預覽用)
-│   │   └── source/          # 原始設計檔 (Fusion 360 / SolidWorks)
-│   └── circuits/            # 電路設計
-│       ├── schematics/      # 電路圖 (PDF/KiCad)
-│       └── bom/             # 材料清單 (Bill of Materials)
-├── docs/                    # 【專案文件】
-│   ├── api_spec.md          # RESTful API 規範說明
-│   ├── ble_protocol.md      # 藍牙封包傳輸協議定義
-│   └── reports/             # 畢業專題進度報告
-├── .gitignore               # 排除 Xcode 暫存檔、OS 系統檔、環境變數
-└── README.md                # 專案總入口文件
+├── firmware/algo/                 # STM32H745I-DISCO CubeIDE CM7/CM4 target
+│   ├── CM7/Core/Src/main.c        # 100 Hz pipeline、TIM1 PWM、GPIO/encoder glue
+│   ├── CM4/Core/Src/main.c        # 雙核心 handshake，之後 idle
+│   ├── algo.ioc                   # target MCU、clock、D2–D7 pin mapping
+│   ├── build_headless.ps1         # CM7/CM4 Debug/Release 可重現建置
+│   └── README.md                  # 接腳、build、燒錄與安全狀態（先讀）
+├── algorithms/
+│   ├── matlab/                    # BMFLC/eHWFLC-KF source of truth + codegen
+│   ├── handoff/src/control/       # SuppressionControl 與 command mapper
+│   ├── handoff/src/actuator/      # encoder、position guard、TB6612 driver
+│   ├── handoff/stm32_motor_control_20260823/
+│   │   └── src/actuator/          # STM32 TB6612 HAL adapter
+│   └── validation/                # Python/static/cross-language validators
+├── software/                      # SwiftUI iOS App + Vapor/PostgreSQL backend
+├── hardware/                      # 機構、電路與歷史韌體資料
+├── docs/                          # 專案規劃、協定與報告
+└── README.md
 ```
+
+---
+## STM32 韌體驗證
+
+在 repo 根目錄依序執行：
+
+```powershell
+python .\algorithms\validation\validate_stm32_motor_main.py `
+  --main .\firmware\algo\CM7\Core\Src\main.c --skip-shadow
+python .\algorithms\validation\validate_cubeide_motor_integration.py
+.\algorithms\handoff\test\run_actuator_tests.bat
+powershell -ExecutionPolicy Bypass -File .\firmware\algo\build_headless.ps1
+```
+
+最後一個腳本會 clean-build CM7/CM4 的 Debug 與 Release。這些 PASS 只代表 static、host
+與 target compile/link；燒錄、scope、encoder、馬達負載及抑震成效必須另外留下實板證據。
 
 ---
 ## 團隊組成 (Team Members)

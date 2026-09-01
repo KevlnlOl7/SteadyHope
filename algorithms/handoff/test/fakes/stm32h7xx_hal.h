@@ -49,6 +49,10 @@ void FakeHal_SetCompare(TIM_HandleTypeDef *timer,
 uint32_t FakeHal_GetCompare(TIM_HandleTypeDef *timer,
                            uint32_t channel);
 void FakeHal_ClearExti(uint16_t pin);
+uint32_t __get_PRIMASK(void);
+void __disable_irq(void);
+void __set_PRIMASK(uint32_t primask);
+void __DMB(void);
 
 #define __HAL_TIM_GET_AUTORELOAD(timer) ((timer)->Instance->ARR)
 #define __HAL_TIM_SET_COMPARE(timer, channel, compare) \

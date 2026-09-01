@@ -24,7 +24,7 @@ BLE資料提供：李冠廷
 | 10–11 | `gyro_y_raw` | `int16` |
 | 12–13 | `gyro_z_raw` | `int16` |
 | 14 | `sensor_valid` | `uint8` |
-| 15 | `motor_enabled` | `uint8` |
+| 15 | `motor_enabled` | `uint8`；歷史 wire 名稱，語意為 `motor_output_active` |
 
 解析後立即轉成角速度：
 
@@ -218,7 +218,8 @@ onBleRecord(bytes):
     rawBuffer.append(sample)
     rawBuffer.keepLatest(400)
     newSampleCountSinceLastAnalysis += 1
-    updateMotorBackground(sample.recorded_at_utc_ms, sample.motor_enabled)
+    updateMotorCommandBackground(sample.recorded_at_utc_ms,
+                                 sample.motor_enabled)
 
     if rawBuffer.count < 400:
         showAccumulating()
@@ -242,7 +243,7 @@ onBleRecord(bytes):
     peakIndex = argmax(psdSum[12...28])
     candidateHz = peakIndex * 0.25
     strengthRms = sqrt(sum(psdSum[16...24]) * 0.25)
-    motorOnFraction = mean(motor_enabled of latest 50 samples)
+    motorCommandActiveFraction = mean(motor_enabled of latest 50 samples)
     reliable = checkFrequencyEvidence(...)
 
     append60SecondPoint(
@@ -259,7 +260,8 @@ onBleRecord(bytes):
 - 大字：目前主要震顫頻率`dominant_frequency_hz`，不可靠時顯示`--`。
 - 大字：目前4–6 Hz震顫強度`tremor_strength_rms_dps`。
 - 折線圖：最近60秒RMS，每0.5秒一點，Y軸從0開始。
-- 背景區段：依每筆`motor_enabled`標出馬達允許作動的時間。
+- 背景區段：依每筆 `motor_enabled` 標出「完整安全鏈已套用非零 command」的時間；
+  不可標成 gate、已確認馬達轉動或抑震成功。
 - 狀態文字：資料正常、資料累積中、BLE可能掉包或目前無清楚頻率。
 
 若目的是讓醫生或照護者知道「什麼情況比較容易震顫」，App還要提供活動標記，
@@ -273,7 +275,7 @@ session_id
 recorded_at_utc_ms
 dominant_frequency_hz          // nullable
 tremor_strength_rms_dps        // nullable
-motor_on_fraction              // 最近0.5秒馬達開啟比例0...1
+motor_command_active_fraction  // 最近0.5秒套用非零command比例0...1
 data_valid
 frequency_reliable
 activity_tag

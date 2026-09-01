@@ -290,6 +290,57 @@ static int test_small_positive_duty_never_becomes_zero_ccr(void)
            (output.stby == 1U);
 }
 
+static int test_active_ccr_never_exceeds_configured_fraction(void)
+{
+    Tb6612Driver driver;
+    Tb6612DriverConfig config = valid_config();
+    Tb6612Output output;
+    uint32_t full_scale;
+
+    config.pwm_full_scale_ccr = 3U;
+    config.max_duty_fraction = 0.5;
+    if (!init_fixture(&driver, &config) ||
+        (TB6612Driver_Update(&driver, 1, 0.5, 1U, &output) !=
+         TB6612_DRIVER_ACTIVE) ||
+        (output.ccr != 1U)) {
+        return 0;
+    }
+
+    /*
+     * Values formed by division are useful boundary probes: their binary64
+     * representation may lie immediately below or above the rational value.
+     * For these small denominators, long double has enough precision to test
+     * the exact binary64 setting times the integer full scale.
+     */
+    for (full_scale = 1U; full_scale <= 511U; ++full_scale) {
+        uint32_t numerator;
+
+        config.pwm_full_scale_ccr = full_scale;
+        for (numerator = 1U; numerator <= full_scale; ++numerator) {
+            long double configured_limit;
+
+            config.max_duty_fraction =
+                (double)numerator / (double)full_scale;
+            if (TB6612Driver_ConfigIsValid(&config) == 0U) {
+                continue;
+            }
+            if (!init_fixture(&driver, &config) ||
+                (TB6612Driver_Update(
+                     &driver, 1, config.max_duty_fraction, 1U,
+                     &output) != TB6612_DRIVER_ACTIVE)) {
+                return 0;
+            }
+            configured_limit =
+                (long double)config.max_duty_fraction *
+                (long double)config.pwm_full_scale_ccr;
+            if ((long double)output.ccr > configured_limit) {
+                return 0;
+            }
+        }
+    }
+    return 1;
+}
+
 static int test_deterministic_output_invariant_soak(void)
 {
     Tb6612Driver driver;
@@ -361,6 +412,7 @@ int main(void)
     pass &= test_reversal_cancellation_and_safe_time();
     pass &= test_config_and_state_corruption_require_reinit();
     pass &= test_small_positive_duty_never_becomes_zero_ccr();
+    pass &= test_active_ccr_never_exceeds_configured_fraction();
     pass &= test_deterministic_output_invariant_soak();
 
     printf("TB6612 pure command driver: %s\n", pass ? "PASS" : "FAIL");

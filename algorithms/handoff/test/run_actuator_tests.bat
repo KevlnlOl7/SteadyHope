@@ -23,6 +23,15 @@ if errorlevel 1 exit /b 1
 if errorlevel 1 exit /b 1
 
 %CC% -O2 -std=c11 -Wall -Wextra -Werror -pedantic ^
+  -I"%SRC%\control" -I"%SRC%\gating" -I"%SRC%\bmflc" -I"%SRC%\ehwflc" ^
+  "%HERE%test_diagnostic_frequency_isolation.c" ^
+  "%SRC%\control\suppression_control.c" "%SRC%\gating\tremor_gate.c" ^
+  -lm -o "%OUT%\test_diagnostic_frequency_isolation.exe"
+if errorlevel 1 exit /b 1
+"%OUT%\test_diagnostic_frequency_isolation.exe"
+if errorlevel 1 exit /b 1
+
+%CC% -O2 -std=c11 -Wall -Wextra -Werror -pedantic ^
   -I"%SRC%\control" ^
   "%HERE%test_motor_command_mapper.c" ^
   "%SRC%\control\motor_command_mapper.c" ^
@@ -68,6 +77,16 @@ if errorlevel 1 exit /b 1
   -lm -o "%OUT%\test_tb6612_driver.exe"
 if errorlevel 1 exit /b 1
 "%OUT%\test_tb6612_driver.exe"
+if errorlevel 1 exit /b 1
+
+%CC% -O2 -std=c11 -Wall -Wextra -Werror -pedantic ^
+  -I"%SRC%\actuator" -I"%SRC%\control" ^
+  "%HERE%test_motor_mapper_driver_chain.c" ^
+  "%SRC%\control\motor_command_mapper.c" ^
+  "%SRC%\actuator\tb6612_driver.c" ^
+  -lm -o "%OUT%\test_motor_mapper_driver_chain.exe"
+if errorlevel 1 exit /b 1
+"%OUT%\test_motor_mapper_driver_chain.exe"
 if errorlevel 1 exit /b 1
 
 %CC% -O2 -std=c11 -Wall -Wextra -Werror -pedantic ^

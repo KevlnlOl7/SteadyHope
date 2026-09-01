@@ -124,11 +124,14 @@ static void force_safe(void)
 
 /*
  * Call after MX_GPIO_Init() and MX_TIM1_Init(), before motor VM is enabled.
- * The caller must obtain both configs from a reviewed, build-bound registry.
+ * The caller must obtain both configs and the integer HAL duty cap from one
+ * reviewed, build-bound registry.  Do not recompute the cap here with
+ * floating-point rounding.  A zero cap intentionally keeps the HAL locked.
  */
 uint8_t MotorControlExample_Init(
     const Tb6612DriverConfig *driver_config,
     const MotorPositionGuardConfig *position_config,
+    uint32_t reviewed_max_active_ccr,
     int8_t encoder_count_polarity)
 {
     Stm32Tb6612HalConfig hal_config;
@@ -145,7 +148,9 @@ uint8_t MotorControlExample_Init(
     g_initialized = 0U;
     g_telemetry.calibration_required = 1U;
 
-    if ((driver_config == NULL) || (position_config == NULL)) {
+    if ((driver_config == NULL) || (position_config == NULL) ||
+        (reviewed_max_active_ccr >
+         driver_config->pwm_full_scale_ccr)) {
         return 0U;
     }
 
@@ -153,6 +158,8 @@ uint8_t MotorControlExample_Init(
     hal_config.pwm_channel = TIM_CHANNEL_1;
     /* HAL validates this value against the actual ARR + 1. */
     hal_config.pwm_full_scale_ccr = driver_config->pwm_full_scale_ccr;
+    hal_config.max_active_ccr = reviewed_max_active_ccr;
+    hal_config.release_ain1_level = driver_config->release_ain1_level;
     hal_config.ain1_port = MOTOR_AIN1_GPIO_Port;
     hal_config.ain1_pin = MOTOR_AIN1_Pin;
     hal_config.ain2_port = MOTOR_AIN2_GPIO_Port;

@@ -103,7 +103,7 @@ ratio = env_t / (env_t + env_v)
 > 這些是**合成訊號設計值**，不可當實測成效引用；`AMP_ON/AMP_OFF` 與病患顫抖
 > 振幅、gyro 標度、配戴朝向相關，上板後須實測校調。
 
-## 5. C 程式碼（可直接整合進 main.c）
+## 5. C 程式碼（歷史設計片段；powered build 不可直接貼）
 
 交付包現已提供可直接加入 CubeIDE 的獨立模組：
 
@@ -111,7 +111,9 @@ ratio = env_t / (env_t + env_v)
 - `src/gating/tremor_gate.c`
 - `test/test_tremor_gate.c`（PC 端基本行為測試）
 
-正式整合請優先使用上述模組；下方程式保留作為設計說明。模組採 instance-based
+正式整合只使用上述 hardened module 與 0823 canonical `SuppressionControl`；下方程式
+保留作為 gate 演進的歷史設計說明，**不可直接接 PWM、H-bridge 或 motor authority**。
+模組採 instance-based
 `TremorGate` 狀態，不依賴 STM32 HAL，也不修改 eHWFLC-KF。每個 100 Hz tick 將同一筆
 raw gyro（`double`、°/s）分別送入 `TremorGate_Update()` 與估測器即可。
 
@@ -133,7 +135,6 @@ gate 只決定「何時允許作動」。**濾波器狀態請保持 `double`**�
 #define GATE_ENV_DECAY  0.94f  /* envelope 衰減 (tau≈160 ms @100 Hz) */
 #define GATE_N_ON       20     /* 連續 200 ms 才啟動 (≈1 顫抖週期) */
 #define GATE_N_OFF      15     /* 連續 150 ms 才關閉 */
-#define DRIVE_TH        1.0    /* gate 開啟後, 內層 bang-bang 死區 (取代原 MOTOR_THRESHOLD 判斷) */
 
 /* 2 階 Butterworth 帶通 @ fs=100 Hz (scipy/MATLAB butter 同一組) */
 static const double gate_bt[5] = { 0.0036216815149286408, 0.0, -0.0072433630298572816, 0.0, 0.0036216815149286408 };
@@ -143,7 +144,7 @@ static const double gate_av[5] = { 1.0, -3.8000503652844575, 5.4393397877934069,
 
 static double   gate_zt[4] = {0}, gate_zv[4] = {0};
 volatile float  gate_env_t = 0.0f, gate_env_v = 0.0f, gate_ratio = 0.0f; /* 加進 Live Expressions */
-volatile uint8_t motor_enabled = 0;
+volatile uint8_t gate_enabled = 0; /* 只代表 gate，不是馬達輸出 */
 static uint16_t gate_on_count = 0, gate_off_count = 0;
 
 static double gate_df2t(double x, const double b[5], const double a[5], double z[4])
@@ -167,46 +168,44 @@ static uint8_t Gate_Update(double raw_gyro)
     gate_env_v = (yv > dv_) ? yv : dv_;
     gate_ratio = gate_env_t / (gate_env_t + gate_env_v + 1e-9f);
 
-    if (motor_enabled) {
+    if (gate_enabled) {
         uint8_t hold = (gate_env_t >= GATE_AMP_OFF) && (gate_ratio >= GATE_RATIO_OFF);
         if (hold) { gate_off_count = 0; }
-        else if (++gate_off_count >= GATE_N_OFF) { motor_enabled = 0; gate_on_count = 0; }
+        else if (++gate_off_count >= GATE_N_OFF) { gate_enabled = 0; gate_on_count = 0; }
     } else {
         uint8_t trig = (gate_env_t >= GATE_AMP_ON) && (gate_ratio >= GATE_RATIO_ON);
-        if (trig) { if (++gate_on_count >= GATE_N_ON) { motor_enabled = 1; gate_off_count = 0; } }
+        if (trig) { if (++gate_on_count >= GATE_N_ON) { gate_enabled = 1; gate_off_count = 0; } }
         else { gate_on_count = 0; }
     }
-    return motor_enabled;
+    return gate_enabled;
 }
 ```
 
-`Tremor_Algorithm()` 內的接法（估測器呼叫不變，只改判斷段）：
+目前 target 的正確接法是由 `SuppressionControl` 包住 estimator + gate，之後依序通過
+mapper、encoder `SetZero`、position guard、TB6612 driver 與 final HAL。gate 不得直接
+回傳 `MOTOR_FORWARD/REVERSE`：
 
 ```c
-uint8_t gate = Gate_Update(inputGyro);       /* 用 raw gyro, 在估測器呼叫之後或之前皆可 */
-
-if (!gate) return MOTOR_STOP;                /* gate 關 → 不作動 */
-
-double controlValue = -(MOTOR_GAIN * tremorEstimate);   /* gate 開 → 原本的反向邏輯 */
-if (controlValue >  DRIVE_TH) return MOTOR_FORWARD;
-if (controlValue < -DRIVE_TH) return MOTOR_REVERSE;
-return MOTOR_STOP;
+SuppressionControl_Update(&control, raw_gyro_dps,
+                          sensor_valid, sensor_stale, driver_fault,
+                          inhibit_flags, &suppression_output);
+/* suppression_output.gate_enabled 只供觀測；只有 actuation_permitted
+ * 才能進入完整 motor safety chain，仍不等於物理輸出。 */
 ```
 
-兩個小提醒（來自對抗性審查）：
-
-- 內層死區從 5.0 降到 `DRIVE_TH=1.0`，gate 開啟期間 bang-bang 的**切換頻率約增 5 倍**
-  （H-bridge/GPIO duty 上升）。這是刻意的——gate 已負責「該不該動」，內層死區只防
-  過零抖動；若馬達/驅動級發熱明顯，可把 DRIVE_TH 上調。
-- 原 `MOTOR_THRESHOLD` macro 改完後就沒人用了，直接刪除避免誤導。
+完整路徑與安全鎖見
+[`stm32_motor_control_20260823/README.md`](stm32_motor_control_20260823/README.md)；不要復活
+舊 `DRIVE_TH` bang-bang 或讓單一 `motor_enabled` 同時表示 gate 與實際輸出。
 
 ## 6. 板上驗證步驟
 
-1. Live Expressions 加入 `gate_env_t`、`gate_env_v`、`gate_ratio`、`motor_enabled`。
+本節只驗證 gate，VM／馬達電源保持斷開：
+
+1. Live Expressions 加入 `gate_env_t`、`gate_env_v`、`gate_ratio`、`gate_enabled`。
 2. **慢速大幅揮動**（模擬自主動作，~1–2 Hz）：`gate_env_v` 應明顯 > `gate_env_t`、
-   `motor_enabled` 維持 0、馬達不轉。
+   `gate_enabled` 維持 0。
 3. **小幅快速抖動**（模擬顫抖，~5 Hz，可用手腕快速左右擺）：`gate_env_t` 上升、
-   `ratio` > 0.55、約 0.4–0.6 秒後 `motor_enabled=1`、馬達開始作動。
+   `ratio` > 0.55、約 0.4–0.6 秒後 `gate_enabled=1`。這不代表馬達應作動。
 4. 揮動與抖動交替，確認 gate 能在 ~0.3–0.6 秒內正確切換（對照 §4 延遲表）。
 5. 若正常人抖動測不出（振幅不夠），暫時把 `GATE_AMP_ON` 降到 3.0 測邏輯，
    測完改回，並記錄實際手部顫抖的 `gate_env_t` 量級供門檻校調。
@@ -235,11 +234,10 @@ return MOTOR_STOP;
   - 取樣相位效應使有效 AMP_ON ≈ 6.07（比標稱高 ~1%），可忽略（門檻本來就要實測校調）。
   - freqEstimate 硬性頻率窗被否決（同 §3），與本文件 V2 結論一致。
 
-## 9. 順帶：韌體其他待修（與 gating 無關但重要）
+## 9. 順帶：韌體整合狀態
 
-1. **［阻斷］`main.c` L27-28 用絕對路徑 include**（`C:/Users/banny/...`）——
-   其他人機器編譯必失敗。演算法標頭已在專案內 `CM7/Core/Algo/`，改相對路徑
-   並把該目錄加進 include path 即可。
+1. 絕對 include path 阻斷已在 `firmware/algo` target 移除，並由 static validator
+   防止個人 home path 回歸；可重現 build 見 `firmware/algo/build_headless.ps1`。
 2. 建議開 **I-Cache / D-Cache**（`SCB_EnableICache(); SCB_EnableDCache();`），
    `algo_time_us` 預期大幅下降；1440 µs 目前可用，但省下的裕度之後 PID/PWM 會用到。
 3. codegen 產出的 C 檔頂端註解宣稱「支援動態 fs_in / 50 Hz 係數」，**實際產物
