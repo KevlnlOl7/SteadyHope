@@ -1,259 +1,143 @@
-# 給瑋哲：STM32 馬達控制台架 Quick Start
+# 給瑋哲：powered-bench 快速測試
 
-## 0. 這次只驗證什麼
+## 這版的狀態
 
-0823 canonical `main.c` 已整合進 repo 的 `firmware/algo` CM7 target；本輪確認最新版控制鏈、fresh-sample contract、telemetry、ForceSafe 與四組 target build。**目前仍不是直接驅動馬達或上手測試。**
+這版已解除先前阻擋馬達的預設設定。燒入相同 profile 的 CM7＋CM4 後：
 
-Canonical 預設：
+- 上電 armed
+- intensity = 100%
+- TIM1 max CCR = 3200（完整 duty）
+- mapper／TB6612 config 有效
+- 不用 debugger 改變數
+- 不用 encoder SetZero；D6/D7 目前只作 telemetry
+- Gate 開時，`-tremorEstimate` 會送到方向＋PWM
 
-```c
-#define MOTOR_BENCH_CONFIG_APPROVED 0U
-```
+Gate off、IMU stale、scheduler overrun、driver/HAL error 仍會停機，這些是控制正確性，不是
+舊的手動解鎖。
 
-因此不論 gate、runtime arm 或 App 指令為何，控制鏈都必須維持 ForceSafe：`motor_output_active=0`、`STBY=LOW`、`CCR=0`。開機強度也預設為 0%，後續必須由已審核的 App／台架操作明確設定，但強度指令本身不能取得 motor authority。這是刻意的安全鎖，不是待修問題。不得為了讓馬達轉動直接改成 1；只有 mapper、PWM、方向、encoder、行程、timeout 與 fault config 都有最終硬體的台架證據並完成 review 後，才能另建 powered-bench build。
+## 1. 接線
 
-後續若取得明確台架核准，限定條件才是 `6 V`、限流 bench supply、馬達與線軸固定在夾具、不接手套、不接人體。即使台架通過，也不代表可用 12 V、上手、人體測試或商品設定。
+| 板上 pin | MCU | 接 TB6612／encoder |
+|---|---|---|
+| D2 | PG3 | `AIN1` |
+| D3 | PA6 | `AIN2` |
+| D4 | PK1 | `STBY` |
+| D5 | PA8 / TIM1_CH1 | `PWMA` |
+| D6 | PE6 | encoder A／C1（本輪可不接） |
+| D7 | PI8 | encoder B／C2（本輪可不接） |
+| 3V3 | — | TB6612 `VCC` |
+| GND | — | TB6612 GND/PGND、encoder GND、外部電源負極共地 |
+| 外部馬達電源正極 | — | TB6612 `VM` |
+| TB6612 AO1/AO2 | — | 馬達兩條線 |
 
-若要同時驗證新版 gate，必須先完成
-`../stm32_gate_upgrade_20260822/QUICK_START_給瑋哲.md` 的 motor-off 測試，確認
-14,700 筆 STM32 輸出逐筆比對通過後，才進入本文件的馬達台架步驟。
+務必處理 `STBY`：如果舊線還是 `STBY -> 3V3`，先拆掉，再接 `D4 -> STBY`。`D5` 只接
+`PWMA`，不能接 STBY。這份程式用 channel A，所以馬達接 `AO1/AO2`，不是 `BO1/BO2`。
+本輪可完全不接 encoder；若要接，V+／GND、A/B 與線色都必須依手上 encoder 的
+datasheet／標示確認，不能只靠黃、綠、藍、黑等線色猜。
 
-先從 repo root 跑 validator：
+## 2. Build 與 flash
 
-```powershell
-python .\algorithms\validation\validate_stm32_motor_main.py
-```
-
-Validator 通過後，再跑 host tests：
-
-```powershell
-.\algorithms\handoff\test\run_actuator_tests.bat
-```
-
-兩者都必須全部 `PASS`，但這只證明 static contract、host C 與範例語法，不能取代 CubeIDE target build、scope 波形或台架證據。
-
-### 0.1 唯一 canonical `main.c`
-
-最新版只看：
-
-```text
-algorithms/handoff/stm32_motor_control_20260823/reference/main.c
-```
-
-0822 shadow 是 sealed historical evidence；`example/stm32_motor_integration_example.c` 也不是完整 `main.c`。CubeIDE 編譯的是下列 mirror，integration validator 會強制它與上述 canonical byte-identical：
-
-```text
-firmware/algo/CM7/Core/Src/main.c
-```
-
-若日後 `.ioc`、peripheral handles、timer、UART、I2C 或 pin mapping 改變，不可盲目覆蓋或只改一份 main；須 review 產生區、同步 canonical/target，並立即對真正要編譯的檔案再跑：
+Repo root 執行：
 
 ```powershell
+python .\algorithms\validation\validate_cubeide_motor_integration.py
 python .\algorithms\validation\validate_stm32_motor_main.py `
-  --main .\firmware\algo\CM7\Core\Src\main.c
+  --main .\firmware\algo\CM7\Core\Src\main.c --skip-shadow
+.\algorithms\handoff\test\run_actuator_tests.bat
+powershell -ExecutionPolicy Bypass -File .\firmware\algo\build_headless.ps1
 ```
 
-這次 validator 也必須通過，才可 Clean Build CM7。
-
-## 1. 接 VM 前逐項確認
-
-本節是取得 reviewed bench config 與 powered-bench 核准後的條件清單。在 `MOTOR_BENCH_CONFIG_APPROVED=0` 的目前階段，VM 與馬達電源保持實體斷開。
-
-- [ ] 拆掉 `STBY → 3V3`。
-- [ ] 改接 `D4 / PK1 → STBY`，並在 STBY 對 GND 加約 `10 kΩ` pulldown。
-- [ ] `D2 / PG3 → AIN1`、`D3 / PA6 → AIN2`、`D5 / PA8 → PWMA`。
-- [ ] Encoder `A/黃 → D6/PE6`、`B/綠 → D7/PI8`。
-- [ ] STM32、TB6612、encoder、bench supply 全部共地。
-- [ ] 用電錶確認 VM/VCC 無短路；馬達、線軸和繩線均固定且不會打到人。
-- [ ] 6 V 電源已限流，另有外部保護和可立即實體斷電的方法。
-- [ ] 舊的「full-duty 正/反轉各 2 秒」測試狀態機已移出 build。
-
-任一項未完成就不要接 VM。TB6612 的 STBY 若仍硬接 3V3，本模組無法保證 reset/fault 時關閉 bridge。
-
-## 2. CubeMX / `.ioc`
-
-### GPIO 和 PWM
-
-1. `PG3`：label `MOTOR_AIN1`，GPIO output，initial LOW。
-2. `PA6`：label `MOTOR_AIN2`，GPIO output，initial LOW。
-3. `PK1`：label `MOTOR_STBY`，GPIO output，initial LOW。
-4. `PA8`：`TIM1_CH1` PWM，不再當 fixed-HIGH GPIO；initial Pulse/CCR = 0。
-5. 先量測 TIM1 kernel clock。只有 64 MHz、edge-aligned up-counting 時才設 `PSC=0`, `ARR=3199`；此時 driver/HAL 的 `pwm_full_scale_ccr` 應一致為 `ARR+1=3200`。HAL 的 integer `max_active_ccr` 是另一層限制；目前 0 代表 motor lock。Powered bench 必須由 reviewed config 明確提供不向上超限的整數 cap，不可在 glue code 用浮點四捨五入猜值。否則依實際 clock 重算 20 kHz。
-6. 啟動後用 scope/logic analyzer 量 PA8，確認 20 kHz；safe state duty 必須為 0。
-
-### Encoder EXTI
-
-1. `PE6 / ENCODER_A`：rising + falling EXTI。
-2. `PI8 / ENCODER_B`：rising + falling EXTI。
-3. 目前 target 使用內部 `GPIO_PULLUP` 防止斷線浮動；上電前仍須由 encoder datasheet
-   確認輸出級與 3.3 V 相容，不可直接接未知的 5 V push-pull output。
-4. 啟用 `EXTI9_5_IRQn`。
-5. 每次 A 或 B 中斷都立即重讀 A/B 兩腳，再呼叫 `QuadratureEncoder_OnEdge()`。
-6. ISR 不做 `printf`、blocking UART、delay 或分析運算。不能改成 100 Hz polling。
-
-### Control tick
-
-- 保持獨立 `100 Hz`（10 ms）固定 tick。
-- PWM channel 啟動一次；100 Hz tick 只更新 CCR/GPIO command。
-- 傳輸和檔案輸出放在非 ISR 工作中，並量測 scheduler overrun。
-
-## 3. 確認 CM7 build 的 source ownership
-
-Canonical source 使用 header basename，禁止改成任何人的 `C:/Users/...` 絕對 include。
-目前 repo 的 `firmware/algo` target **已經完成整合**，實際 ownership 是：
+要燒同一種 profile 的兩個檔：
 
 ```text
-firmware/algo/CM7/Core/Src + Core/Inc       tremor_gate mirror
-firmware/algo/CM7/Core/Algo/bmflc          BMFLC target copy
-firmware/algo/CM7/Core/Algo/ehwflc         eHWFLC-KF target copy
-Eclipse linked resource Handoff_Control     handoff/src/control
-Eclipse linked resource Handoff_Actuator    handoff/src/actuator
-Eclipse linked resource Handoff_STM32_Actuator  STM32 HAL adapter
+firmware/algo/CM7/Debug/algo_CM7.elf
+firmware/algo/CM4/Debug/algo_CM4.elf
 ```
 
-Debug/Release 的 `.cproject` 已含相符 include path 與 source entry；直接跑 integration
-validator 與 clean build，不要再把 handoff 的 gate、BMFLC 或 eHWFLC source 加進這個
-target，否則會和 target-local copy 產生 duplicate symbols。
+或兩個都用 Release。只更新其中一顆 core 不算更新完成。
 
-若是移植到**另一個** CubeIDE target，每個 module 只能選一個 owner：保留 target-local
-copy，或排除它後改編譯下列 handoff source，不能兩者並存：
+## 3. 第一輪測試方法
+
+1. 馬達先離架固定，不接手、不裝進手套。
+2. 先上 STM32／logic power，確認 boot 時 D4 LOW、D5 LOW。
+3. 接外部馬達電源並共地。
+4. 不要下 breakpoint；用 Live Expressions＋scope。
+5. 預設讀 BNO055 X 軸。以 X 軸約 5 Hz、12–15 dps 搖動。
+6. Gate 預設需連續 20 個 100 Hz samples 達到 `amp>=6 dps`、ratio `>=0.55`。
+7. Gate 開後應看到 D4 HIGH、D5 20 kHz PWM，D2/D3 隨補償正負換向。
+
+換向時有 10–20 ms 的 CCR=0 safe tick 是正常現象，不是掉輸出。
+
+## 4. Live Expressions 判讀
+
+依序看：
 
 ```text
-algorithms/handoff/src/gating/tremor_gate.c/.h
-algorithms/handoff/src/actuator/quadrature_encoder.c/.h
-algorithms/handoff/src/actuator/motor_position_guard.c/.h
-algorithms/handoff/src/actuator/tb6612_driver.c/.h
-algorithms/handoff/stm32_motor_control_20260823/src/actuator/stm32_tb6612_hal.c/.h
-algorithms/handoff/src/control/motor_command_mapper.c/.h
-algorithms/handoff/src/control/suppression_control.c/.h
-algorithms/handoff/src/bmflc/*
-algorithms/handoff/src/ehwflc/*
+bno_detected_address              // 0x28 或 0x29
+imu_ready                         // 1
+selectedGyroInputDps              // X 軸輸入
+gate_enabled_debug                // Gate 開後 1
+actuation_permitted_debug         // 1
+suppression_start_allowed         // 1
+motorIntensityPercent             // boot 100；確認 App 沒有改成 0
+compensationRequestDps            // 非零、正負交替
+motor_command_output.duty_fraction
+motor_applied_ccr                 // 1..3200
+motor_applied_stby                // active 時 1
+motor_applied_ain1
+motor_applied_ain2
+motor_runtime_fault_latched       // 正常為 0
 ```
 
-其他 target 也要加入它自己的 `BNO055_STM32.h` 目錄與所選 module 的 include path；
-只新增 include path 不會自動編譯 `.c`。其中 `tremor_gate.c/.h` 是 4–6 Hz hardened
-版本，必須成對取代 8/18 branch 的 3–8 Hz 舊檔，再執行 CubeIDE Clean Build。禁止只換
-`.c`、只貼濾波係數、沿用舊 object 或讓同名 module 同時出現兩份。不要復活舊的
-低通-相減前處理，不要用 `freqEstimate` 做 gating。
+判讀：
 
-先保持 H-bridge／motor power 實體斷開，以 21 組 6–7 Hz boundary vectors 驗證板上逐筆輸出。只有 C/Python 的 raw、envelope、ratio、on-count、enabled 全部一致，才能宣稱「最新版 gate 已成功移植」；這仍不等於取得接馬達或人體測試權限。
+- Gate 一直 0：先查 X/Y/Z 軸、頻率、振幅，不是查 TB6612。
+- App／ESP32 連線後 duty 突然為 0：看 `motorIntensityPercent`；UART `01 00` 會設 0，`01 64` 會恢復 100%。
+- Gate=1、permission=1，但 `suppression_start_allowed=0`：查 runtime fault、scheduler、driver/HAL。
+- `motor_applied_ccr>0`，D5 scope 沒 PWM：確認新 CM7 ELF、D5/PA8 與 scope ground。
+- D5 有 PWM、馬達不動：量 D4/STBY、VM、common ground、AO1/AO2。
+- 馬達方向相反：改 config 的 direction polarity，不要交換 D2/D3。
 
-測資位於：
+## 5. 要調參只改這個檔
+
+檔案：
 
 ```text
-algorithms/handoff/stm32_gate_upgrade_20260822/target_test/
+firmware/algo/CM7/Core/Inc/motor_bench_config.h
 ```
 
-使用包內 `gate_boundary_runner.c/.h`；runner 會在每個 case 重新初始化 gate，以 100 Hz
-依序注入 header 內的 700 筆 raw sample，並輸出合計 14,700 筆 CSV。欄位必須是：
+| 要調的項目 | 巨集 | 預設 |
+|---|---|---:|
+| 輸入軸 | `MOTOR_TREMOR_INPUT_AXIS` | `0`（X） |
+| 演算法 | `MOTOR_SUPPRESSION_ESTIMATOR` | eHWFLC-KF |
+| 補償正負反轉 | `MOTOR_COMMAND_DIRECTION_POLARITY` | `1`，反向改 `-1` |
+| dps→duty gain | `MOTOR_COMMAND_GAIN_DUTY_FRACTION_PER_DPS` | `1.0` |
+| deadband | `MOTOR_COMMAND_DEADBAND_DPS` | `0.0` |
+| max duty | `MOTOR_COMMAND_MAX_DUTY_FRACTION` | `1.0` |
+| duty ramp/tick | `MOTOR_COMMAND_MAX_DUTY_STEP_PER_TICK` | `1.0` |
+| HAL CCR cap | `MOTOR_MAX_ACTIVE_CCR` | `3200U` |
+| boot intensity | `MOTOR_DEFAULT_INTENSITY_PERCENT` | `100U` |
 
-```text
-test_case_id,sample_index,sample_tick_ms,gyro_x_raw_lsb,
-tremor_envelope,voluntary_envelope,tremor_ratio,on_count,off_count,
-gate_enabled,gate_config_valid,gate_last_fault,actuation_authority
-```
-
-不要把最後一欄命名成 `motor_enabled`；這一輪比的是 gate，不是實際馬達。將 STM32 log 拿回 PC 後，從 repo root 執行：
-
-```powershell
-python algorithms/handoff/stm32_gate_upgrade_20260822/tools/compare_stm32_gate_log.py `
-  --input stm32_6to7_log.csv `
-  --output-json stm32_6to7_comparison.json
-```
-
-驗收必須是 `pass=true`、`expected_rows=actual_rows=14700`，且 missing、unexpected、duplicate、tick、raw、on-count、enabled 與三個 float mismatch 全為 0。這段 test mode 仍須在瑋哲的實際 `main.c`／scheduler 接上，交付 ZIP 不是可直接 flash 的 `.bin`。
-
-目前 repo 已有 `firmware/algo` CubeIDE target 與 headless build script；先跑 static validator 與 CM7/CM4 Debug/Release build。上板後仍須另外保留 `.ioc`、雙核心 flash 紀錄、CM7/CM4 ELF/MAP hash、source hash 和實測波形，不能用 PC build 取代。
-
-## 4. 所有控制值都要由 bench 證據決定
-
-不可從 unit test 或範例複製以下值：
-
-- mapper 的 deadband、gain、max duty、slew、max request、direction polarity、reversal dead ticks；
-- TB6612 driver 的 max duty、release polarity、reversal dead ticks，以及與它綁定的 HAL integer `max_active_ccr`；
-- position guard 的正負行程、每 tick 最大位移、no-motion 視窗、最大 active ticks；
-- encoder count polarity 和 counts per output revolution。
-
-正式 config 要由最終馬達、6/12 V 供電、10 mm 線軸、繩線、機構、負載、電流及溫度量測產生，經審核後綁定 release。
-
-## 5. Boot 與 SetZero
-
-1. GPIO 初始化即令 `STBY=LOW`, `AIN1=LOW`, `AIN2=LOW`。
-2. CCR=0 後才啟動 PWM channel。
-3. Encoder EXTI 關閉時讀真實 A/B level，呼叫 `QuadratureEncoder_Init()` 後再開 EXTI。
-4. 用同一份 reviewed config snapshot 初始化 mapper、position guard、TB6612 driver 和 HAL adapter。
-5. Boot 保持 `CALIBRATION_REQUIRED`，`motor_output_active=0`。
-6. Bridge off 時由人員把機構放到中立位置，再以獨立按鈕或已認證指令明確觸發 `SetZero`。
-7. Reset、brownout、watchdog 或 position fault 後回到第 5 步；禁止自動沿用上次零點或輸出。
-
-## 6. 每個 100 Hz tick 的順序
-
-```text
-1. SuppressionControl_Update()
-   -> gate_enabled / actuation_permitted / compensation_request_dps
-
-2. MotorCommandMapper_Update()
-   -> abstract direction / duty / bridge_enable
-
-3. TB6612Driver_Update()
-   -> 產生 actual candidate AIN1 / AIN2 / STBY / CCR；換向 dead ticks 時為 STOP
-
-4. QuadratureEncoder_Snapshot()
-   -> consistent count and encoder fault state
-
-5. MotorPositionGuard_Update()
-   -> 只用 actual candidate 的 direction / ACTIVE 狀態檢查行程和 motion
-
-6. STM32_TB6612_HAL_Apply()
-   -> physical GPIO/CCR; any failure calls ForceSafe
-```
-
-順序不可把 position guard 放在 TB6612 driver 前面：driver 的 reversal deadtime 會輸出 SAFE/STOP，guard 也必須看到 STOP，否則會把尚未加電的 dead ticks 誤算成 no-motion。若 guard veto 一個 ACTIVE candidate，要再呼叫一次 `TB6612Driver_Update(..., permission=0)` 取得新的 safe output，之後才交給 HAL；position fault 只可在 bridge off、重新確認中立點後以 `SetZero` 復原。
-
-`gate_enabled`、`actuation_permitted`、`motor_output_active` 是三欄，不得再合成 `motor_enabled`。最後一欄只有實際有效 command 為 `STBY=1`、`CCR>0` 且方向有效時才是 1。
-
-`encoder_valid` 只能在 snapshot 成功、`initialized==1`、`invalid_transition_latched==0`、`overflow_latched==0` 時為 1。
-
-未取得 encoder snapshot、未 SetZero、guard 拒絕、driver error、HAL error 或 scheduler overrun 時，當 tick 必須：
+若要 50% 上限，要同時改：
 
 ```c
-STM32_TB6612_HAL_ForceSafe(&motor_hal);
-motor_output_active = 0U;
+#define MOTOR_COMMAND_MAX_DUTY_FRACTION 0.5
+#define MOTOR_MAX_ACTIVE_CCR            1600U
 ```
 
-## 7. 極性和 encoder 校正
+只降低 CCR cap、卻讓 mapper 產生更大 duty，HAL 會報錯停機。
 
-### 7.1 先確認方向
+Gate 門檻在 `algorithms/handoff/src/gating/tremor_gate.c` 的
+`TremorGate_DefaultConfig()`；不要用 `freqEstimate` 控制 gate。
 
-在離架、限流、固定夾具下，只送由 bench 決定的最低能量短脈衝；本文件不給可直接複製的 duty 或脈衝寬度。
+## 6. 這輪要記錄的結果
 
-- `direction=+1` 必須是 FORWARD/RELEASE（正轉放線）且 count 增加。
-- `direction=-1` 必須是 REVERSE/TAKE_UP（反轉收線）且 count 減少。
-- Stop 時必須 `STBY=0`, `CCR=0`。
+- commit SHA、CM7/CM4 ELF SHA-256
+- BNO address、輸入軸
+- D4 STBY、D5 PWM、D2/D3 波形
+- Gate、compensation request、CCR trace
+- VM 電壓、電流、馬達方向
+- 若方向反了，記錄最後使用的 `MOTOR_COMMAND_DIRECTION_POLARITY`
 
-不一致立即斷電，分開修正 `release_ain1_level` 與 `count_polarity` 後重測。
-
-### 7.2 再量 counts/rev
-
-1. 在輸出軸和機架畫對齊記號。
-2. 記錄 start count，同方向完整轉輸出軸 10 圈，再記 end count。
-3. RELEASE、TAKE_UP 各至少做 3 次。
-4. 計算 `abs(end-start)/10`，比較方向間和重複間差異。
-5. 同時記錄 invalid-transition count、overflow latch、供電與 firmware build ID。
-
-在完成此量測前，不要假設 encoder 是 11 或 12 PPR/CPR，也不要把理論齒比寫成正式行程參數。
-
-## 8. 第一輪台架驗收
-
-- [ ] Reset/boot 全程 STBY/AIN1/AIN2 LOW、CCR 0。
-- [ ] 未 SetZero 時，gate 開也沒有馬達輸出。
-- [ ] SetZero 只在 bridge off 且 encoder snapshot 有效時成功。
-- [ ] RELEASE=count+、TAKE_UP=count-，無 invalid/overflow。
-- [ ] 換向時存在完整 zero-output dead ticks。
-- [ ] Gate off、sensor stale、NaN/Inf、inhibit、watchdog、scheduler overrun 都在下一 control tick ForceSafe。
-- [ ] 注入 encoder invalid、超行程、wrong/no motion、max-active-time 時皆 latch fault 並 ForceSafe。
-- [ ] Fault 後不自動復轉；reset 後回 `CALIBRATION_REQUIRED`。
-- [ ] Log 分開記錄 gate、permission 和 actual motor command。
-- [ ] 有 20 kHz PWM 及 boot/fault/reversal 的 STBY/AIN/CCR 儀器截圖。
-
-全部通過仍只代表離架台架整合。改成 12 V 前，要另立一輪電流、溫度、轉速、負載、行程、制動、過衝與 fault-injection 驗證。
+目前物理「收線／放線」的舊紀錄互相衝突，所以先記電氣方向與實際觀察，不要在未測前把
+AIN1-high 寫成確定的 release/take-up。

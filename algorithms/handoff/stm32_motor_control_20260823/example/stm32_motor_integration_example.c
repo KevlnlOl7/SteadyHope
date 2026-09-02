@@ -3,7 +3,7 @@
  *
  * Preconditions:
  *   - MX_GPIO_Init() and MX_TIM1_Init() have completed.
- *   - STBY is wired to D4/PK1 with an external pulldown, not to 3V3.
+ *   - STBY is wired to D4/PK1, not to 3V3; an external fail-low pulldown is optional.
  *   - CubeMX labels below resolve to D2/PG3, D3/PA6, D4/PK1,
  *     D6/PE6 and D7/PI8; PA8 is TIM1_CH1.
  *   - The supplied configs are reviewed release inputs, not unit-test values.

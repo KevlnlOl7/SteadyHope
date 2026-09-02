@@ -2,7 +2,7 @@
 
 ## 定位
 
-這是給瑋哲使用的 **STM32 motor-control canonical integration reference**。目前預設是 motor-off／ForceSafe 整合基準，不是可直接接 VM、驅動馬達、配戴、醫療使用或販售的版本。Repo 現已包含 `firmware/algo` 的 STM32H745I-DISCO 雙核心 CubeIDE target，CM7 實際編譯的 `main.c` 由 validator 強制與本包 canonical byte-identical，並提供四組 Debug/Release headless build；但尚無 ST-LINK dual-core flash、GPIO/PWM 波形或馬達台架證據。後續 6 V、離架、限流台架試驗是另一個需要 reviewed bench config 與明確核准的階段，不能把 build 通過誤寫成已上板，更不能直接上電或上手。
+這是給瑋哲使用的 **STM32 motor-control canonical integration reference**。目前預設已切成 powered-bench profile：上電 armed、100% intensity、full-scale PWM，且 encoder/SetZero/position guard 不再阻擋離架馬達測試。Repo 的 `firmware/algo` 是 STM32H745I-DISCO 雙核心 CubeIDE target，CM7 實際編譯的 `main.c` 由 validator 強制與本包 canonical byte-identical。這代表軟體路徑已解除，但目前仍沒有本機 ST-LINK dual-core flash、GPIO/PWM 波形或負載台架證據；build 通過不能寫成馬達已實測，更不是配戴、醫療使用或販售版本。
 
 目前同一個 Git branch 也包含 authoritative 的 **4–6 Hz hardened gate**：
 
@@ -10,11 +10,11 @@
 - `algorithms/handoff/src/gating/tremor_gate.h`
 - `algorithms/handoff/src/control/suppression_control.c/.h`
 
-兩個 gate 檔必須成對替換瑋哲 8/18 branch 的 3–8 Hz 舊版並執行 CubeIDE Clean Build；只換 `.c`、只換係數或保留舊 object 都不算更新。切換 branch 也不代表板上已更新，必須完成 build、flash 與測資逐筆比對。正式 motor permission 只可由 `SuppressionControl` 的 fail-safe 輸出往下傳，舊版 `freqEstimate`、雙 gate AND 與固定全速 2 秒狀態機不可保留在馬達權限路徑。
+目前這個 branch 已整合成對的 gate 檔，且 validator 會檢查 target mirror；瑋哲不需要再手動覆蓋。只有移植到其他舊 target 時，才需要同時替換 `.c/.h` 並執行 CubeIDE Clean Build。切換 branch 也不代表板上已更新，仍須完成 build、flash 與測資逐筆比對。正式 motor permission 只可由 `SuppressionControl` 的 fail-safe 輸出往下傳，舊版 `freqEstimate`、雙 gate AND 與固定全速 2 秒狀態機不可保留在馬達權限路徑。
 
-最先要改的是：**TB6612FNG `STBY` 不得再硬接 3V3**。改接 `D4 / PK1` GPIO，並在 `STBY` 對 GND 加約 `10 kΩ` pulldown。未改完前不得連接馬達電源進行本設計測試。
+最先要改的是：**TB6612FNG `STBY` 不得再硬接 3V3**。拆掉舊線後改接 `D4 / PK1` GPIO。TB6612FNG 的 STBY input 本身有 internal pulldown；若自製板需要更強的 fail-low，可另加約 `10 kΩ` external pulldown，但它不是 breakout 臨時接線的必要條件。
 
-- [QUICK_START_給瑋哲.md](QUICK_START_%E7%B5%A6%E7%91%8B%E5%93%B2.md)：接線、CubeMX、校正與台架驗收步驟。
+- [QUICK_START_給瑋哲.md](QUICK_START_%E7%B5%A6%E7%91%8B%E5%93%B2.md)：目前 branch 的接線、build、gate 測試、telemetry 與調參步驟。
 - [`reference/main.c`](reference/main.c)：0823 唯一 canonical `main.c`，整合最新版 gate、`SuppressionControl`、mapper、encoder、position guard、TB6612 driver 與 HAL adapter；CubeIDE 編譯的是 `firmware/algo/CM7/Core/Src/main.c` mirror，兩者差異會令 integration validator 失敗。
 - [`example/stm32_motor_integration_example.c`](example/stm32_motor_integration_example.c)：依目前 actuator API 寫的說明性 glue code；不是可直接上電的完整 `main.c`。
 
@@ -28,13 +28,13 @@ portable 實作位於 `../src/actuator/`：`quadrature_encoder`、`motor_positio
 algorithms/handoff/stm32_motor_control_20260823/reference/main.c
 ```
 
-它必須由瑋哲明確整合到自己 branch 實際會編譯的：
+目前 branch 已由 validator 保證它與實際 target 編譯的下列檔案 byte-identical：
 
 ```text
 firmware/algo/CM7/Core/Src/main.c
 ```
 
-若 target `.ioc`、peripheral handle 與 canonical 所依據的 Ryan 版本一致，可以先保留 target 檔案的 Git diff／build ID，再複製 canonical 檔覆蓋並檢查差異。若 CubeMX 產生區、timer、UART、I2C 或 pin mapping 已不同，不可盲目覆蓋；應保留 target 產生區，只移植 canonical 的 USER CODE、100 Hz fresh-sample pipeline、encoder callbacks、ForceSafe 與 telemetry 語意。無論採哪一種方式，整合後都要用 validator 對實際 target `main.c` 再驗一次。
+不要再手動複製或覆蓋目前 branch。只有移植到另一個 target，且 `.ioc`、peripheral handle、timer、UART、I2C 或 pin mapping 已不同時，才保留該 target 的 CubeMX 產生區並逐段移植 canonical 的 USER CODE、100 Hz fresh-sample pipeline、encoder callbacks、ForceSafe 與 telemetry 語意；完成後仍須用 validator 對實際 target `main.c` 驗證。
 
 Canonical 使用 header basename，不含任何電腦專屬絕對路徑。目前 repo target 已完成以下
 source ownership，不要再手動加入第二份：
@@ -54,13 +54,17 @@ target-local gate mirror 與 canonical gate byte-identical。若移植到另一�
 同時編譯。Include path 只解決 header，不會自動加入 `.c`；也禁止在 `main.c` 補回
 `C:/Users/...` 類絕對 include。`BNO055_STM32.h` 則使用該 target 實際 driver 的目錄。
 
-Canonical 內的安全鎖預設為：
+Canonical 現在由單一檔案 `firmware/algo/CM7/Core/Inc/motor_bench_config.h` 提供 powered-bench 設定：
 
 ```c
-#define MOTOR_BENCH_CONFIG_APPROVED 0U
+#define MOTOR_POWERED_BENCH_MODE        1U
+#define MOTOR_BENCH_CONFIG_APPROVED     1U
+#define MOTOR_DEFAULT_RUNTIME_ARMED     1U
+#define MOTOR_DEFAULT_INTENSITY_PERCENT 100U
+#define MOTOR_MAX_ACTIVE_CCR            3200U
 ```
 
-這不是待修 bug。當它為 0 時，runtime arm、gate 或 App 指令都不能取得 bridge authority，控制鏈會維持 ForceSafe，`motor_output_active=0`、`STBY=LOW`、`CCR=0`。開機的 `motorIntensityPercent` 也是 0，必須由已審核的 App／台架操作明確設定，且強度指令不會繞過上述安全鎖。不得只為了看到馬達轉動就改成 1；必須先以最終硬體完成每一個 mapper、PWM、方向、encoder、行程、timeout 與 fault 參數的台架證據及 review，另行核准後才可建立 powered-bench build。即使日後核准，也仍不是人體或上手測試許可。
+Mapper/driver 也是有效非零 config；gate 開啟後可直接到 TB6612。Powered bench 刻意 bypass encoder homing、position travel、wrong/no-motion 與 active-timeout authority，讓目前沒有 counts/mm 的機構也能先做離架旋轉、PWM、方向與 gate 測試。Gate off、stale IMU、scheduler overrun、numeric/driver/HAL fault 仍會 ForceSafe。所有調整與現場排查請直接讀 `firmware/algo/README.md`，不要再靠 debugger 臨時翻旗標。
 
 ## 驗證順序
 
@@ -99,18 +103,19 @@ Validator 會檢查 canonical module manifest、禁止的 legacy／`freqEstimate
 | AIN1 | `D2 / PG3` | TB6612 `AIN1` | GPIO，boot LOW |
 | AIN2 | `D3 / PA6` | TB6612 `AIN2` | GPIO，boot LOW |
 | PWMA | `D5 / PA8 / TIM1_CH1` | TB6612 `PWMA` | hardware PWM，boot CCR=0 |
-| STBY | **`D4 / PK1`** | TB6612 `STBY` | GPIO，boot LOW，約 10 kΩ pulldown；禁止硬接 3V3 |
+| STBY | **`D4 / PK1`** | TB6612 `STBY` | GPIO，boot LOW；拆掉舊 STBY→3V3；external 10 kΩ pulldown 僅為選配 fail-low |
 | Logic | `3V3` | TB6612 `VCC` | 3.3 V logic |
-| Motor supply | 共地 | TB6612 `VM` | 第一階段只用 6 V 限流台架電源 |
-| Encoder A | `D6 / PE6` | 黃線/C1 | rising + falling EXTI |
-| Encoder B | `D7 / PI8` | 綠線/C2 | rising + falling EXTI |
-| Encoder power | `3V3`, GND | 藍線、黑線 | 先核對手上 encoder 的額定電壓 |
-| Motor | `AO1`, `AO2` | 紅線、白線 | 實際方向必須在夾具上短脈衝確認 |
+| Motor supply + | — | TB6612 `VM` | 外部限流台架電源正端；電壓依手上馬達銘牌／datasheet |
+| Common ground | STM32 `GND` | TB6612 `GND/PGND`、台架電源負端 | STM32、driver、encoder（若接）與電源必須共地 |
+| Encoder A | `D6 / PE6` | encoder `A / C1` | rising + falling EXTI；線色須依手上 encoder 確認 |
+| Encoder B | `D7 / PI8` | encoder `B / C2` | rising + falling EXTI；線色須依手上 encoder 確認 |
+| Encoder power | 依 encoder datasheet | encoder `V+ / GND` | 本 profile 可不接；不可只靠線色猜電壓 |
+| Motor | — | TB6612 `AO1/AO2` → 馬達兩線 | 不要接 `BO1/BO2`；實際方向在離架夾具確認 |
 
 PE6/PI8 不能直接配成同一個 STM32 hardware timer encoder mode。保留現有接線時，A/B 都要設雙邊緣 EXTI，每次中斷立刻重讀兩腳並呼叫 x4 decoder。**不能只在 100 Hz 主迴圈輪詢 A/B**。
 目前 `.ioc` 與 compiled `main.c` 都使用內部 `GPIO_PULLUP`，避免 encoder 斷線時輸入浮動；
-powered bench 前仍須依手上 encoder datasheet 確認輸出是 3.3 V 相容的 push-pull 或
-open-collector，不能用軟體 pull-up 取代電壓相容性檢查。
+若這輪要接 encoder，仍須依手上 encoder datasheet 確認輸出是 3.3 V 相容的 push-pull 或
+open-collector；不接 D6/D7 不會阻擋 powered-bench PWM。
 
 ## PWM 與排程
 
@@ -123,26 +128,26 @@ open-collector，不能用軟體 pull-up 取代電壓相容性檢查。
   ```
 
 - 時鐘或 mode 改變就重算，並用 scope/logic analyzer 實測 PA8。
-- Driver/HAL 的 `pwm_full_scale_ccr` 是 PWM denominator，必須等於實際 `ARR+1`；若上述 `ARR=3199` 經量測成立，兩處便一致填 3200。這不等於允許 100% duty。HAL 另有獨立 integer `max_active_ccr` cap，目前 canonical 值為 0，表示 Init／ForceSafe 可運作但所有 ACTIVE 都被拒絕。Powered-bench build 必須從同一份 reviewed、build-bound driver config 明確記錄不向上超限的整數 cap；不得在 integration glue 用浮點四捨五入臨時計算。
-- Max duty、gain、deadband、slew、行程和 fault timeout 都沒有商品預設；unit test 數值不可複製到實機。
+- Driver/HAL 的 `pwm_full_scale_ccr` 是 PWM denominator，等於 `ARR+1=3200`。目前 powered-bench profile 的 `max_active_ccr` 也明確設成 `3200`，所以允許完整 duty。要改成 50% 時，mapper/driver 的 `max_duty_fraction` 改 `0.5`，HAL cap 同步改 `1600U`；只改其中一處會被 HAL 拒絕。
+- Max duty、gain、deadband 與 slew 的目前值是刻意用於解除台架測試阻擋，不是量測完成的商品參數；調整入口只有 `firmware/algo/CM7/Core/Inc/motor_bench_config.h`。
 
 ## 方向、零點與 encoder 校正
 
-軟體唯一語意為：
+目前可確認的只有 bridge 電氣語意：
 
 ```text
-direction +1 = FORWARD = RELEASE = 正轉放線 = encoder count 增加
-direction -1 = REVERSE = TAKE_UP = 反轉收線 = encoder count 減少
+direction +1 → AIN1=1, AIN2=0
+direction -1 → AIN1=0, AIN2=1
 ```
 
-這不是對紅白線或黃綠線相位的猜測。第一次只能在離架夾具上，用經台架決定的低能量短脈衝核對。若相反，分別調整 driver 的 `release_ain1_level` 或 decoder 的 `count_polarity`，不要同時亂換線與改軟體。
+哪一組是實體收線／放線目前沒有可信證據。第一次只能在離架夾具上短測；若演算法補償方向相反，只改 `MOTOR_COMMAND_DIRECTION_POLARITY` 的 `1/-1`，不要交換 D2/D3。Encoder 正負若要用於日後 guarded profile，再獨立確認 `MOTOR_ENCODER_COUNT_POLARITY`，不要同時換線與改兩個 polarity。
 
-開機必須停在 `CALIBRATION_REQUIRED`：
+目前 powered-bench profile 的 encoder 是 telemetry-only：
 
-1. `STBY=LOW`, `CCR=0`, `AIN1=AIN2=LOW`。
-2. 人員手動把機構放到確認過的中立位置。
-3. 只在 bridge off 且 encoder snapshot 有效時，接受一次明確的 `SetZero`。
-4. reset、brownout、watchdog 或 position fault 後都要重新確認及 `SetZero`；不可自動沿用或把開機位置直接當零點。
+1. Boot GPIO 仍先為 `STBY=LOW`, `CCR=0`, `AIN1=AIN2=LOW`。
+2. 不要求 `SetZero` 即可由 gate 啟動 PWM。
+3. D6/D7 可接 encoder 觀察 count，也可在第一輪 free-shaft test 不接。
+4. 日後切回 wearable/guarded profile 時，才重新啟用本節原設計的 neutral SetZero、行程與 motion fault authority。
 
 「開機當下位置」只是相對座標，不是 homing。可配戴設計仍需要獨立 home/limit/absolute reference、硬體行程限制與快速釋放機構。
 
@@ -161,7 +166,7 @@ mm_per_count = (pi * effective_spool_diameter_mm) / counts_per_output_rev
 gate_enabled
     ↓ + sensor fresh / estimator / inhibit checks
 actuation_permitted
-    ↓ + mapper / SetZero / position guard / driver / HAL
+    ↓ + mapper / driver / HAL（powered bench；encoder telemetry-only）
 motor_output_active
 ```
 
@@ -176,10 +181,10 @@ UART/App/log 要保留三欄，不能再合併成一個 `motor_enabled`。另記
 ## 台架安全邊界
 
 - 移除舊程式的「full-duty 正/反轉 2 秒」狀態機。
-- 第一階段只做 6 V、限流 bench supply、無負載或受控夾具、無手套、無人體測試；要有可立即斷電的實體方式及外部電流保護。
+- 第一階段使用符合手上馬達額定電壓的限流 bench supply、無負載或受控夾具、無手套、無人體測試；先設低 current limit，並保留可立即斷電的實體方式。未確認完整馬達料號前，不在文件硬寫 6 V。
 - TB6612FNG 沒有可供此軟體讀取的 motor-current sense 或 fault pin；軟體沒有 driver fault 不等於沒有堵轉、過流或過熱。使用外部限流/保險絲，要記錄電流則另加感測器。
-- 6 V 結果不能直接套到 12 V。12 V 是新的驗證階段，須重測電流、溫度、轉速、行程、負載、制動、過衝、watchdog 與 brownout。
-- Encoder invalid/overflow、wrong/no motion、超行程、超時、掉壓或異常電流/溫度都要在當 tick ForceSafe 並 latch fault，等待人工重新確認。
+- 任一供電電壓的結果都不能直接套到另一電壓；變更後須重測電流、溫度、轉速、行程、負載、制動、過衝、watchdog 與 brownout。
+- 目前 powered-bench profile 保留 gate off、stale IMU、scheduler、numeric、driver 與 HAL fault 的即時 ForceSafe；encoder/position 是 telemetry-only。Encoder invalid/overflow、wrong/no motion、行程與 timeout 的 veto/latch 是未來 wearable/guarded profile 恢復前必須驗收的要求，不是目前台架輸出的隱藏限制。
 
 ## 升級前仍缺的證據
 
@@ -192,6 +197,6 @@ UART/App/log 要保留三欄，不能再合併成一個 `motor_enabled`。另記
 ## 官方資料
 
 - [Toshiba TB6612FNG datasheet](https://toshiba.semicon-storage.com/info/TB6612FNG_datasheet_en_20141001.pdf?did=10660&prodName=TB6612FNG)
-- [ST UM2488 — STM32H745I-DISCO user manual](https://www.st.com/resource/en/user_manual/um2488-discovery-kits-with-stm32h745xi-and-stm32h750xb-microcontrollers-stmicroelectronics.pdf)
+- [ST UM2488 — STM32H745I-DISCO user manual](https://www.st.com/resource/en/user_manual/um2488-discovery-kits-with-stm32h745xi-and-stm32h750xb-mcus-stmicroelectronics.pdf)
 - [ST STM32H745xI/G datasheet](https://www.st.com/resource/en/datasheet/stm32h745ig.pdf)
 - [JGA25-370B 供應商型錄頁](https://www.aslongdcmotor.com/sale-53110369-6v-12v-25mm-brushed-dc-gear-motor-encoder-jga25-370b-high-torque-25mm-brushed-dc-gear-motor.html)（只作型號系列參考，不能取代手上馬達料號與實測）

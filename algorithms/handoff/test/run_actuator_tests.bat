@@ -4,6 +4,7 @@ REM May be called from any working directory; outputs go to %%TEMP%%.
 setlocal
 set HERE=%~dp0
 set ROOT=%HERE%..
+set REPO=%ROOT%\..\..
 set SRC=%ROOT%\src
 set STM32_SRC=%ROOT%\stm32_motor_control_20260823\src\actuator
 set OUT=%TEMP%\steadyhope_handoff_actuator_tests
@@ -87,6 +88,17 @@ if errorlevel 1 exit /b 1
   -lm -o "%OUT%\test_motor_mapper_driver_chain.exe"
 if errorlevel 1 exit /b 1
 "%OUT%\test_motor_mapper_driver_chain.exe"
+if errorlevel 1 exit /b 1
+
+%CC% -O2 -std=c11 -Wall -Wextra -Werror -pedantic ^
+  -I"%SRC%\actuator" -I"%SRC%\control" ^
+  -I"%REPO%\firmware\algo\CM7\Core\Inc" ^
+  "%HERE%test_powered_bench_config.c" ^
+  "%SRC%\control\motor_command_mapper.c" ^
+  "%SRC%\actuator\tb6612_driver.c" ^
+  -lm -o "%OUT%\test_powered_bench_config.exe"
+if errorlevel 1 exit /b 1
+"%OUT%\test_powered_bench_config.exe"
 if errorlevel 1 exit /b 1
 
 %CC% -O2 -std=c11 -Wall -Wextra -Werror -pedantic ^
