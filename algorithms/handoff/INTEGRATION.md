@@ -63,7 +63,9 @@ Core/Algo/gating
 
 > 下列片段只說明 estimator/gate 的 100 Hz 呼叫關係。powered integration 不得自行加
 > `motor_pwm_apply()`；現行唯一 motor path 是 0823 canonical 的
-> `SuppressionControl → mapper → SetZero/position guard → TB6612 driver → STM32 HAL`。
+> `SuppressionControl → mapper → position-guard module → TB6612 driver → STM32 HAL`。
+> 目前 powered-bench profile 中 encoder/SetZero/position guard 只作 telemetry、不具 veto
+> authority；未來 guarded profile 才重新啟用其權限。
 > 見 [`stm32_motor_control_20260823/README.md`](stm32_motor_control_20260823/README.md)。
 
 ```c

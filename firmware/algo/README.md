@@ -1,118 +1,166 @@
-# STM32H745I-DISCO 雙核心韌體專案
+# STM32H745I-DISCO 馬達台架韌體
 
-這個目錄是 `STM32H745I-DISCO` 的 STM32CubeIDE 專案。CM7 負責 BNO055、100 Hz
-控制鏈、encoder 與 TB6612FNG；CM4 只做雙核心啟動 handshake，之後保持 idle。此專案
-不是 Nucleo pinout，也不能直接改成其他 H745 開發板後沿用接線結論。
+這是 `STM32H745I-DISCO` 雙核心 CubeIDE 專案。CM7 負責 BNO055、100 Hz
+gate／估測演算法與 TB6612FNG；CM4 只做雙核心啟動 handshake，之後 idle。
 
-## 目前狀態：可建置，但預設刻意不讓馬達通電
+## 現在這版會不會輸出？
 
-目前版本的 CM7/CM4 `Debug` 與 `Release` 都應能由 repo 內原始碼重新建置；這只代表
-target compile/link 通過，不代表已燒錄或馬達實機驗證。安全基線固定
-`MOTOR_BENCH_CONFIG_APPROVED=0`、HAL 的 `MOTOR_MAX_ACTIVE_CCR=0`，mapper、position guard
-與 driver 的台架參數也是零值，
-而且 runtime ARM 與 encoder `SetZero` 沒有可由 App 觸發的正式協定。因此正常現象是：
+會。這版預設是 **powered bench profile**，不再是 motor-off shadow build：
 
-- `STBY=LOW`
-- PWM `CCR=0`
-- `motor_output_active=0`
-- App 傳入長度或強度也不能繞過安全鎖
+- 上電即 `motor_runtime_armed=1`
+- 預設 intensity `100%`
+- `MOTOR_MAX_ACTIVE_CCR=3200`，允許 TIM1 完整 duty 範圍
+- mapper／TB6612 driver 使用有效非零設定
+- 不要求 debugger 手動 ARM
+- 不要求 encoder `SetZero`；encoder/position guard 在這個 profile 只作 telemetry，不會 veto PWM
+- BNO055 `0x28` 與 `0x29` 都會自動偵測並使用
 
-這不是把巨集改成 `1` 就能處理的問題。必須先在最終馬達、減速箱、線軸、供電與機構上
-量出並 review duty、方向、encoder、行程、timeout、電流與溫升限制，再建立專用的
-powered-bench build。未完成前不得接在人手上測試。
+仍保留 gate、IMU fresh sample、100 Hz scheduler、數值有效性、換向 safe tick、driver 與 HAL
+檢查。Gate 未開、IMU 讀取失敗或 scheduler overrun 時，正確結果仍是 `STBY=LOW`、`CCR=0`。
 
-完整安全與台架契約請先讀
-[`algorithms/handoff/stm32_motor_control_20260823/README.md`](../../algorithms/handoff/stm32_motor_control_20260823/README.md)。
+控制路徑：
 
-## D2–D7 到底是什麼
+```text
+BNO055 100 Hz
+  -> 選定 X/Y/Z 軸
+  -> eHWFLC-KF 或 BMFLC
+  -> hardened 4-6 Hz gate
+  -> compensation_request_dps = -tremorEstimate
+  -> duty/direction mapper
+  -> TB6612 driver
+  -> D2/D3/D4/D5
+```
 
-`D2`、`D3` 等名稱是 STM32H745I-DISCO 板上 Arduino 相容接頭的 silk/header label，
-不是 MCU GPIO 名稱。程式真正設定的是斜線後的 port/pin：
+所有台架調整集中在
+[`CM7/Core/Inc/motor_bench_config.h`](CM7/Core/Inc/motor_bench_config.h)，不要再到
+`main.c` 各處找旗標。
 
-| 功能 | 板上標籤 | MCU pin / peripheral | 外部端 |
+## 瑋哲接線表：D2-D7 不要再猜
+
+`D2`～`D7` 是板上 Arduino CN6 header label，不是 MCU GPIO 名稱。下表已對照
+STM32H745I-DISCO 的 `.ioc`、CM7 GPIO/MSP 與 ST 的 UM2488 Rev 10 Table 8。
+
+| STM32H745I-DISCO | MCU / peripheral | 接到外部 | 用途 |
 |---|---|---|---|
-| AIN1 | D2 | PG3 GPIO | TB6612 `AIN1` |
-| AIN2 | D3 | PA6 GPIO | TB6612 `AIN2` |
-| STBY | D4 | PK1 GPIO | TB6612 `STBY`，約 10 kΩ pulldown，禁止硬接 3V3 |
-| PWM | D5 | PA8 / TIM1_CH1 | TB6612 `PWMA` |
-| Encoder A | D6 | PE6 EXTI | encoder C1 / A |
-| Encoder B | D7 | PI8 EXTI | encoder C2 / B |
-| Motor supply | — | 不接 STM32 3V3/5V | TB6612 `VM`，只接外部限流台架電源 |
-| Ground | GND | common ground | STM32、TB6612、encoder、台架電源共地 |
+| `D2` | `PG3` GPIO | TB6612 `AIN1` | 馬達方向 1 |
+| `D3` | `PA6` GPIO | TB6612 `AIN2` | 馬達方向 2 |
+| `D4` | `PK1` GPIO | TB6612 `STBY` | H-bridge enable；**舊的 STBY→3V3 必須拆掉** |
+| `D5` | `PA8 / TIM1_CH1` | TB6612 `PWMA` | 20 kHz hardware PWM |
+| `D6` | `PE6` EXTI | encoder `A / C1 / 黃` | x4 encoder telemetry；本 profile 可不接 |
+| `D7` | `PI8` EXTI | encoder `B / C2 / 綠` | x4 encoder telemetry；本 profile 可不接 |
+| `3V3` | logic supply | TB6612 `VCC` | logic 電源；不是馬達電源 |
+| `GND` | common ground | TB6612 `GND/PGND`、encoder GND、bench supply `-` | **四者必須共地** |
+| 外部限流電源 `+` | — | TB6612 `VM` | 依實際馬達額定電壓供電；不要接 STM32 3V3 |
+| TB6612 `AO1/AO2` | channel A output | 馬達兩條線 | 馬達輸出；不要接到 `BO1/BO2` |
 
-`D5` 才是硬體 PWM 輸出；`D2`/`D3` 是方向，`D4` 是 bridge enable，`D6`/`D7`
-是 encoder。若實際板子的型號或 silk 不同，先停止接線並查該板原理圖，不能照表猜。
+最容易接錯的是 `STBY`：舊硬體曾把它直接接 3V3；現在程式是由 `D4/PK1` 控制。
+如果仍硬接 3V3，D4 便失去控制；如果完全沒接 D4，TB6612 內部 pulldown 會令 driver 一直
+standby。先拆掉舊 3V3 線，再接 `D4 -> STBY`。不要把 `D5` 接到 STBY；`D5` 只接 `PWMA`。
 
-## 原始碼 ownership
+板上 MCU I/O 是 3.3 V；原廠 pinout 見
+[ST UM2488](https://www.st.com/resource/en/user_manual/um2488-discovery-kits-with-stm32h745xi-and-stm32h750xb-mcus-stmicroelectronics.pdf)，
+TB6612 的 VCC、VM、STBY 與 channel-A pin 定義見
+[Toshiba TB6612FNG datasheet](https://toshiba.semicon-storage.com/info/TB6612FNG_datasheet_en_20141001.pdf?did=10660&prodName=TB6612FNG)。
 
-CM7 target 內保留並直接編譯下列 target-local mirror；validator 會和 canonical handoff
-來源比對，不能再另外加入同名 `.c`：
+## Gate 何時才會開
 
-- `CM7/Core/Algo/bmflc/`
-- `CM7/Core/Algo/ehwflc/`
-- `CM7/Core/Src/tremor_gate.c` 與 `CM7/Core/Inc/tremor_gate.h`
+預設選 X 軸、eHWFLC-KF；hardened gate 的預設條件是：
 
-其餘控制與致動器模組透過 Eclipse linked resources 直接編譯下列 canonical handoff 原始碼：
+- 4–6 Hz tremor band envelope `>= 6 dps`
+- tremor/voluntary energy ratio `>= 0.55`
+- 連續 20 個 100 Hz samples 成立後開啟
+- 關閉門檻為 `3 dps`、ratio `0.45`、連續 15 samples
 
-- `algorithms/handoff/src/control/`
-- `algorithms/handoff/src/actuator/`
-- `algorithms/handoff/stm32_motor_control_20260823/src/actuator/`
+所以拿板子慢慢轉、只晃 Y/Z 軸或振幅太小時，本來就不會有 PWM。第一輪可用 X 軸約
+`5 Hz`、`12–15 dps` 的離架輸入確認路徑。
 
-所以必須從完整 repo 根目錄使用本專案；不要只複製 `firmware/algo`。CM7 的
-`Core/Src/main.c` 必須與 canonical `reference/main.c` 保持一致，靜態 validator 會檢查。
-Target 的 estimator 與 `tremor_gate.c/.h` 都是受 validator 約束的 mirror。
+CubeIDE Live Expressions 建議依序看：
 
-## 建置
-
-已安裝 STM32CubeIDE 2.2.0 時，在 repo 根目錄執行：
-
-```powershell
-powershell -ExecutionPolicy Bypass -File firmware/algo/build_headless.ps1
+```text
+bno_detected_address
+imu_ready
+selectedGyroInputDps
+gate_enabled_debug
+actuation_permitted_debug
+suppression_start_allowed
+motorIntensityPercent
+compensationRequestDps
+motor_command_output.duty_fraction
+motor_applied_ccr
+motor_applied_stby
+motor_applied_ain1
+motor_applied_ain2
+motor_runtime_fault_latched
 ```
 
-腳本會使用全新的 Eclipse workspace，依序 clean-build：
+不要用會停住 CPU 的 breakpoint 看 100 Hz PWM；停住 CPU 會製造 scheduler overrun，程式便會
+正確 ForceSafe。使用 Live Expressions、scope 或 logic analyzer。
 
-1. `algo_CM7/Debug`
-2. `algo_CM4/Debug`
-3. `algo_CM7/Release`
-4. `algo_CM4/Release`
+`motorIntensityPercent` 開機是 `100`，但現有 UART command `01 xx` 仍可在 runtime 改成
+`0–100`。若 App／ESP32 連線後突然沒有輸出，先確認它是否送了 `01 00`；回到 full output
+可送 `01 64`（hex 的 100），或 reset 讓它回到 config 的 boot 值。
 
-它除了檢查程序 exit code，也會掃描 CubeIDE 的 false-success 錯誤文字、確認四個 ELF/MAP
-都是本次產物，並確認 CM7 Release map 真的包含 suppression、mapper、position guard、
-driver 與 HAL symbol。CubeIDE 的 `Debug/`、`Release/`、`.settings/` 是 local/generated
-state，已由 `.gitignore` 排除，不能 commit。
+## 瑋哲要調什麼、改哪裡
 
-若 CubeIDE 不在預設路徑：
+只改 [`motor_bench_config.h`](CM7/Core/Inc/motor_bench_config.h)：
 
-```powershell
-powershell -ExecutionPolicy Bypass -File firmware/algo/build_headless.ps1 `
-  -CubeIdeHeadless 'D:\ST\STM32CubeIDE\STM32CubeIDE\headless-build.bat'
+| 想調整的行為 | 巨集 | 現值 | 怎麼改 |
+|---|---|---:|---|
+| IMU 軸 | `MOTOR_TREMOR_INPUT_AXIS` | `0` | `0=X, 1=Y, 2=Z` |
+| 演算法 | `MOTOR_SUPPRESSION_ESTIMATOR` | eHWFLC-KF | 可改 `SUPPRESSION_ESTIMATOR_BMFLC` |
+| 補償方向相反 | `MOTOR_COMMAND_DIRECTION_POLARITY` | `1` | 只改成 `-1`；不要交換 D2/D3 接線 |
+| 小訊號忽略量 | `MOTOR_COMMAND_DEADBAND_DPS` | `0.0` | 增加會減少小命令 |
+| dps 到 duty 增益 | `MOTOR_COMMAND_GAIN_DUTY_FRACTION_PER_DPS` | `1.0` | 太暴力就降低，例如 `0.25` |
+| 最大 duty | `MOTOR_COMMAND_MAX_DUTY_FRACTION` | `1.0` | `0.5` 代表 50% |
+| 每 10 ms duty 變化 | `MOTOR_COMMAND_MAX_DUTY_STEP_PER_TICK` | `1.0` | 降低會加入 ramp |
+| HAL 最大 compare | `MOTOR_MAX_ACTIVE_CCR` | `3200` | 50% cap 用 `1600` |
+| 開機強度 | `MOTOR_DEFAULT_INTENSITY_PERCENT` | `100` | `0–100`；UART `01 xx` 亦可即時改 |
+| 換向空白時間 | mapper/driver `REVERSAL_DEAD_TICKS` | 各 `1` | 每 tick = 10 ms |
+
+若降低最大 duty，`MOTOR_COMMAND_MAX_DUTY_FRACTION` 與 `MOTOR_MAX_ACTIVE_CCR` 必須一致：
+
+```text
+MOTOR_MAX_ACTIVE_CCR = 3200 × max duty
 ```
 
-## 燒錄與實機驗證邊界
+例如 50% 要同時設 `0.5` 和 `1600U`。如果只把 HAL cap 改小、mapper 仍產生更大 CCR，HAL
+會拒絕命令並 latch fault，不會自動裁切。
 
-STM32H745 是雙核心，必須同時使用相符版本的：
+Gate 門檻不在 motor config；source of truth 是
+[`algorithms/handoff/src/gating/tremor_gate.c`](../../algorithms/handoff/src/gating/tremor_gate.c)
+的 `TremorGate_DefaultConfig()`。若改 gate，必須同步 target mirror 並重跑 validator。
 
-- `firmware/algo/CM7/Debug/algo_CM7.elf`（或 Release）
-- `firmware/algo/CM4/Debug/algo_CM4.elf`（或 Release）
+物理「收線／放線」在舊紀錄中互相矛盾，repo 目前只能確定兩組電氣方向。請先讓馬達離開
+機構，用短測試觀察：若演算法補償方向相反，只改
+`MOTOR_COMMAND_DIRECTION_POLARITY`，不要重接 D2/D3。
 
-目前不提供未經實板驗證的 `.launch`；請在確認 STM32CubeIDE dual-core programming
-流程後建立並 review。不能把只燒其中一個 image 稱為完整驗證。每次上板都要記錄 board
-revision、ST-LINK serial、兩個 ELF SHA-256、電源限流、scope/logic-analyzer trace 與
-fault 測試。本版在沒有可用 ST-LINK 的機器上只能完成 target build；不得把它寫成
-「馬達已轉」或「實機閉迴路已通過」。
+## 無 PWM 時照這個順序查
 
-## 開啟 powered bench 前仍須處理
+1. `imu_ready=0`：查 BNO055 SDA/SCL、供電、共地；`bno_detected_address` 應為 `0x28` 或 `0x29`。
+2. `gate_enabled_debug=0`：確認輸入軸、4–6 Hz、振幅與 20-sample 開啟時間。
+3. gate=1 但 `suppression_start_allowed=0`：看 `motor_runtime_fault_latched`、scheduler 與 driver/HAL fault。
+4. `motor_applied_ccr>0` 且 `motor_applied_stby=1`，PA8/D5 卻沒 PWM：確認燒的是新 CM7 ELF、D5 與 scope ground。
+5. D5 有 PWM但馬達不動：依序量 `D4/STBY`、`VM`、common GND、`AO1/AO2`；不要再改 gate。
+6. 只有方向不對：改 `MOTOR_COMMAND_DIRECTION_POLARITY`，不要交換控制線。
 
-- 從同一份 reviewed、build-bound motor config 明確記錄 HAL integer `max_active_ccr`；它必須
-  不大於 driver 允許的 CCR cap。不得在 integration glue 以浮點四捨五入臨時計算，零值仍
-  代表 HAL motor lock。
-- 由實測決定單一 reversal deadtime owner，或證明 mapper + driver 兩層總延遲仍可覆蓋
-  4–6 Hz 命令；目前不能用猜的常數。
-- 建立具 CRC、framing、sequence、freshness、ARM、DISARM、E-STOP 與 keepalive 的本機
-  service protocol；現有 raw 2-byte App/UART command 不得取得 bridge authority。
-- position guard 的 no-motion、wrong-direction 與 active-timeout 要用最終 encoder/負載驗收；
-  換向 SAFE window 不得讓 fault surveillance 永遠重置。
-- 補 `min_effective_duty` 或受限啟動策略，以及硬體電流、溫度、機械 end-stop 保護。
-- 若用 CubeMX 重新產碼，必須保留 CM4 的 HSEM/STOP handshake 與 idle-only ownership，
-  並重新跑 validator、host tests 與四組 target builds。
+## 建置與燒錄
+
+在 repo root 執行：
+
+```powershell
+python .\algorithms\validation\validate_cubeide_motor_integration.py
+python .\algorithms\validation\validate_stm32_motor_main.py `
+  --main .\firmware\algo\CM7\Core\Src\main.c --skip-shadow
+.\algorithms\handoff\test\run_actuator_tests.bat
+powershell -ExecutionPolicy Bypass -File .\firmware\algo\build_headless.ps1
+```
+
+必須同時燒錄相同 build profile 的兩個 image：
+
+- `firmware/algo/CM7/Debug/algo_CM7.elf`
+- `firmware/algo/CM4/Debug/algo_CM4.elf`
+
+或同時使用兩個 `Release` ELF。只燒 CM7 或只燒 CM4 不是完整雙核心更新。
+
+第一輪請把馬達與線軸固定在離架夾具，先確認 `D4/D5/AO1/AO2` 波形再接負載。這版是為了
+解除軟體阻擋、開始台架量測；尚未宣稱物理方向、負載電流、溫升或抑震成效已驗證。

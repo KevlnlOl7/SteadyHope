@@ -2,12 +2,13 @@
 /**
   ******************************************************************************
   * @file           : main.c
-  * @brief          : Canonical 0822/0823 suppression + guarded TB6612 reference
+  * @brief          : Canonical suppression + powered TB6612 bench reference
   *
-  * Derived from Ryan d62eb42 without changing Ryan's branch.  This reference
-  * is deliberately MOTOR-OFF by default: the bridge cannot be energized until
-  * MOTOR_BENCH_CONFIG_APPROVED, explicit runtime arm, encoder SetZero, and all
-  * authoritative safety modules agree in the same fresh 100 Hz sample.
+  * The current profile is intentionally ready for off-body powered testing:
+  * a valid 4-6 Hz gate and estimator command can reach TIM1/TB6612 without a
+  * debugger arm or encoder SetZero.  See motor_bench_config.h for every bench
+  * adjustment.  Sensor freshness, scheduler, driver and HAL faults still stop
+  * the bridge in the same 100 Hz sample.
   ******************************************************************************
   */
 /* USER CODE END Header */
@@ -21,6 +22,7 @@
 #include <string.h>
 
 #include "BNO055_STM32.h"
+#include "motor_bench_config.h"
 #include "suppression_control.h"
 #include "motor_command_mapper.h"
 #include "quadrature_encoder.h"
@@ -84,20 +86,6 @@ typedef char TremorSample_t_must_be_16_bytes[
 #define MOTOR_STBY_GPIO_PORT            GPIOK
 #define MOTOR_STBY_PIN                  GPIO_PIN_1   /* D4 / PK1 */
 #define MOTOR_PWM_CHANNEL               TIM_CHANNEL_1
-#define MOTOR_PWM_FULL_SCALE_CCR        3200U        /* TIM1 ARR=3199 */
-#define MOTOR_MAX_ACTIVE_CCR            0U           /* HAL motor lock */
-
-/*
- * PRODUCT-SAFETY LOCK.  Keep zero until every mapper, position, PWM, travel,
- * timeout, direction and encoder-polarity value below has bench evidence and
- * review.  Zero is a supported shadow/gate-validation build, not an error.
- */
-#define MOTOR_BENCH_CONFIG_APPROVED      0U
-
-/* User's mechanical convention: forward releases cable.  The final bench
- * check must make direction +1 == RELEASE == encoder count increasing. */
-#define MOTOR_RELEASE_AIN1_LEVEL         1U
-#define MOTOR_ENCODER_COUNT_POLARITY     1
 
 /* 100 Hz */
 #define CONTROL_SAMPLE_RATE_HZ          100.0
@@ -186,7 +174,7 @@ typedef char TremorSample_t_must_be_16_bytes[
 #define TREMOR_AXIS_X                   0U
 #define TREMOR_AXIS_Y                   1U
 #define TREMOR_AXIS_Z                   2U
-#define TREMOR_INPUT_AXIS               TREMOR_AXIS_X
+#define TREMOR_INPUT_AXIS               MOTOR_TREMOR_INPUT_AXIS
 
 /* USER CODE END PD */
 
@@ -242,8 +230,10 @@ static TremorSample_t lastTremorSample = {0};
 /* -------------------------------------------------------------------------- */
 /* REAL APP / ESP32 UART RX                                                    */
 /* -------------------------------------------------------------------------- */
-/* Boot at zero; a reviewed App/bench action must explicitly choose intensity. */
-volatile uint8_t motorIntensityPercent = 0U;
+/* Powered bench boots at the configured test intensity; UART command 0x01
+ * can still change it at runtime. */
+volatile uint8_t motorIntensityPercent =
+    MOTOR_DEFAULT_INTENSITY_PERCENT;
 static uint8_t controlRxBuffer[CONTROL_PACKET_SIZE] = {0U, 0U};
 
 volatile uint32_t controlRxCount = 0U;
@@ -303,23 +293,36 @@ static Tb6612Driver tb6612_driver;
 static Tb6612Output tb6612_output;
 static Stm32Tb6612Hal tb6612_hal;
 
-/*
- * Deliberately invalid placeholders.  There are no product defaults for
- * torque, travel or timeout.  MOTOR_BENCH_CONFIG_APPROVED remains zero until
- * these two independent mapper records and all position/driver fields are
- * replaced with reviewed bench values.
- */
+/* Both mapper records must remain bit-identical.  All tunable powered-bench
+ * values live in motor_bench_config.h so the firmware team has one entry. */
 static const MotorCommandMapperConfig motor_mapper_config = {
-  0.0, 0.0, 0.0, 0.0, 0.0, 0U, 1
+  MOTOR_COMMAND_DEADBAND_DPS,
+  MOTOR_COMMAND_GAIN_DUTY_FRACTION_PER_DPS,
+  MOTOR_COMMAND_MAX_DUTY_FRACTION,
+  MOTOR_COMMAND_MAX_DUTY_STEP_PER_TICK,
+  MOTOR_COMMAND_MAX_ABS_REQUEST_DPS,
+  MOTOR_MAPPER_REVERSAL_DEAD_TICKS,
+  MOTOR_COMMAND_DIRECTION_POLARITY
 };
 static const MotorCommandMapperConfig approved_motor_mapper_config = {
-  0.0, 0.0, 0.0, 0.0, 0.0, 0U, 1
+  MOTOR_COMMAND_DEADBAND_DPS,
+  MOTOR_COMMAND_GAIN_DUTY_FRACTION_PER_DPS,
+  MOTOR_COMMAND_MAX_DUTY_FRACTION,
+  MOTOR_COMMAND_MAX_DUTY_STEP_PER_TICK,
+  MOTOR_COMMAND_MAX_ABS_REQUEST_DPS,
+  MOTOR_MAPPER_REVERSAL_DEAD_TICKS,
+  MOTOR_COMMAND_DIRECTION_POLARITY
 };
+/* The position path is compiled for the later guarded profile, but is not an
+ * authority input while MOTOR_POWERED_BENCH_MODE is one. */
 static const MotorPositionGuardConfig motor_position_config = {
-  0U, 0U, 0U, 0U, 0U, 0U, 0U
+  1000000U, 1000000U, 1000000U, 1U, 1000000U, 1000000U, 1000000U
 };
 static const Tb6612DriverConfig tb6612_driver_config = {
-  MOTOR_PWM_FULL_SCALE_CCR, 0.0, 0U, MOTOR_RELEASE_AIN1_LEVEL
+  MOTOR_PWM_FULL_SCALE_CCR,
+  MOTOR_COMMAND_MAX_DUTY_FRACTION,
+  MOTOR_DRIVER_REVERSAL_DEAD_TICKS,
+  MOTOR_RELEASE_AIN1_LEVEL
 };
 
 double selectedGyroInputDps = 0.0;
@@ -329,7 +332,7 @@ double compensationRequestDps = 0.0;
 
 volatile uint8_t suppression_control_ready_debug = 0U;
 volatile uint8_t motor_chain_initialized = 0U;
-volatile uint8_t motor_runtime_armed = 0U;
+volatile uint8_t motor_runtime_armed = MOTOR_DEFAULT_RUNTIME_ARMED;
 volatile uint8_t motor_bench_config_approved = MOTOR_BENCH_CONFIG_APPROVED;
 volatile uint8_t motor_runtime_fault_latched = 0U;
 
@@ -398,6 +401,7 @@ volatile HAL_StatusTypeDef bno_ready_28 = HAL_ERROR;
 volatile HAL_StatusTypeDef bno_ready_29 = HAL_ERROR;
 
 volatile uint8_t bno_detected_address = 0U;
+uint16_t bno_i2c_address = (0x28U << 1);
 
 volatile uint32_t i2c4_state_after_28 = 0U;
 volatile uint32_t i2c4_error_after_28 = 0U;
@@ -834,7 +838,8 @@ static void Encoder_Init(void)
 
   encoder_zero_count = 0;
   encoder_position_zeroed = 0U;
-  calibration_required = 1U;
+  calibration_required =
+      (MOTOR_POWERED_BENCH_MODE == 1U) ? 0U : 1U;
   encoder_set_zero_request = 0U;
   encoder_set_zero_status = 0;
 
@@ -953,8 +958,11 @@ static void Encoder_UpdateLength(void)
   if (SnapshotEncoder(&snapshot) != 1U)
   {
     encoder_position_zeroed = 0U;
-    calibration_required = 1U;
-    ControlPipeline_ForceSafe();
+    if (MOTOR_POWERED_BENCH_MODE == 0U)
+    {
+      calibration_required = 1U;
+      ControlPipeline_ForceSafe();
+    }
     return;
   }
 
@@ -1060,7 +1068,7 @@ static uint8_t ControlPipeline_Init(void)
   memset(&hal_config, 0, sizeof(hal_config));
   memset(&initial_output, 0, sizeof(initial_output));
 
-  motor_runtime_armed = 0U;
+  motor_runtime_armed = MOTOR_DEFAULT_RUNTIME_ARMED;
   motor_runtime_fault_latched = 0U;
   motor_hal_error_debug = 0U;
   motor_chain_initialized = 0U;
@@ -1072,7 +1080,7 @@ static uint8_t ControlPipeline_Init(void)
    * Estimator diagnostic frequency is never consumed by a gate or App field. */
   suppression_ok = SuppressionControl_Init(
       &suppression_control,
-      SUPPRESSION_ESTIMATOR_EHWFLC_KF,
+      MOTOR_SUPPRESSION_ESTIMATOR,
       NULL
   );
   suppression_control_ready_debug = suppression_ok;
@@ -1111,11 +1119,7 @@ static uint8_t ControlPipeline_Init(void)
            &initial_output) == TB6612_DRIVER_ERROR) ||
       (STM32_TB6612_HAL_Apply(
            &tb6612_hal,
-           &initial_output) != HAL_OK) ||
-      (MotorPositionGuard_Init(
-           &motor_position_guard,
-           &motor_position_config) != 1U) ||
-      (encoder_valid != 1U))
+           &initial_output) != HAL_OK))
   {
     mapper_fault_debug = motor_mapper.current_fault;
     driver_fault_debug = initial_output.fault;
@@ -1125,9 +1129,27 @@ static uint8_t ControlPipeline_Init(void)
     return suppression_ok;
   }
 
+#if (MOTOR_POWERED_BENCH_MODE == 0U)
+  if ((MotorPositionGuard_Init(
+           &motor_position_guard,
+           &motor_position_config) != 1U) ||
+      (encoder_valid != 1U))
+  {
+    position_fault_debug = motor_position_guard.fault;
+    motor_runtime_fault_latched = 1U;
+    ControlPipeline_ForceSafe();
+    return suppression_ok;
+  }
+#else
+  /* Powered bench deliberately does not require encoder/homing authority. */
+  (void)motor_position_config;
+  calibration_required = 0U;
+  motor_output_guard_ready_debug = 1U;
+#endif
+
   motor_chain_initialized = 1U;
 #else
-  /* Expected canonical state until reviewed bench constants replace zeros. */
+  /* Explicit disabled profile. */
   (void)motor_mapper_config;
   (void)approved_motor_mapper_config;
   (void)motor_position_config;
@@ -1196,9 +1218,10 @@ static void ControlPipeline_ApplySafeTick(void)
 
   PublishSafeDriverTelemetry(&safe_output);
   motor_output_guard_ready_debug =
-      ((motor_position_guard.zeroed == 1U) &&
-       (motor_position_guard.fault_latched == 0U) &&
-       (encoder_ok == 1U))
+      ((MOTOR_POWERED_BENCH_MODE == 1U) ||
+       ((motor_position_guard.zeroed == 1U) &&
+        (motor_position_guard.fault_latched == 0U) &&
+        (encoder_ok == 1U)))
       ? 1U : 0U;
 }
 
@@ -1232,7 +1255,8 @@ static void ControlPipeline_100HzFreshSample(double raw_gyro_dps)
       ((motor_runtime_fault_latched != 0U) ||
        (motor_hal_error_debug != 0U) ||
        (driver_fault_debug != (uint8_t)TB6612_DRIVER_FAULT_NONE) ||
-       (motor_position_guard.fault_latched != 0U))
+       ((MOTOR_POWERED_BENCH_MODE == 0U) &&
+        (motor_position_guard.fault_latched != 0U)))
       ? 1U : 0U;
 
   cycle_start = DWT->CYCCNT;
@@ -1264,9 +1288,10 @@ static void ControlPipeline_100HzFreshSample(double raw_gyro_dps)
        (motor_chain_initialized == 1U) &&
        (motor_runtime_armed == 1U) &&
        (motor_runtime_fault_latched == 0U) &&
-       (calibration_required == 0U) &&
-       (motor_position_guard.zeroed == 1U) &&
-       (motor_position_guard.fault_latched == 0U))
+       ((MOTOR_POWERED_BENCH_MODE == 1U) ||
+        ((calibration_required == 0U) &&
+         (motor_position_guard.zeroed == 1U) &&
+         (motor_position_guard.fault_latched == 0U))))
       ? 1U : 0U;
   suppression_start_allowed = final_permission;
 
@@ -1307,6 +1332,7 @@ static void ControlPipeline_100HzFreshSample(double raw_gyro_dps)
     return;
   }
 
+#if (MOTOR_POWERED_BENCH_MODE == 0U)
   encoder_ok = SnapshotEncoder(&snapshot);
   if (encoder_ok != 1U)
   {
@@ -1327,6 +1353,11 @@ static void ControlPipeline_100HzFreshSample(double raw_gyro_dps)
     ControlPipeline_ForceSafe();
     return;
   }
+#else
+  /* Encoder remains observable, but it cannot veto this powered-bench run. */
+  encoder_ok = SnapshotEncoder(&snapshot);
+  (void)encoder_ok;
+#endif
 
   candidate_active =
       ((driver_result == TB6612_DRIVER_ACTIVE) &&
@@ -1334,6 +1365,11 @@ static void ControlPipeline_100HzFreshSample(double raw_gyro_dps)
        (candidate.ccr > 0U))
       ? 1U : 0U;
 
+#if (MOTOR_POWERED_BENCH_MODE == 1U)
+  position_allowed = candidate_active;
+  position_fault_debug = (uint8_t)MOTOR_POSITION_FAULT_NONE;
+  calibration_required = 0U;
+#else
   if (motor_position_guard.zeroed != 1U)
   {
     position_allowed = 0U;
@@ -1353,6 +1389,7 @@ static void ControlPipeline_100HzFreshSample(double raw_gyro_dps)
     calibration_required =
         (position_guard_output.zeroed == 1U) ? 0U : 1U;
   }
+#endif
 
   if (((candidate_active == 1U) && (position_allowed != 1U)) ||
       ((candidate_active == 0U) && (position_allowed != 0U)))
@@ -1384,11 +1421,12 @@ static void ControlPipeline_100HzFreshSample(double raw_gyro_dps)
          (motor_runtime_fault_latched == 0U) &&
          (motor_runtime_armed == 1U) &&
          (motor_bench_config_approved == 1U) &&
-         (quadrature_encoder.initialized == 1U) &&
-         (quadrature_encoder.invalid_transition_latched == 0U) &&
-         (quadrature_encoder.overflow_latched == 0U) &&
-         (motor_position_guard.zeroed == 1U) &&
-         (motor_position_guard.fault_latched == 0U))
+         ((MOTOR_POWERED_BENCH_MODE == 1U) ||
+          ((quadrature_encoder.initialized == 1U) &&
+           (quadrature_encoder.invalid_transition_latched == 0U) &&
+           (quadrature_encoder.overflow_latched == 0U) &&
+           (motor_position_guard.zeroed == 1U) &&
+           (motor_position_guard.fault_latched == 0U))))
         ? 1U : 0U;
 
     if (final_recheck_ok == 1U)
@@ -1440,8 +1478,9 @@ static void ControlPipeline_100HzFreshSample(double raw_gyro_dps)
   }
 
   motor_output_guard_ready_debug =
-      ((motor_position_guard.zeroed == 1U) &&
-       (motor_position_guard.fault_latched == 0U))
+      ((MOTOR_POWERED_BENCH_MODE == 1U) ||
+       ((motor_position_guard.zeroed == 1U) &&
+        (motor_position_guard.fault_latched == 0U)))
       ? 1U : 0U;
 }
 
@@ -1625,8 +1664,8 @@ int main(void)
 
   DWT_Init();
 
-  /* Initializes SuppressionControl and the safe HAL adapter.  The canonical
-   * build remains motor-off because MOTOR_BENCH_CONFIG_APPROVED is zero. */
+  /* Initializes the gate/estimator and powered-bench motor path.  GPIO still
+   * starts safe; STBY rises only after a fresh sample makes the gate active. */
   (void)ControlPipeline_Init();
 
   /*
@@ -1671,6 +1710,7 @@ int main(void)
   {
     bno_ready_29 = HAL_ERROR;
     bno_detected_address = 0x28U;
+    bno_i2c_address = (0x28U << 1);
 
     bno_probe_chip_id = 0U;
 
@@ -1743,6 +1783,7 @@ int main(void)
     if (bno_ready_29 == HAL_OK)
     {
       bno_detected_address = 0x29U;
+      bno_i2c_address = (0x29U << 1);
 
       bno_probe_chip_id = 0U;
 
@@ -1757,13 +1798,17 @@ int main(void)
               100U
           );
 
-      /*
-       * Existing driver is still compiled for 0x28.
-       * Keep real actuator disabled if module is actually 0x29.
-       */
-      bno_init_status = HAL_ERROR;
-
-      imu_ready = 0U;
+      if ((bno_read_status == HAL_OK) &&
+          (bno_probe_chip_id == BNO055_ID))
+      {
+        bno_init_status = Sensor_GyroOnly_Init();
+        imu_ready = (bno_init_status == HAL_OK) ? 1U : 0U;
+      }
+      else
+      {
+        bno_init_status = HAL_ERROR;
+        imu_ready = 0U;
+      }
     }
     else
     {
@@ -2233,7 +2278,8 @@ static void MX_GPIO_Init(void)
 
   /*
    * 0823 boot-safe bridge levels MUST be established before enabling outputs.
-   * STBY also requires the external ~10 kOhm pulldown to GND.
+   * STBY must be wired to D4/PK1, never hardwired to 3V3.  The TB6612 input
+   * has an internal pulldown; an external ~10 kOhm fail-low is optional.
    */
   HAL_GPIO_WritePin(MOTOR_AIN1_GPIO_PORT, MOTOR_AIN1_PIN, GPIO_PIN_RESET);
   HAL_GPIO_WritePin(MOTOR_AIN2_GPIO_PORT, MOTOR_AIN2_PIN, GPIO_PIN_RESET);
@@ -2321,9 +2367,12 @@ void HAL_GPIO_EXTI_Callback(
       (quadrature_encoder.overflow_latched != 0U))
   {
     encoder_valid = 0U;
-    calibration_required = 1U;
-    motor_runtime_fault_latched = 1U;
-    ControlPipeline_ForceSafe();
+    if (MOTOR_POWERED_BENCH_MODE == 0U)
+    {
+      calibration_required = 1U;
+      motor_runtime_fault_latched = 1U;
+      ControlPipeline_ForceSafe();
+    }
   }
 }
 

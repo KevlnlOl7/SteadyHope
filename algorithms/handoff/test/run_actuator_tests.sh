@@ -4,6 +4,7 @@ set -e
 
 HERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 ROOT=$(CDPATH= cd -- "$HERE/.." && pwd)
+REPO=$(CDPATH= cd -- "$ROOT/../.." && pwd)
 SRC="$ROOT/src"
 STM32_SRC="$ROOT/stm32_motor_control_20260823/src/actuator"
 CC="${CC:-gcc}"
@@ -75,6 +76,15 @@ mkdir -p "$OUT"
   "$SRC/actuator/tb6612_driver.c" \
   -lm -o "$OUT/test_motor_mapper_driver_chain"
 "$OUT/test_motor_mapper_driver_chain"
+
+"$CC" -O2 -std=c11 -Wall -Wextra -Werror -pedantic \
+  -I"$SRC/actuator" -I"$SRC/control" \
+  -I"$REPO/firmware/algo/CM7/Core/Inc" \
+  "$HERE/test_powered_bench_config.c" \
+  "$SRC/control/motor_command_mapper.c" \
+  "$SRC/actuator/tb6612_driver.c" \
+  -lm -o "$OUT/test_powered_bench_config"
+"$OUT/test_powered_bench_config"
 
 "$CC" -O2 -std=c11 -Wall -Wextra -Werror -pedantic \
   -I"$HERE/fakes" -I"$STM32_SRC" -I"$SRC/actuator" \

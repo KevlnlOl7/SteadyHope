@@ -24,6 +24,9 @@
 PWM 比例控制、N20 loaded bandwidth test、actuator 選型門檻與實測紀錄格式見
 [ACTUATOR_CONTROL.md](ACTUATOR_CONTROL.md)。目前 `control_sim.m` 實作是 P-only；取得
 真實 actuator gain／頻寬／延遲前，不應直接加入 `Ki/Kd` 或照抄模擬 `Kp`。
+目前已整合的 powered-bench 接線、Gate→演算法→PWM 路徑、單一調參入口與 CubeIDE build
+指令以 [`firmware/algo/README.md`](../../firmware/algo/README.md) 為準；encoder/SetZero 在此
+profile 為 telemetry-only，不是 PWM veto。
 
 ---
 

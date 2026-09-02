@@ -182,7 +182,9 @@ static uint8_t Gate_Update(double raw_gyro)
 ```
 
 目前 target 的正確接法是由 `SuppressionControl` 包住 estimator + gate，之後依序通過
-mapper、encoder `SetZero`、position guard、TB6612 driver 與 final HAL。gate 不得直接
+mapper、position-guard module、TB6612 driver 與 final HAL。powered-bench profile 的
+encoder/SetZero/position guard 只作 telemetry、不具 veto authority；未來 guarded profile
+才恢復這些權限。gate 不得直接
 回傳 `MOTOR_FORWARD/REVERSE`：
 
 ```c

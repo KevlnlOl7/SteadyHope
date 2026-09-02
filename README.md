@@ -6,12 +6,13 @@
 ## 📌 專案簡介
 SteadyHope 是穿戴式顫抖抑制裝置的畢業專題原型，目標是以 IMU、估測演算法與主動
 致動器降低 4–6 Hz 手部顫抖。目前 repo 已有 STM32H745I-DISCO 雙核心 target 專案與
-motor-off／ForceSafe 控制鏈，但尚未完成燒錄、馬達台架或人體成效驗證，不能把開發版
-描述成醫療產品或已證實可抑震。
+powered-bench 控制鏈；預設可由 gate＋演算法輸出 TIM1 PWM，供離架台架測試。尚未完成
+本機 ST-LINK 燒錄、馬達負載或人體成效驗證，不能把開發版描述成已實機驗收或醫療產品。
 
 > 馬達整合入口：[`firmware/algo/README.md`](firmware/algo/README.md)。`D2`–`D7` 是
-> STM32H745I-DISCO 的 Arduino header label，不是 GPIO 名稱；真正接腳與目前安全鎖請以
-> 該文件及 `.ioc` 為準。現在的 canonical build 刻意保持 `STBY=LOW`、`CCR=0`。
+> STM32H745I-DISCO 的 Arduino header label，不是 GPIO 名稱。現在的 powered-bench profile
+> 上電即 armed、100% intensity、full-scale CCR，並 bypass encoder/SetZero authority；接線、
+> Gate 條件、調參位置與故障排查全部以該文件及 `.ioc` 為準。
 
 
 ---

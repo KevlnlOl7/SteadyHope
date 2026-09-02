@@ -17,6 +17,7 @@ import xml.etree.ElementTree as ET
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 CM7_MAIN = Path("firmware/algo/CM7/Core/Src/main.c")
+CM7_MOTOR_CONFIG = Path("firmware/algo/CM7/Core/Inc/motor_bench_config.h")
 CANONICAL_MAIN = Path(
     "algorithms/handoff/stm32_motor_control_20260823/reference/main.c"
 )
@@ -49,6 +50,7 @@ ABSOLUTE_USER_PATH_PATTERN = re.compile(
 
 REQUIRED_RELATIVE_PATHS = (
     CM7_MAIN,
+    CM7_MOTOR_CONFIG,
     CANONICAL_MAIN,
     CM7_GATE_C,
     CM7_GATE_H,
@@ -524,66 +526,125 @@ def _validate_cm4(root: Path) -> list[Check]:
     return [handshake, idle, no_conflicting_init, fail_stop]
 
 
-def _zero_literal(value: str) -> bool:
+def _macro_value(source: str, name: str) -> str | None:
+    values = re.findall(
+        rf"(?m)^\s*#\s*define\s+{re.escape(name)}\s+([^\r\n]+)",
+        _strip_c_comments_and_literals(source),
+    )
+    return values[0].strip() if len(values) == 1 else None
+
+
+def _integer_literal(value: str | None) -> int | None:
+    if value is None:
+        return None
     compact = re.sub(r"[\s()]", "", value)
-    return compact in {"0", "0U", "0u", "0UL", "0ul", "0LU", "0lu"}
+    match = re.fullmatch(r"(0[xX][0-9a-fA-F]+|[0-9]+)[uUlL]*", compact)
+    return int(match.group(1), 0) if match is not None else None
 
 
-def validate_cm7_safety_source(source: str) -> Check:
-    """Validate the compile-time and runtime motor locks in CM7 source."""
+def _ternary_assignment_body(source: str, name: str) -> str | None:
+    """Return a whitespace-free `name = expression ? 1U : 0U` expression."""
+
+    match = re.search(
+        rf"\b{re.escape(name)}\s*=\s*(.*?)\?\s*1U\s*:\s*0U\s*;",
+        source,
+        flags=re.DOTALL,
+    )
+    return re.sub(r"\s+", "", match.group(1)) if match is not None else None
+
+
+def validate_cm7_safety_source(source: str, config_source: str) -> Check:
+    """Validate the intentionally enabled powered-bench target profile."""
 
     clean = _strip_c_comments_and_literals(source)
-    definitions = re.findall(
-        r"(?m)^\s*#\s*define\s+MOTOR_BENCH_CONFIG_APPROVED\s+([^\r\n]+)",
-        clean,
-    )
-    bench_lock_ok = len(definitions) == 1 and _zero_literal(definitions[0])
-    max_ccr_definitions = re.findall(
-        r"(?m)^\s*#\s*define\s+MOTOR_MAX_ACTIVE_CCR\s+([^\r\n]+)",
-        clean,
-    )
-    max_ccr_lock_ok = (
-        len(max_ccr_definitions) == 1
-        and _zero_literal(max_ccr_definitions[0])
-    )
-    max_ccr_binding_ok = re.search(
-        r"\bhal_config\s*\.\s*max_active_ccr\s*=\s*"
-        r"MOTOR_MAX_ACTIVE_CCR\s*;",
-        clean,
-    ) is not None
-    armed_one = re.search(
-        r"\bmotor_runtime_armed\s*=(?!=)\s*\(?\s*1(?:[uUlL]*)\s*\)?\s*;",
-        clean,
+    expected_macros = {
+        "MOTOR_POWERED_BENCH_MODE": 1,
+        "MOTOR_BENCH_CONFIG_APPROVED": 1,
+        "MOTOR_DEFAULT_RUNTIME_ARMED": 1,
+        "MOTOR_DEFAULT_INTENSITY_PERCENT": 100,
+        "MOTOR_PWM_FULL_SCALE_CCR": 3200,
+        "MOTOR_MAX_ACTIVE_CCR": 3200,
+    }
+    details: list[str] = []
+    for name, expected in expected_macros.items():
+        actual = _integer_literal(_macro_value(config_source, name))
+        if actual != expected:
+            details.append(f"{name} must be defined once as {expected}")
+
+    required_bindings = {
+        "HAL max_active_ccr": (
+            r"\bhal_config\s*\.\s*max_active_ccr\s*=\s*"
+            r"MOTOR_MAX_ACTIVE_CCR\s*;"
+        ),
+        "runtime arm default": (
+            r"\bmotor_runtime_armed\s*=\s*MOTOR_DEFAULT_RUNTIME_ARMED\s*;"
+        ),
+        "intensity default": (
+            r"\bmotorIntensityPercent\s*=\s*"
+            r"MOTOR_DEFAULT_INTENSITY_PERCENT\s*;"
+        ),
+        "powered position bypass": (
+            r"#\s*if\s*\(\s*MOTOR_POWERED_BENCH_MODE\s*==\s*1U\s*\)"
+        ),
+    }
+    for label, pattern in required_bindings.items():
+        if re.search(pattern, clean) is None:
+            details.append(f"missing {label} binding")
+
+    permission_body = _ternary_assignment_body(clean, "final_permission")
+    required_permission_bypass = (
+        "((MOTOR_POWERED_BENCH_MODE==1U)||"
+        "((calibration_required==0U)&&"
+        "(motor_position_guard.zeroed==1U)&&"
+        "(motor_position_guard.fault_latched==0U)))"
     )
     if (
-        not bench_lock_ok
-        or not max_ccr_lock_ok
-        or not max_ccr_binding_ok
-        or armed_one is not None
+        permission_body is None
+        or required_permission_bypass not in permission_body
     ):
-        details: list[str] = []
-        if not bench_lock_ok:
-            details.append("MOTOR_BENCH_CONFIG_APPROVED must be defined once as zero")
-        if not max_ccr_lock_ok:
-            details.append("MOTOR_MAX_ACTIVE_CCR must be defined once as zero")
-        if not max_ccr_binding_ok:
-            details.append("HAL max_active_ccr must be bound to MOTOR_MAX_ACTIVE_CCR")
-        if armed_one is not None:
-            details.append("motor_runtime_armed must never be assigned one")
-        return _fail("cm7-motor-safety-lock", "; ".join(details))
+        details.append("missing final_permission powered position bypass")
+
+    recheck_body = _ternary_assignment_body(clean, "final_recheck_ok")
+    required_recheck_bypass = (
+        "((MOTOR_POWERED_BENCH_MODE==1U)||"
+        "((quadrature_encoder.initialized==1U)&&"
+        "(quadrature_encoder.invalid_transition_latched==0U)&&"
+        "(quadrature_encoder.overflow_latched==0U)&&"
+        "(motor_position_guard.zeroed==1U)&&"
+        "(motor_position_guard.fault_latched==0U)))"
+    )
+    if recheck_body is None or required_recheck_bypass not in recheck_body:
+        details.append("missing final_recheck powered encoder/position bypass")
+
+    compact_source = re.sub(r"\s+", "", clean)
+    if (
+        "#if(MOTOR_POWERED_BENCH_MODE==1U)"
+        "position_allowed=candidate_active;" not in compact_source
+    ):
+        details.append("missing powered position_allowed pass-through")
+
+    if _macro_value(config_source, "MOTOR_COMMAND_MAX_DUTY_FRACTION") != "1.0":
+        details.append("MOTOR_COMMAND_MAX_DUTY_FRACTION must be 1.0")
+    if _macro_value(config_source, "MOTOR_COMMAND_MAX_DUTY_STEP_PER_TICK") != "1.0":
+        details.append("MOTOR_COMMAND_MAX_DUTY_STEP_PER_TICK must be 1.0")
+
+    if details:
+        return _fail("cm7-powered-bench-config", "; ".join(details))
     return _pass(
-        "cm7-motor-safety-lock",
-        "bench approval and HAL integer CCR cap are zero; runtime arm has no assignment to one",
+        "cm7-powered-bench-config",
+        "powered bench boots armed at 100%, uses full 3200 CCR, and bypasses encoder position authority",
     )
 
 
 def _validate_cm7_safety_lock(root: Path) -> Check:
-    path = root / CM7_MAIN
+    main_path = root / CM7_MAIN
+    config_path = root / CM7_MOTOR_CONFIG
     try:
-        source = path.read_text(encoding="utf-8")
+        source = main_path.read_text(encoding="utf-8")
+        config_source = config_path.read_text(encoding="utf-8")
     except OSError as exc:
-        return _fail("cm7-motor-safety-lock", f"{CM7_MAIN}: {exc}")
-    return validate_cm7_safety_source(source)
+        return _fail("cm7-powered-bench-config", str(exc))
+    return validate_cm7_safety_source(source, config_source)
 
 
 def validate_repository(repo_root: Path = REPO_ROOT) -> list[Check]:

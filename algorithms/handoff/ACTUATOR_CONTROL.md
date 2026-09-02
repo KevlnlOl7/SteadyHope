@@ -17,9 +17,14 @@
 
 ```text
 raw gyro → SuppressionControl(estimator + V2 gate + freshness/fault checks)
-         → MotorCommandMapper → encoder SetZero / MotorPositionGuard
+         → MotorCommandMapper → MotorPositionGuard module
          → TB6612Driver → STM32_TB6612_HAL → PWM/H-bridge
 ```
+
+目前 `firmware/algo` 使用 powered-bench profile：boot armed、100% intensity、full-scale PWM，
+encoder／SetZero／position guard 模組雖仍保留在程式與 telemetry 中，但不具 veto authority。
+這是為了離架馬達測試；未來 wearable/guarded profile 才恢復 homing、行程與 motion fault authority。
+現行接線、調參與 build 指令以 [`firmware/algo/README.md`](../../firmware/algo/README.md) 為準。
 
 ## 2. 控制律設計輸入（不可繞過 canonical safety chain）
 
@@ -31,7 +36,7 @@ raw gyro → SuppressionControl(estimator + V2 gate + freshness/fault checks)
 
 1. `SuppressionControl` 檢查 fresh sample、estimator、gate 與 inhibit/fault。
 2. mapper 套用經台架審核的 deadband、gain、saturation、slew 與方向 polarity。
-3. 未 ARM、未 `SetZero`、encoder/position fault 或超行程時，position guard veto。
+3. powered-bench profile 不要求 debugger ARM 或 `SetZero`，encoder/position 只作 telemetry；未來 guarded profile 才讓它們 veto。
 4. TB6612 driver 執行 duty ceiling 與 reversal safe-time；final HAL 驗證方向/AIN 並套用。
 5. 任一無效狀態立即 `STBY=LOW`、`CCR=0`、`AIN1=AIN2=LOW`，必要時 latch fault。
 
