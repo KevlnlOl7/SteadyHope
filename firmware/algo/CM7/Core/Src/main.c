@@ -2,7 +2,13 @@
 /**
   ******************************************************************************
   * @file           : main.c
-  * @brief          : 0822/0823 hardened tremor gate + Encoder + UART + safe motor integration
+  * @brief          : Tremor gate + distance-based encoder cable control + App length motion
+  *
+  * The current profile is intentionally ready for off-body powered testing:
+  * a valid 4-6 Hz gate and estimator command can reach TIM1/TB6612 without a
+  * debugger arm or encoder SetZero.  See motor_bench_config.h for every bench
+  * adjustment.  Sensor freshness, scheduler, driver and HAL faults still stop
+  * the bridge in the same 100 Hz sample.
   ******************************************************************************
   */
 /* USER CODE END Header */
@@ -13,12 +19,16 @@
 /* USER CODE BEGIN Includes */
 #include <stdint.h>
 #include <math.h>
+#include <string.h>
 
 #include "BNO055_STM32.h"
-#include "tremor_gate.h"
-
-#include "C:/Users/banny/STM32CubeIDE/workspace_1.7.0/algo/CM7/Core/Algo/bmflc/BMFLC_step.h"
-#include "C:/Users/banny/STM32CubeIDE/workspace_1.7.0/algo/CM7/Core/Algo/ehwflc/eHWFLC_KF_step.h"
+#include "motor_bench_config.h"
+#include "suppression_control.h"
+#include "motor_command_mapper.h"
+#include "quadrature_encoder.h"
+#include "motor_position_guard.h"
+#include "tb6612_driver.h"
+#include "stm32_tb6612_hal.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -31,13 +41,17 @@ typedef enum
   MOTOR_REVERSE
 } MotorState;
 
+/* Tremor-triggered cable position controller.
+ * Gate only triggers the motion; tremorEstimate sign no longer reverses motor. */
 typedef enum
 {
-  ACTUATOR_IDLE = 0,
-  ACTUATOR_PULLING,
-  ACTUATOR_HOLDING,
-  ACTUATOR_RETURNING
-} ActuatorState;
+  TREMOR_POSITION_IDLE = 0,
+  TREMOR_POSITION_PULLING,
+  TREMOR_POSITION_HOLDING,
+  TREMOR_POSITION_RETURNING,
+  TREMOR_POSITION_APP_ADJUSTING,
+  TREMOR_POSITION_FAULT
+} TremorPositionState;
 
 #pragma pack(push, 1)
 typedef struct
@@ -49,20 +63,33 @@ typedef struct
   int16_t gyro_z_raw;
   uint8_t sensor_valid;
   /*
-   * Motor drive status sent to ESP32 / App:
-   *   0 = motor is NOT being driven
-   *   1 = motor IS being driven
+   * Command-active status sent to ESP32 / App (wire name kept for
+   * compatibility):
+   *   0 = no ACTIVE motor command was applied
+   *   1 = the full safety chain accepted and HAL applied a nonzero command
+   * This does not prove that the physical motor moved.
    *
    * App-side normal-use rule:
    *   0 -> length controls may be adjusted
-   *   1 -> motor is busy; temporarily disable length controls
+   *   1 -> command is active; temporarily disable length controls
    */
   uint8_t motor_enabled;
 } TremorSample_t;
+
+typedef struct
+{
+  uint16_t battery_mv;
+  uint8_t battery_percent;
+  uint8_t battery_flags;
+} BatteryStatus_t;
 #pragma pack(pop)
 
 typedef char TremorSample_t_must_be_16_bytes[
   (sizeof(TremorSample_t) == 16U) ? 1 : -1
+];
+
+typedef char BatteryStatus_t_must_be_4_bytes[
+  (sizeof(BatteryStatus_t) == 4U) ? 1 : -1
 ];
 
 /* USER CODE END PTD */
@@ -74,28 +101,6 @@ typedef char TremorSample_t_must_be_16_bytes[
 #define HSEM_ID_0                       (0U)
 #endif
 
-/* Motor */
-#define MOTOR_GAIN                      1.0
-#define MOTOR_RATED_RPM                 201U
-#define MOTOR_GEAR_RATIO                21.3f
-#define ENCODER_MOTOR_SIGNALS_PER_REV   11U
-
-/*
- * Legacy logical mapping only. 0823 requires a low-energy bench confirmation
- * of which AIN1/AIN2 polarity is RELEASE vs TAKE-UP before this may authorize
- * real motion. Physical output is locked below until that path is integrated.
- */
-#define MOTOR_PULL_DIRECTION            MOTOR_FORWARD
-#define MOTOR_RELEASE_DIRECTION         MOTOR_REVERSE
-
-/*
- * Legacy actuator timing is retained only so the old state-machine code still
- * builds for diagnostics. 0823 motor permission does NOT come from these timers.
- */
-#define MOTOR_PULL_TIME_MS              5000U
-#define MOTOR_RELEASE_TIME_MS           5000U
-#define MOTOR_REVERSE_DEADTIME_MS       100U
-
 /* 0823 TB6612 hardware mapping */
 #define MOTOR_AIN1_GPIO_PORT            GPIOG
 #define MOTOR_AIN1_PIN                  GPIO_PIN_3   /* D2 / PG3 */
@@ -104,104 +109,146 @@ typedef char TremorSample_t_must_be_16_bytes[
 #define MOTOR_STBY_GPIO_PORT            GPIOK
 #define MOTOR_STBY_PIN                  GPIO_PIN_1   /* D4 / PK1 */
 #define MOTOR_PWM_CHANNEL               TIM_CHANNEL_1
-#define MOTOR_PWM_FULL_SCALE_CCR        3200U        /* TIM1 ARR=3199 */
-
-/*
- * 0823 requires an authoritative SuppressionControl AND MotorPositionGuard
- * before physical motion is permitted. Those authoritative modules are not in
- * the supplied main.c/tremor_gate files, therefore this integration remains
- * fail-safe locked until they are integrated.
- */
-#define SUPPRESSION_CONTROL_INTEGRATED  0U
-#define MOTOR_POSITION_GUARD_INTEGRATED 0U
-
-/*
- * Communication integration test mode.
- *
- * 1U:
- *   UART packet field motor_enabled reports the hardened 0822 TremorGate
- *   decision after the gate health checks pass.
- *
- *   This is ONLY a communication/status test. It does NOT bypass the 0823
- *   SuppressionControl / MotorPositionGuard safety locks, so the physical
- *   TB6612 motor output remains disabled by the existing motor path.
- *
- * 0U:
- *   UART packet field motor_enabled reports the real commanded motor output
- *   state (motor_output_active_debug).
- *
- * Packet size and UART protocol remain unchanged in both modes.
- */
-#define COMM_TEST_GATE_AS_MOTOR_STATUS   1U
 
 /* 100 Hz */
 #define CONTROL_SAMPLE_RATE_HZ          100.0
 
-/* USART1 -> ESP32 tremor packet */
+/* BNO055 dps telemetry is encoded as signed int16 at 16 LSB/(deg/s).
+ * Reject non-finite/out-of-range data before either control or conversion. */
+#define GYRO_RAW_LSB_PER_DPS            16.0f
+#define GYRO_RAW_MAX_ABS_DPS            2047.0f
+
+/* USART1 <-> ESP32 communication */
 #define TREMOR_UART_TIMEOUT_MS          5U
 
 /*
- * ESP32 -> STM32 control packet:
+ * STM32 -> ESP32 framed UART protocol:
+ *
+ *   Byte0 = 0xAA
+ *   Byte1 = 0x55
+ *   Byte2 = TYPE
+ *   Byte3 = PAYLOAD LENGTH
+ *   Byte4.. = PAYLOAD
+ *
+ * TYPE 0x01 = TremorSample_t, 16-byte payload
+ *               complete frame = AA 55 01 10 + 16 payload bytes
+ * TYPE 0x02 = BatteryStatus_t, 4-byte payload
+ *               complete frame = AA 55 02 04 + 4 payload bytes
+ *
+ * These type/length pairs match the ESP32 parser exactly.
+ */
+#define COMM_HEADER_1                   0xAAU
+#define COMM_HEADER_2                   0x55U
+#define COMM_TYPE_TREMOR                0x01U
+#define COMM_TYPE_BATTERY               0x02U
+#define COMM_HEADER_SIZE                4U
+#define COMM_MAX_PAYLOAD_SIZE           16U
+
+/*
+ * Battery monitor / telemetry:
+ *   PC0 -> ADC1_IN10
+ *   0~25 V five-times divider module
+ *   ADC update once per second
+ *   Battery UART status once every 1 second (matches ESP32 expectation)
+ */
+#define BATTERY_UPDATE_INTERVAL_MS      1000U
+#define BATTERY_SEND_INTERVAL_MS        1000U
+#define BATTERY_ADC_SAMPLES             8U
+#define ADC_REFERENCE_VOLTAGE           3.300f
+#define ADC_MAX_VALUE_12BIT             4095.0f
+#define VOLTAGE_DIVIDER_RATIO           5.000f
+#define VOLTAGE_CALIBRATION             1.00000f
+
+#define BATTERY_LOW_PERCENT             20U
+#define BATTERY_CRITICAL_PERCENT        10U
+#define BATTERY_FLAG_LOW                0x01U
+#define BATTERY_FLAG_CRITICAL           0x02U
+#define BATTERY_FLAG_ADC_ERROR          0x04U
+
+/*
+ * ESP32 -> STM32 control packet (3 bytes):
  *
  * Byte0 = command
- * Byte1 = value / magnitude
+ * Byte1 = magnitude high byte
+ * Byte2 = magnitude low byte
+ * magnitude = unsigned big-endian UInt16 in mm, 0..50 (0..5 cm).
  *
- * 0x01: intensity 0~100 (%)
+ * 0x02: Slider NEGATIVE relative adjustment
+ *       Example: [0x02][0x00][0x06] = -6 mm
+ *                [0x02][0x00][0x32] = -50 mm
  *
- * 0x02: NEGATIVE relative cable adjustment
- *       Byte1 is the positive magnitude in mm.
- *       Example:
- *         [0x02][0x06] = -6 mm
- *         [0x02][0x01] = -1 mm
+ * 0x03: Slider POSITIVE relative adjustment
+ *       Example: [0x03][0x00][0x06] = +6 mm
+ *                [0x03][0x00][0x32] = +50 mm
  *
- * 0x03: POSITIVE relative cable adjustment
- *       Byte1 is the positive magnitude in mm.
- *       Example:
- *         [0x03][0x06] = +6 mm
- *         [0x03][0x01] = +1 mm
+ * 0x04: Manual NEGATIVE relative adjustment
+ *       Example: [0x04][0x00][0x06] = -6 mm
  *
- * 0x04: absolute target cable length in mm
- *       Example:
- *         [0x04][60] = target 60 mm
+ * 0x05: Manual POSITIVE relative adjustment
+ *       Example: [0x05][0x00][0x06] = +6 mm
  *
- * This protocol intentionally avoids two's-complement values on the App side.
- * Negative direction is selected by command 0x02, positive by command 0x03.
+ * The magnitude bytes are always positive. Direction is selected by command.
  */
-#define CONTROL_PACKET_SIZE                 2U
-#define CMD_SET_INTENSITY                   0x01U
+#define CONTROL_PACKET_SIZE                 3U
 #define CMD_ADJUST_LENGTH_NEGATIVE_MM       0x02U
 #define CMD_ADJUST_LENGTH_POSITIVE_MM       0x03U
-#define CMD_SET_BASE_LENGTH_MM              0x04U
+#define CMD_MANUAL_LENGTH_NEGATIVE_MM       0x04U
+#define CMD_MANUAL_LENGTH_POSITIVE_MM       0x05U
+#define CONTROL_MAX_MAGNITUDE_MM            50U
 
-/* Cable length */
-#define LENGTH_MIN_MM                   30.0f
-#define LENGTH_MAX_MM                   100.0f
-#define INITIAL_CABLE_LENGTH_MM         60.0f
-#define LENGTH_TOLERANCE_MM             0.5f
+/* Cable / spool calibration supplied from the final mechanism test.
+ *
+ * Measured: 70 mm of cable per output-shaft revolution
+ *           720 encoder counts per output-shaft revolution
+ * Therefore: 720 / 70 = 10.285714 counts/mm.
+ *
+ * Physical home (power-on) free cable length = 400 mm.
+ * Tremor target removes 200 mm of free cable, so target free length = 200 mm.
+ *
+ * IMPORTANT: before reset/power-on, mechanically place the cable at the known
+ * 400 mm starting length.  After boot the encoder counter is allowed to keep
+ * accumulating; every motion uses a relative start count and travelled counts. */
+#define LENGTH_MIN_MM                       0.0f
+#define LENGTH_MAX_MM                       900.0f
+#define INITIAL_CABLE_LENGTH_MM             400.0f
+#define TREMOR_PULL_LENGTH_MM               200.0f
+#define TREMOR_TARGET_CABLE_LENGTH_MM       \
+    (INITIAL_CABLE_LENGTH_MM - TREMOR_PULL_LENGTH_MM)
 
-/*
- * 0823 calibration safety:
- * Raw encoder rotation has been bench-verified. The final spool/mechanism mm
- * calibration has NOT been completed, so mm-based motion must remain locked.
- *
- * Bench diagnostic only:
- *   output shaft ~= 893 counts / revolution (manual 1-rev trials)
- *
- * Change ENCODER_COUNTS_PER_MM only after the final spool/mechanism is measured.
- */
-#define ENCODER_COUNTS_PER_OUTPUT_REV   893.0f
-#define ENCODER_COUNTS_PER_MM           0.0f
+#define SPOOL_CABLE_PER_REV_MM              70.0f
+#define ENCODER_COUNTS_PER_OUTPUT_REV       720.0f
+#define ENCODER_COUNTS_PER_MM               \
+    (ENCODER_COUNTS_PER_OUTPUT_REV / SPOOL_CABLE_PER_REV_MM)
 
-/*
- * Encoder electrical direction already bench-verified:
- *   right turn -> count increases
- *   left turn  -> count decreases
+/* 200 mm * 720 / 70 = 2057.14 counts -> 2057 counts. */
+#define TREMOR_PULL_COUNTS                  2057L
+
+/* Encoder count polarity is deliberately NOT used to decide distance.
+ * Motion completion uses ABS(current_count - move_start_count), so the encoder
+ * counter may accumulate positive or negative values.  Motor direction still
+ * comes from the TAKE_UP / RELEASE semantic driver commands below. */
+
+/* The reviewed TB6612 driver already defines semantic TAKE_UP / RELEASE
+ * directions.  These two macros isolate the physical motor convention. */
+#define POSITION_TAKE_UP_MOTOR_DIRECTION    MOTOR_POSITION_DIRECTION_TAKE_UP
+#define POSITION_RETURN_MOTOR_DIRECTION     MOTOR_POSITION_DIRECTION_RELEASE
+
+/* Position-controller tuning at 100 Hz.
  *
- * RELEASE/TAKE-UP physical meaning is intentionally NOT frozen here until the
- * final spool/mechanism direction is confirmed. ENCODER_LENGTH_SIGN is retained
- * only for the later mm conversion; mm motion is currently locked at 0 counts/mm.
- */
-#define ENCODER_LENGTH_SIGN             1.0f
+ * There is intentionally NO target tolerance, NO total motion timeout and NO
+ * maximum encoder-excursion fault.  Each motion stores its own start count and
+ * stops when the absolute encoder travel reaches the requested count distance.
+ * Therefore encoder_count may keep accumulating across cycles and does not need
+ * to return to zero. */
+#define POSITION_MEDIUM_ZONE_COUNTS         600L  /* ~= 58.3 mm */
+#define POSITION_SLOW_ZONE_COUNTS           200L  /* ~= 19.4 mm */
+
+#define POSITION_FAST_DUTY                  0.60
+#define POSITION_MEDIUM_DUTY                0.45
+#define POSITION_SLOW_DUTY                  0.30
+
+/* Cable length is updated from commanded motion direction plus absolute
+ * encoder travel, so no signed ENCODER_LENGTH_SIGN calibration is required. */
 
 /* Encoder:
  * C1 / yellow -> PE6
@@ -216,30 +263,7 @@ typedef char TremorSample_t_must_be_16_bytes[
 #define TREMOR_AXIS_X                   0U
 #define TREMOR_AXIS_Y                   1U
 #define TREMOR_AXIS_Z                   2U
-#define TREMOR_INPUT_AXIS               TREMOR_AXIS_X
-
-/*
- * Legacy eHWFLC/RMS diagnostics only.
- * 0823 rule: freqEstimate / tremor_active MUST NOT authorize motor actuation.
- * The hardened TremorGate output below is the gate used by the motor path.
- */
-#define TREMOR_FREQ_ON_MIN_HZ           3.0
-#define TREMOR_FREQ_ON_MAX_HZ           8.0
-#define TREMOR_FREQ_OFF_MIN_HZ          2.5
-#define TREMOR_FREQ_OFF_MAX_HZ          8.5
-
-#define TREMOR_RMS_ON_DPS               3.0
-#define TREMOR_RMS_OFF_DPS              2.0
-#define TREMOR_POWER_EMA_ALPHA          0.05
-
-#define TREMOR_ON_CONFIRM_SAMPLES       30U
-#define TREMOR_OFF_CONFIRM_SAMPLES      150U
-#define ALGO_WARMUP_SAMPLES             200U
-
-/* IMU fallback test signal */
-#define TEST_TREMOR_FREQ_HZ             5.0
-#define TEST_TREMOR_AMPLITUDE_DPS       20.0
-#define PI_D                            3.14159265358979323846
+#define TREMOR_INPUT_AXIS               MOTOR_TREMOR_INPUT_AXIS
 
 /* USER CODE END PD */
 
@@ -249,6 +273,8 @@ typedef char TremorSample_t_must_be_16_bytes[
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
+
+ADC_HandleTypeDef hadc1;
 
 I2C_HandleTypeDef hi2c4;
 
@@ -277,13 +303,15 @@ volatile HAL_StatusTypeDef imuUartStatus = HAL_OK;
 volatile uint32_t imuSampleCount = 0U;
 volatile uint32_t imuUartErrorCount = 0U;
 /*
- * Debug / outgoing motor status byte:
- *   0 = motor is NOT being driven
- *   1 = motor IS being driven
+ * Debug / outgoing command-active status byte (wire name kept for
+ * compatibility):
+ *   0 = no ACTIVE motor command was applied
+ *   1 = the full safety chain accepted and HAL applied a nonzero command
+ * This does not prove that the physical motor moved.
  *
  * During normal operation the App may use:
  *   0 -> enable length controls
- *   1 -> disable length controls while motor is moving
+ *   1 -> disable length controls while a command is active
  */
 volatile uint8_t motorEnabledForApp = 0U;
 
@@ -291,51 +319,41 @@ static uint32_t tremorSequence = 0U;
 static TremorSample_t lastTremorSample = {0};
 
 /* -------------------------------------------------------------------------- */
+/* Battery status -> ESP32 / App                                               */
+/* -------------------------------------------------------------------------- */
+volatile uint16_t batteryVoltageMv = 0U;
+volatile uint8_t batteryPercent = 0U;
+volatile uint8_t batteryFlags = BATTERY_FLAG_ADC_ERROR;
+volatile uint32_t batteryAdcErrorCount = 0U;
+volatile uint32_t batteryUartErrorCount = 0U;
+
+/* UART framing diagnostics for STM32 -> ESP32. */
+volatile uint32_t commTxFrameCount = 0U;
+volatile uint32_t commTxErrorCount = 0U;
+volatile uint32_t commTremorTxCount = 0U;
+volatile uint32_t commBatteryTxCount = 0U;
+volatile uint8_t lastCommTxType = 0U;
+volatile uint8_t lastCommTxLength = 0U;
+volatile HAL_StatusTypeDef lastCommTxStatus = HAL_OK;
+
+static uint32_t nextBatteryTickMs = 0U;
+static uint32_t nextBatterySendTickMs = 0U;
+static float filteredBatteryVoltage = 0.0f;
+static uint8_t batteryFilterInitialized = 0U;
+
+/* -------------------------------------------------------------------------- */
 /* REAL APP / ESP32 UART RX                                                    */
 /* -------------------------------------------------------------------------- */
-volatile uint8_t motorIntensityPercent = 50U;
-static uint8_t controlRxBuffer[CONTROL_PACKET_SIZE] = {0U, 0U};
+static uint8_t controlRxBuffer[CONTROL_PACKET_SIZE] = {0U, 0U, 0U};
 
 volatile uint32_t controlRxCount = 0U;
 volatile uint32_t controlInvalidCount = 0U;
 volatile uint32_t controlUartErrorCount = 0U;
 
 volatile uint8_t lastControlCommand = 0U;
-volatile uint8_t lastControlRawValue = 0U;
+volatile uint16_t lastControlRawValue = 0U;
 volatile int16_t lastControlDecodedValue = 0;
 volatile uint8_t lastControlValid = 0U;
-
-/* -------------------------------------------------------------------------- */
-/* FAKE APP DEBUG VARIABLES                                                    */
-/*
- * These are GLOBAL + VOLATILE on purpose so STM32CubeIDE Live Expressions
- * can always see them in the newly built ELF.
- *
- * Test examples:
- *
- * Positive +5 mm:
- *   fakeAppCommand = 3
- *   fakeAppValueMm = 5
- *   fakeAppTrigger = 1
- *   -> target 60 -> 65 mm
- *
- * Negative -5 mm:
- *   fakeAppCommand = 2
- *   fakeAppValueMm = 5
- *   fakeAppTrigger = 1
- *   -> target 65 -> 60 mm
- *
- * fakeAppValueMm is always entered as a positive magnitude.
- */
-/* -------------------------------------------------------------------------- */
-volatile uint8_t fakeAppCommand = CMD_ADJUST_LENGTH_POSITIVE_MM;
-volatile int16_t fakeAppValueMm = 0;
-volatile uint8_t fakeAppTrigger = 0U;
-
-volatile uint32_t fakeAppCommandCount = 0U;
-volatile uint32_t fakeAppInvalidCount = 0U;
-volatile uint32_t fakeAppHeartbeat = 0U;
-volatile uint8_t fakeAppLastValid = 0U;
 
 /* -------------------------------------------------------------------------- */
 /* Encoder / cable length                                                      */
@@ -359,6 +377,8 @@ volatile uint8_t calibration_required = 1U;
 volatile float currentLengthMm = INITIAL_CABLE_LENGTH_MM;
 volatile float targetLengthMm = INITIAL_CABLE_LENGTH_MM;
 volatile float lengthErrorMm = 0.0f;
+/* Cable length represented by the current IDLE/home position. */
+volatile float baseCableLengthMm = INITIAL_CABLE_LENGTH_MM;
 
 volatile uint8_t lengthAdjustPending = 0U;
 volatile uint8_t lengthAdjustActive = 0U;
@@ -367,76 +387,117 @@ volatile uint8_t encoderLengthCalibrated = 0U;
 
 volatile int16_t lastLengthDeltaMm = 0;
 
+/* App target is kept separate from the tremor target so a received App command
+ * is not overwritten by the 100 Hz tremor state machine. */
+volatile float appRequestedLengthMm = INITIAL_CABLE_LENGTH_MM;
+volatile uint8_t appAdjustmentResumeHolding = 0U;
+
+/* Generic encoder-distance motion diagnostics.  All position moves use
+ * abs(encoder_count - positionMoveStartCount) as the travelled distance. */
+volatile int32_t positionMoveStartCount = 0;
+volatile int32_t positionMoveRequestedCounts = 0;
+volatile int32_t positionMoveTravelCounts = 0;
+volatile float positionMoveStartLengthMm = INITIAL_CABLE_LENGTH_MM;
+volatile int8_t positionMoveLengthDirection = 0; /* -1 take-up, +1 release */
+
 volatile uint32_t lengthAdjustRequestCount = 0U;
 volatile uint32_t lengthAdjustCompleteCount = 0U;
 volatile uint32_t lengthAdjustRejectedCount = 0U;
 
 /* -------------------------------------------------------------------------- */
-/* Algorithm                                                                   */
+/* Tremor-triggered encoder position controller                                */
 /* -------------------------------------------------------------------------- */
-double tremorEstimate = 0.0;
-double freqEstimate = 0.0;
+volatile TremorPositionState tremorPositionState = TREMOR_POSITION_IDLE;
+volatile int32_t tremorHomeCount = 0;
+volatile int32_t tremorTargetCount = 0;
+volatile int32_t tremorPositionErrorCounts = 0;
+volatile uint8_t tremorPositionFaultLatched = 0U;
+volatile uint32_t tremorPullTriggerCount = 0U;
+volatile uint32_t tremorReturnCompleteCount = 0U;
+/* MotionStartMs is diagnostic only; it no longer imposes a total duration limit. */
+/* Actual take-up distance reached in the current/last cycle.
+ * The return controller still targets the absolute home count; this value is
+ * exposed for Debug so you can verify how many encoder counts were wound. */
+volatile int32_t tremorActualPulledCounts = 0;
+
+/* -------------------------------------------------------------------------- */
+/* Authoritative suppression / actuator chain                                  */
+/* -------------------------------------------------------------------------- */
+static SuppressionControl suppression_control;
+static SuppressionControlOutput suppression_output;
+static MotorCommandMapper motor_mapper;
+static MotorCommandOutput motor_command_output;
+static QuadratureEncoder quadrature_encoder;
+static MotorPositionGuard motor_position_guard;
+static MotorPositionGuardOutput position_guard_output;
+static Tb6612Driver tb6612_driver;
+static Tb6612Output tb6612_output;
+static Stm32Tb6612Hal tb6612_hal;
+
+/* Both mapper records must remain bit-identical.  All tunable powered-bench
+ * values live in motor_bench_config.h so the firmware team has one entry. */
+static const MotorCommandMapperConfig motor_mapper_config = {
+  MOTOR_COMMAND_DEADBAND_DPS,
+  MOTOR_COMMAND_GAIN_DUTY_FRACTION_PER_DPS,
+  MOTOR_COMMAND_MAX_DUTY_FRACTION,
+  MOTOR_COMMAND_MAX_DUTY_STEP_PER_TICK,
+  MOTOR_COMMAND_MAX_ABS_REQUEST_DPS,
+  MOTOR_MAPPER_REVERSAL_DEAD_TICKS,
+  MOTOR_COMMAND_DIRECTION_POLARITY
+};
+static const MotorCommandMapperConfig approved_motor_mapper_config = {
+  MOTOR_COMMAND_DEADBAND_DPS,
+  MOTOR_COMMAND_GAIN_DUTY_FRACTION_PER_DPS,
+  MOTOR_COMMAND_MAX_DUTY_FRACTION,
+  MOTOR_COMMAND_MAX_DUTY_STEP_PER_TICK,
+  MOTOR_COMMAND_MAX_ABS_REQUEST_DPS,
+  MOTOR_MAPPER_REVERSAL_DEAD_TICKS,
+  MOTOR_COMMAND_DIRECTION_POLARITY
+};
+/* The position path is compiled for the later guarded profile, but is not an
+ * authority input while MOTOR_POWERED_BENCH_MODE is one. */
+static const MotorPositionGuardConfig motor_position_config = {
+  1000000U, 1000000U, 1000000U, 1U, 1000000U, 1000000U, 1000000U
+};
+static const Tb6612DriverConfig tb6612_driver_config = {
+  MOTOR_PWM_FULL_SCALE_CCR,
+  MOTOR_COMMAND_MAX_DUTY_FRACTION,
+  MOTOR_DRIVER_REVERSAL_DEAD_TICKS,
+  MOTOR_RELEASE_AIN1_LEVEL
+};
 
 double selectedGyroInputDps = 0.0;
-double tremorPowerEma = 0.0;
-double tremorRmsDps = 0.0;
-double controlValueDebug = 0.0;
+double tremorEstimate = 0.0;
+double diagnosticFrequencyHz = 0.0; /* local-only; never a gate/biomarker */
+double compensationRequestDps = 0.0;
 
-volatile uint8_t tremor_active = 0U;
-volatile uint8_t frequency_gate_ok = 0U;
-volatile uint8_t amplitude_gate_ok = 0U;
-volatile uint16_t tremor_on_count = 0U;
-volatile uint16_t tremor_off_count = 0U;
-volatile uint32_t algo_warmup_count = 0U;
+volatile uint8_t suppression_control_ready_debug = 0U;
+volatile uint8_t motor_chain_initialized = 0U;
+volatile uint8_t motor_runtime_armed = MOTOR_DEFAULT_RUNTIME_ARMED;
+volatile uint8_t motor_bench_config_approved = MOTOR_BENCH_CONFIG_APPROVED;
+volatile uint8_t motor_runtime_fault_latched = 0U;
 
-/* tremor_gate.c */
-static TremorGate bandpass_tremor_gate;
-static TremorGateConfig bandpass_tremor_gate_config;
+/* Fresh-sample identity: successful BNO reads are the only producer. */
+volatile uint32_t imu_sample_generation = 0U;
+volatile uint32_t last_controlled_sample_generation = 0U;
+volatile uint8_t fresh_sample_available = 0U;
+volatile uint32_t stale_sample_reject_count = 0U;
 
-volatile uint8_t bandpass_gate_enabled = 0U;
-
-/* 0823 motor-permission diagnostics; not added to the UART packet. */
+/* Keep gate, permission and applied-output meanings separate. */
 volatile uint8_t gate_enabled_debug = 0U;
 volatile uint8_t hardened_gate_ready = 0U;
-volatile uint8_t hardened_gate_fault = (uint8_t)TREMOR_GATE_FAULT_NONE;
-
-/*
- * 0823 keeps three concepts separate:
- *   gate_enabled_debug          = hardened 4-6 Hz gate decision
- *   actuation_permitted_debug   = authoritative suppression permission
- *   motor_output_active_debug   = actual commanded bridge/PWM state
- */
 volatile uint8_t gate_precondition_ok_debug = 0U;
-volatile uint8_t suppression_control_ready_debug = 0U;
 volatile uint8_t actuation_permitted_debug = 0U;
+/* Compatibility diagnostic only: final same-tick actuator authority after
+ * gate, safety chain, arm and calibration checks.  It is not gate_enabled. */
 volatile uint8_t suppression_start_allowed = 0U;
-
-volatile float bandpass_tremor_envelope = 0.0f;
-volatile float bandpass_voluntary_envelope = 0.0f;
-volatile float bandpass_tremor_ratio = 0.0f;
-
-volatile uint16_t bandpass_on_count = 0U;
-volatile uint16_t bandpass_off_count = 0U;
+volatile uint8_t suppression_fault_debug =
+    (uint8_t)SUPPRESSION_CONTROL_FAULT_NONE;
 
 /* -------------------------------------------------------------------------- */
 /* Actuator                                                                    */
 /* -------------------------------------------------------------------------- */
-volatile ActuatorState actuator_state = ACTUATOR_IDLE;
-volatile uint32_t actuator_state_started_ms = 0U;
-volatile uint32_t actuator_state_elapsed_ms = 0U;
-volatile uint32_t actuator_pull_count = 0U;
-volatile uint32_t actuator_return_count = 0U;
-
 volatile MotorState motor_applied_state = MOTOR_STOP;
-volatile MotorState motor_last_drive_direction = MOTOR_STOP;
-volatile MotorState motor_pending_direction = MOTOR_STOP;
-
-volatile uint8_t motor_reverse_wait_active = 0U;
-volatile uint32_t motor_stop_started_ms = 0U;
-volatile uint32_t motor_reverse_wait_elapsed_ms = 0U;
-volatile uint32_t motor_reverse_event_count = 0U;
-
-/* 0823 actual output diagnostics */
 volatile HAL_StatusTypeDef motor_pwm_start_status = HAL_ERROR;
 volatile uint32_t motor_applied_ccr = 0U;
 volatile uint8_t motor_applied_ain1 = 0U;
@@ -444,6 +505,11 @@ volatile uint8_t motor_applied_ain2 = 0U;
 volatile uint8_t motor_applied_stby = 0U;
 volatile uint8_t motor_output_active_debug = 0U;
 volatile uint8_t motor_output_guard_ready_debug = 0U;
+volatile int8_t motor_applied_direction = 0;
+volatile uint8_t mapper_fault_debug = (uint8_t)MOTOR_MAPPER_FAULT_NONE;
+volatile uint8_t position_fault_debug = (uint8_t)MOTOR_POSITION_FAULT_NONE;
+volatile uint8_t driver_fault_debug = (uint8_t)TB6612_DRIVER_FAULT_NONE;
+volatile uint8_t motor_hal_error_debug = 0U;
 
 /* -------------------------------------------------------------------------- */
 /* TIM6 / Debug                                                                */
@@ -456,6 +522,9 @@ float algo_time_us = 0.0f;
 volatile uint32_t tim6_irq_count = 0U;
 volatile uint32_t software_tick_count = 0U;
 volatile uint32_t control_tick_count = 0U;
+volatile uint32_t scheduler_pending_tick_count = 0U;
+volatile uint32_t scheduler_overrun_count = 0U;
+volatile uint8_t scheduler_overrun_this_tick = 0U;
 
 volatile uint32_t imu_read_ok_count = 0U;
 volatile uint32_t imu_read_error_count = 0U;
@@ -473,6 +542,7 @@ volatile HAL_StatusTypeDef bno_ready_28 = HAL_ERROR;
 volatile HAL_StatusTypeDef bno_ready_29 = HAL_ERROR;
 
 volatile uint8_t bno_detected_address = 0U;
+uint16_t bno_i2c_address = (0x28U << 1);
 
 volatile uint32_t i2c4_state_after_28 = 0U;
 volatile uint32_t i2c4_error_after_28 = 0U;
@@ -487,7 +557,6 @@ volatile uint8_t bno_chip_id = 0U;
 volatile uint8_t bno_operation_mode = 0U;
 
 volatile uint8_t imu_ready = 0U;
-volatile uint8_t using_test_data = 0U;
 
 /* USER CODE END PV */
 
@@ -499,53 +568,309 @@ static void MX_USART1_UART_Init(void);
 static void MX_I2C4_Init(void);
 static void MX_USART3_UART_Init(void);
 static void MX_TIM1_Init(void);
+static void MX_ADC1_Init(void);
 /* USER CODE BEGIN PFP */
 
-void Motor_Control(MotorState state);
-void Motor_Deadtime_Reset(void);
-void Motor_UpdateWithDeadtime(MotorState requestedState);
-static void Motor_ForceSafe(void);
-static void Motor_InitSafePwm(void);
-static uint32_t Motor_DutyPercentToCcr(uint8_t dutyPercent);
+static uint8_t ControlPipeline_Init(void);
+static void ControlPipeline_ForceSafe(void);
+static void ControlPipeline_100HzFreshSample(double raw_gyro_dps);
+static void ControlPipeline_RejectStaleSample(void);
+static double SelectTremorAxisDps(float gx, float gy, float gz);
+static uint8_t SnapshotEncoder(QuadratureEncoderSnapshot *snapshot);
 static void Encoder_ProcessSetZeroRequest(void);
-
-void Actuator_StateMachine_Reset(void);
-void Actuator_StateMachine_Update(void);
-
-void Algorithm_Init(void);
-void Tremor_Gate_Reset(void);
-
-void Tremor_Detector_Update(float gx, float gy, float gz);
-
-void Bandpass_TremorGate_Init(void);
-void Bandpass_TremorGate_Reset(void);
-void Bandpass_TremorGate_Update(double gyroDps);
-
-void Read_IMU_TestData(float *gx, float *gy, float *gz);
 HAL_StatusTypeDef Read_IMU_RealData(float *gx, float *gy, float *gz);
 
 HAL_StatusTypeDef Sensor_GyroOnly_Init(void);
 void I2C4_RecoverAndReInit(void);
 void DWT_Init(void);
 
+static HAL_StatusTypeDef Comm_SendPacket(
+    uint8_t type,
+    const void *payload,
+    uint8_t length
+);
 static void Tremor_TransmitCurrentSample(uint8_t sensorValid);
 
+static uint8_t Battery_VoltageToPercent(float packVoltage);
+static uint8_t Battery_MakeFlags(uint8_t percent, uint8_t adcOk);
+static uint8_t Battery_ReadVoltage(float *packVoltage);
+static void Battery_Update(void);
+static void Battery_SendStatus(void);
+
 static void Control_StartReceive(void);
-static int16_t Control_DecodeValue(uint8_t command, uint8_t rawValue);
+static int16_t Control_DecodeValue(uint8_t command, uint16_t rawValue);
 static uint8_t Control_ApplyCommand(uint8_t command, int16_t value);
 
-static void FakeApp_Process(void);
-
-static uint8_t Encoder_ReadAB(void);
 static void Encoder_Init(void);
 static void Encoder_UpdateLength(void);
-
-static uint8_t Length_Adjustment_Update(void);
+static void TremorPositionController_Init(void);
+static uint8_t TremorPositionController_Update(
+    uint8_t gateActive,
+    int8_t *motorDirection,
+    double *dutyFraction
+);
+static double TremorPosition_SelectDuty(int32_t absErrorCounts);
+static void TremorPosition_EnterFault(void);
+static int32_t Encoder_AbsDeltaCounts(int32_t a, int32_t b);
+static int32_t Encoder_MmToCounts(float mm);
+static uint8_t App_StartPendingAdjustment(
+    int32_t currentCount,
+    uint8_t resumeHolding
+);
 
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+
+/* ========================================================================== */
+/* STM32 -> ESP32 framed UART transport                                        */
+/* ========================================================================== */
+
+static HAL_StatusTypeDef Comm_SendPacket(
+    uint8_t type,
+    const void *payload,
+    uint8_t length
+)
+{
+  uint8_t frame[COMM_HEADER_SIZE + COMM_MAX_PAYLOAD_SIZE];
+  HAL_StatusTypeDef status;
+
+  /*
+   * ESP32 parser accepts ONLY:
+   *   AA 55 01 10 + 16-byte TremorSample_t
+   *   AA 55 02 04 +  4-byte BatteryStatus_t
+   */
+  if (payload == NULL)
+  {
+    commTxErrorCount++;
+    lastCommTxStatus = HAL_ERROR;
+    return HAL_ERROR;
+  }
+
+  if (((type == COMM_TYPE_TREMOR) &&
+       (length != (uint8_t)sizeof(TremorSample_t))) ||
+      ((type == COMM_TYPE_BATTERY) &&
+       (length != (uint8_t)sizeof(BatteryStatus_t))) ||
+      ((type != COMM_TYPE_TREMOR) &&
+       (type != COMM_TYPE_BATTERY)) ||
+      (length == 0U) ||
+      (length > COMM_MAX_PAYLOAD_SIZE))
+  {
+    commTxErrorCount++;
+    lastCommTxType = type;
+    lastCommTxLength = length;
+    lastCommTxStatus = HAL_ERROR;
+    return HAL_ERROR;
+  }
+
+  frame[0] = COMM_HEADER_1;  /* 0xAA */
+  frame[1] = COMM_HEADER_2;  /* 0x55 */
+  frame[2] = type;           /* 0x01 tremor / 0x02 battery */
+  frame[3] = length;         /* 0x10 tremor / 0x04 battery */
+
+  memcpy(&frame[COMM_HEADER_SIZE], payload, length);
+
+  lastCommTxType = type;
+  lastCommTxLength = length;
+
+  status = HAL_UART_Transmit(
+      &huart1,
+      frame,
+      (uint16_t)(COMM_HEADER_SIZE + length),
+      TREMOR_UART_TIMEOUT_MS
+  );
+
+  lastCommTxStatus = status;
+
+  if (status == HAL_OK)
+  {
+    commTxFrameCount++;
+
+    if (type == COMM_TYPE_TREMOR)
+    {
+      commTremorTxCount++;
+    }
+    else
+    {
+      commBatteryTxCount++;
+    }
+  }
+  else
+  {
+    commTxErrorCount++;
+  }
+
+  return status;
+}
+
+
+/* ========================================================================== */
+/* Battery monitor / battery telemetry                                         */
+/* ========================================================================== */
+
+static uint8_t Battery_VoltageToPercent(float packVoltage)
+{
+  const float cell = packVoltage / 3.0f;
+
+  if (cell >= 4.20f) return 100U;
+  if (cell >= 4.15f) return 95U;
+  if (cell >= 4.11f) return 90U;
+  if (cell >= 4.08f) return 85U;
+  if (cell >= 4.02f) return 80U;
+  if (cell >= 3.98f) return 75U;
+  if (cell >= 3.95f) return 70U;
+  if (cell >= 3.91f) return 65U;
+  if (cell >= 3.87f) return 60U;
+  if (cell >= 3.85f) return 55U;
+  if (cell >= 3.84f) return 50U;
+  if (cell >= 3.82f) return 45U;
+  if (cell >= 3.80f) return 40U;
+  if (cell >= 3.79f) return 35U;
+  if (cell >= 3.77f) return 30U;
+  if (cell >= 3.75f) return 25U;
+  if (cell >= 3.73f) return 20U;
+  if (cell >= 3.71f) return 15U;
+  if (cell >= 3.69f) return 10U;
+  if (cell >= 3.61f) return 5U;
+
+  return 0U;
+}
+
+static uint8_t Battery_MakeFlags(uint8_t percent, uint8_t adcOk)
+{
+  uint8_t flags = 0U;
+
+  if (adcOk == 0U)
+  {
+    flags |= BATTERY_FLAG_ADC_ERROR;
+  }
+
+  if (percent <= BATTERY_LOW_PERCENT)
+  {
+    flags |= BATTERY_FLAG_LOW;
+  }
+
+  if (percent <= BATTERY_CRITICAL_PERCENT)
+  {
+    flags |= BATTERY_FLAG_CRITICAL;
+  }
+
+  return flags;
+}
+
+static uint8_t Battery_ReadVoltage(float *packVoltage)
+{
+  uint32_t sum = 0U;
+  uint32_t validSamples = 0U;
+  uint32_t i;
+
+  if (packVoltage == NULL)
+  {
+    return 0U;
+  }
+
+  for (i = 0U; i < BATTERY_ADC_SAMPLES; ++i)
+  {
+    if (HAL_ADC_Start(&hadc1) != HAL_OK)
+    {
+      continue;
+    }
+
+    if (HAL_ADC_PollForConversion(&hadc1, 2U) == HAL_OK)
+    {
+      sum += HAL_ADC_GetValue(&hadc1);
+      validSamples++;
+    }
+
+    (void)HAL_ADC_Stop(&hadc1);
+  }
+
+  if (validSamples == 0U)
+  {
+    return 0U;
+  }
+
+  {
+    const float adcRaw =
+        (float)sum / (float)validSamples;
+
+    const float adcVoltage =
+        (adcRaw / ADC_MAX_VALUE_12BIT) *
+        ADC_REFERENCE_VOLTAGE;
+
+    *packVoltage =
+        adcVoltage *
+        VOLTAGE_DIVIDER_RATIO *
+        VOLTAGE_CALIBRATION;
+  }
+
+  return 1U;
+}
+
+static void Battery_Update(void)
+{
+  float measuredVoltage = 0.0f;
+  const uint8_t adcOk =
+      Battery_ReadVoltage(&measuredVoltage);
+
+  if (adcOk == 0U)
+  {
+    batteryAdcErrorCount++;
+    batteryFlags =
+        Battery_MakeFlags(batteryPercent, 0U);
+    return;
+  }
+
+  if (batteryFilterInitialized == 0U)
+  {
+    filteredBatteryVoltage = measuredVoltage;
+    batteryFilterInitialized = 1U;
+  }
+  else
+  {
+    filteredBatteryVoltage =
+        (filteredBatteryVoltage * 0.75f) +
+        (measuredVoltage * 0.25f);
+  }
+
+  if (filteredBatteryVoltage < 0.0f)
+  {
+    filteredBatteryVoltage = 0.0f;
+  }
+
+  if (filteredBatteryVoltage > 65.535f)
+  {
+    filteredBatteryVoltage = 65.535f;
+  }
+
+  batteryVoltageMv =
+      (uint16_t)(filteredBatteryVoltage * 1000.0f + 0.5f);
+
+  batteryPercent =
+      Battery_VoltageToPercent(filteredBatteryVoltage);
+
+  batteryFlags =
+      Battery_MakeFlags(batteryPercent, 1U);
+}
+
+static void Battery_SendStatus(void)
+{
+  BatteryStatus_t status = {0};
+
+  status.battery_mv = batteryVoltageMv;
+  status.battery_percent = batteryPercent;
+  status.battery_flags = batteryFlags;
+
+  if (Comm_SendPacket(
+          COMM_TYPE_BATTERY,
+          &status,
+          (uint8_t)sizeof(status)
+      ) != HAL_OK)
+  {
+    batteryUartErrorCount++;
+  }
+}
 
 /* ========================================================================== */
 /* STM32 -> ESP32 tremor packet                                                */
@@ -573,48 +898,14 @@ static void Tremor_TransmitCurrentSample(uint8_t sensorValid)
     sample.sensor_valid = 0U;
   }
 
-  /*
-   * Keep TremorSample_t at 16 bytes so the ESP32 packet format remains
-   * unchanged.
-   *
-   * COMM_TEST_GATE_AS_MOTOR_STATUS == 1U:
-   *   Communication integration test only.
-   *   0 = hardened TremorGate is not enabled / not healthy
-   *   1 = hardened TremorGate is enabled and healthy
-   *
-   *   IMPORTANT:
-   *   This value means "gate condition satisfied" for the software-team test.
-   *   It does NOT mean the physical motor has actually been energized.
-   *   The 0823 physical motor safety chain remains locked separately.
-   *
-   * COMM_TEST_GATE_AS_MOTOR_STATUS == 0U:
-   *   Production-style status.
-   *   Report the actual commanded hardware motor output state.
-   */
-#if (COMM_TEST_GATE_AS_MOTOR_STATUS == 1U)
+  /* Actual applied motor-command status, not merely gate status. */
+  sample.motor_enabled = (motor_output_active_debug != 0U) ? 1U : 0U;
+  motorEnabledForApp = sample.motor_enabled;
 
-  motorEnabledForApp =
-      ((hardened_gate_ready != 0U) &&
-       (hardened_gate_fault == (uint8_t)TREMOR_GATE_FAULT_NONE) &&
-       (gate_enabled_debug != 0U) &&
-       (sensorValid != 0U))
-      ? 1U : 0U;
-
-#else
-
-  motorEnabledForApp =
-      (motor_output_active_debug != 0U)
-      ? 1U : 0U;
-
-#endif
-
-  sample.motor_enabled = motorEnabledForApp;
-
-  imuUartStatus = HAL_UART_Transmit(
-      &huart1,
-      (uint8_t *)&sample,
-      (uint16_t)sizeof(sample),
-      TREMOR_UART_TIMEOUT_MS
+  imuUartStatus = Comm_SendPacket(
+      COMM_TYPE_TREMOR,
+      &sample,
+      (uint8_t)sizeof(sample)
   );
 
   if (imuUartStatus != HAL_OK)
@@ -625,6 +916,7 @@ static void Tremor_TransmitCurrentSample(uint8_t sensorValid)
   lastTremorSample = sample;
   imuSampleCount++;
 }
+
 
 /* ========================================================================== */
 /* DWT                                                                         */
@@ -723,17 +1015,27 @@ HAL_StatusTypeDef Sensor_GyroOnly_Init(void)
 /* APP command common handler                                                  */
 /* ========================================================================== */
 
-static int16_t Control_DecodeValue(uint8_t command, uint8_t rawValue)
+static int16_t Control_DecodeValue(uint8_t command, uint16_t rawValue)
 {
   /*
    * New App protocol:
    *
-   *   0x02 06 -> -6 mm
-   *   0x03 06 -> +6 mm
+   *   0x02 00 06 -> -6 mm (preset negative)
+   *   0x03 00 06 -> +6 mm (preset positive)
+   *   0x04 00 06 -> -6 mm (manual negative input)
+   *   0x05 00 06 -> +6 mm (manual positive input)
+   *   0x04 00 32 -> -50 mm (manual negative input)
+   *   0x05 00 32 -> +50 mm (manual positive input)
    *
-   * The second byte is always sent as a positive magnitude.
+   * Byte1..Byte2 is always sent as a positive big-endian magnitude.
    */
-  if (command == CMD_ADJUST_LENGTH_NEGATIVE_MM)
+  if (rawValue > CONTROL_MAX_MAGNITUDE_MM)
+  {
+    return (int16_t)(CONTROL_MAX_MAGNITUDE_MM + 1U);
+  }
+
+  if ((command == CMD_ADJUST_LENGTH_NEGATIVE_MM) ||
+      (command == CMD_MANUAL_LENGTH_NEGATIVE_MM))
   {
     return -(int16_t)rawValue;
   }
@@ -743,78 +1045,74 @@ static int16_t Control_DecodeValue(uint8_t command, uint8_t rawValue)
 
 static uint8_t Control_ApplyCommand(uint8_t command, int16_t value)
 {
-  float requestedLengthMm;
   float candidateTargetMm;
+  float commandBaseMm;
 
   switch (command)
   {
-    case CMD_SET_INTENSITY:
-      if ((value >= 0) && (value <= 100))
-      {
-        motorIntensityPercent = (uint8_t)value;
-        return 1U;
-      }
-
-      return 0U;
-
-    case CMD_SET_BASE_LENGTH_MM:
-      requestedLengthMm = (float)value;
-
-      if ((requestedLengthMm >= LENGTH_MIN_MM) &&
-          (requestedLengthMm <= LENGTH_MAX_MM))
-      {
-        targetLengthMm = requestedLengthMm;
-        lengthErrorMm = targetLengthMm - currentLengthMm;
-
-        if (fabsf(lengthErrorMm) > LENGTH_TOLERANCE_MM)
-        {
-          lengthAdjustPending = 1U;
-          lengthAdjustRequestCount++;
-        }
-        else
-        {
-          lengthAdjustPending = 0U;
-        }
-
-        lastLengthDeltaMm = 0;
-
-        return 1U;
-      }
-
-      lengthAdjustRejectedCount++;
-      return 0U;
-
     case CMD_ADJUST_LENGTH_NEGATIVE_MM:
     case CMD_ADJUST_LENGTH_POSITIVE_MM:
+    case CMD_MANUAL_LENGTH_NEGATIVE_MM:
+    case CMD_MANUAL_LENGTH_POSITIVE_MM:
       /*
        * value has already been decoded:
-       *   0x02 06 -> value = -6
-       *   0x03 06 -> value = +6
+       *   0x02 00 06 -> value = -6 mm -> TAKE-UP 6 mm (preset)
+       *   0x03 00 06 -> value = +6 mm -> RELEASE 6 mm (preset)
+       *   0x04 00 06 -> value = -6 mm -> TAKE-UP 6 mm (manual App input)
+       *   0x05 00 06 -> value = +6 mm -> RELEASE 6 mm (manual App input)
+       *   0x04 00 32 -> value = -50 mm
+       *   0x05 00 32 -> value = +50 mm
        */
-      candidateTargetMm =
-          targetLengthMm + (float)value;
-
-      if ((candidateTargetMm >= LENGTH_MIN_MM) &&
-          (candidateTargetMm <= LENGTH_MAX_MM))
+      if ((value < -(int16_t)CONTROL_MAX_MAGNITUDE_MM) ||
+          (value > (int16_t)CONTROL_MAX_MAGNITUDE_MM))
       {
-        targetLengthMm = candidateTargetMm;
-        lengthErrorMm = targetLengthMm - currentLengthMm;
-        lastLengthDeltaMm = value;
-
-        if (value != 0)
-        {
-          lengthAdjustPending = 1U;
-          lengthAdjustRequestCount++;
-        }
-
-        return 1U;
+        lengthAdjustRejectedCount++;
+        return 0U;
       }
 
-      /*
-       * Do not modify targetLengthMm or lastLengthDeltaMm when rejected.
-       */
-      lengthAdjustRejectedCount++;
-      return 0U;
+      if ((tremorPositionState != TREMOR_POSITION_IDLE) &&
+          (tremorPositionState != TREMOR_POSITION_HOLDING))
+      {
+        lengthAdjustBlocked = 1U;
+        lengthAdjustRejectedCount++;
+        return 0U;
+      }
+
+      commandBaseMm = currentLengthMm;
+      candidateTargetMm = commandBaseMm + (float)value;
+
+      if ((candidateTargetMm < LENGTH_MIN_MM) ||
+          (candidateTargetMm > LENGTH_MAX_MM))
+      {
+        lengthAdjustRejectedCount++;
+        return 0U;
+      }
+
+      if ((tremorPositionState == TREMOR_POSITION_HOLDING) &&
+          (candidateTargetMm > baseCableLengthMm))
+      {
+        lengthAdjustBlocked = 1U;
+        lengthAdjustRejectedCount++;
+        return 0U;
+      }
+
+      appRequestedLengthMm = candidateTargetMm;
+      targetLengthMm = appRequestedLengthMm;
+      lengthErrorMm = targetLengthMm - currentLengthMm;
+      lastLengthDeltaMm = value;
+
+      if (value != 0)
+      {
+        lengthAdjustPending = 1U;
+        lengthAdjustBlocked = 0U;
+        lengthAdjustRequestCount++;
+      }
+      else
+      {
+        lengthAdjustPending = 0U;
+      }
+
+      return 1U;
 
     default:
       return 0U;
@@ -840,7 +1138,7 @@ static void Control_StartReceive(void)
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
   uint8_t command;
-  uint8_t rawValue;
+  uint16_t rawValue;
   int16_t decodedValue;
   uint8_t valid;
 
@@ -850,7 +1148,8 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
   }
 
   command = controlRxBuffer[0];
-  rawValue = controlRxBuffer[1];
+  rawValue = ((uint16_t)controlRxBuffer[1] << 8) |
+             (uint16_t)controlRxBuffer[2];
 
   decodedValue = Control_DecodeValue(command, rawValue);
 
@@ -895,130 +1194,574 @@ void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
 }
 
 /* ========================================================================== */
-/* FAKE APP                                                                    */
-/*
- * Fake App uses the SAME Control_ApplyCommand() as real USART1 RX.
- * It can test command parsing, target length, encoder closed-loop movement,
- * and IDLE/HOLDING blocking logic without the ESP32/App.
- *
- * It does NOT test the physical USART1 RX wiring or interrupt path itself.
- */
+/* AUTHORITATIVE ENCODER + IMMEDIATE HARDWARE SAFE PATH                        */
 /* ========================================================================== */
 
-static void FakeApp_Process(void)
+static uint8_t ReadDigitalLevel(GPIO_TypeDef *port, uint16_t pin)
 {
-  uint8_t command;
-  int16_t magnitude;
-  int16_t decodedValue;
-  uint8_t valid;
-
-  if (fakeAppTrigger == 0U)
-  {
-    return;
-  }
-
-  /*
-   * Fake App mirrors the real 2-byte protocol:
-   *
-   *   command 2, value 6 -> -6 mm
-   *   command 3, value 6 -> +6 mm
-   *
-   * Therefore fakeAppValueMm should be entered as a POSITIVE magnitude.
-   */
-  command = fakeAppCommand;
-  magnitude = fakeAppValueMm;
-
-  fakeAppTrigger = 0U;
-
-  if ((magnitude < 0) || (magnitude > 255))
-  {
-    fakeAppLastValid = 0U;
-    fakeAppInvalidCount++;
-    return;
-  }
-
-  decodedValue =
-      Control_DecodeValue(
-          command,
-          (uint8_t)magnitude
-      );
-
-  valid =
-      Control_ApplyCommand(
-          command,
-          decodedValue
-      );
-
-  fakeAppLastValid = valid;
-
-  if (valid != 0U)
-  {
-    fakeAppCommandCount++;
-  }
-  else
-  {
-    fakeAppInvalidCount++;
-  }
+  return (HAL_GPIO_ReadPin(port, pin) == GPIO_PIN_SET) ? 1U : 0U;
 }
 
-/* ========================================================================== */
-/* ENCODER                                                                     */
-/* ========================================================================== */
-
-static uint8_t Encoder_ReadAB(void)
+static uint8_t SnapshotEncoder(QuadratureEncoderSnapshot *snapshot)
 {
-  uint8_t a;
-  uint8_t b;
+  uint8_t snapshot_ok;
+  uint8_t strict_valid;
 
-  a =
-      (HAL_GPIO_ReadPin(
-           ENCODER_A_GPIO_PORT,
-           ENCODER_A_PIN
-       ) == GPIO_PIN_SET)
+  if (snapshot == NULL)
+  {
+    return 0U;
+  }
+
+  snapshot_ok = QuadratureEncoder_Snapshot(&quadrature_encoder, snapshot);
+  strict_valid =
+      ((snapshot_ok == 1U) &&
+       (snapshot->initialized == 1U) &&
+       (snapshot->invalid_transition_latched == 0U) &&
+       (snapshot->overflow_latched == 0U))
       ? 1U : 0U;
 
-  b =
-      (HAL_GPIO_ReadPin(
-           ENCODER_B_GPIO_PORT,
-           ENCODER_B_PIN
-       ) == GPIO_PIN_SET)
-      ? 1U : 0U;
-
-  return (uint8_t)((a << 1) | b);
+  encoder_count = snapshot->count;
+  encoder_valid_transition_count = snapshot->valid_transition_count;
+  encoder_invalid_transition_count = snapshot->invalid_transition_count;
+  encoder_invalid_latched = snapshot->invalid_transition_latched;
+  encoder_overflow_latched = snapshot->overflow_latched;
+  encoder_valid = strict_valid;
+  return strict_valid;
 }
 
 static void Encoder_Init(void)
 {
+  uint8_t initial_a;
+  uint8_t initial_b;
+
+  HAL_NVIC_DisableIRQ(EXTI9_5_IRQn);
+  initial_a = ReadDigitalLevel(ENCODER_A_GPIO_PORT, ENCODER_A_PIN);
+  initial_b = ReadDigitalLevel(ENCODER_B_GPIO_PORT, ENCODER_B_PIN);
+
+  memset(&quadrature_encoder, 0, sizeof(quadrature_encoder));
+  encoder_valid = QuadratureEncoder_Init(
+      &quadrature_encoder,
+      initial_a,
+      initial_b,
+      MOTOR_ENCODER_COUNT_POLARITY
+  );
+
+  __HAL_GPIO_EXTI_CLEAR_IT(ENCODER_A_PIN);
+  __HAL_GPIO_EXTI_CLEAR_IT(ENCODER_B_PIN);
+  HAL_NVIC_EnableIRQ(EXTI9_5_IRQn);
+
   encoder_count = 0;
   encoder_edge_count = 0U;
   encoder_valid_transition_count = 0U;
   encoder_invalid_transition_count = 0U;
   encoder_invalid_latched = 0U;
   encoder_overflow_latched = 0U;
+  encoder_prev_ab = (uint8_t)((initial_a << 1U) | initial_b);
 
-  encoder_prev_ab = Encoder_ReadAB();
-  encoder_valid = 1U;
-
+  /* The supplied final-mechanism calibration makes the encoder authoritative
+   * for this test.  Count zero is defined as the 400 mm physical home. */
   encoder_zero_count = 0;
-  encoder_position_zeroed = 0U;
-  calibration_required = 1U;
+  encoder_position_zeroed = (encoder_valid != 0U) ? 1U : 0U;
+  calibration_required = (encoder_valid != 0U) ? 0U : 1U;
   encoder_set_zero_request = 0U;
-  encoder_set_zero_status = 0;
+  encoder_set_zero_status = (encoder_valid != 0U) ? 1 : -1;
 
   currentLengthMm = INITIAL_CABLE_LENGTH_MM;
   targetLengthMm = INITIAL_CABLE_LENGTH_MM;
   lengthErrorMm = 0.0f;
-
+  baseCableLengthMm = INITIAL_CABLE_LENGTH_MM;
+  appRequestedLengthMm = INITIAL_CABLE_LENGTH_MM;
+  positionMoveStartCount = 0;
+  positionMoveRequestedCounts = 0;
+  positionMoveTravelCounts = 0;
+  positionMoveStartLengthMm = INITIAL_CABLE_LENGTH_MM;
+  positionMoveLengthDirection = 0;
   lengthAdjustPending = 0U;
   lengthAdjustActive = 0U;
   lengthAdjustBlocked = 0U;
+  encoderLengthCalibrated = (encoder_valid != 0U) ? 1U : 0U;
+}
 
-  encoderLengthCalibrated =
-      (ENCODER_COUNTS_PER_MM > 0.0f) ? 1U : 0U;
+static int32_t Encoder_AbsDeltaCounts(int32_t a, int32_t b)
+{
+  int64_t delta = (int64_t)a - (int64_t)b;
+
+  if (delta < 0)
+  {
+    delta = -delta;
+  }
+
+  if (delta > (int64_t)INT32_MAX)
+  {
+    return INT32_MAX;
+  }
+
+  return (int32_t)delta;
+}
+
+static int32_t Encoder_MmToCounts(float mm)
+{
+  float magnitude = fabsf(mm);
+  float counts = magnitude * ENCODER_COUNTS_PER_MM;
+
+  if (counts <= 0.0f)
+  {
+    return 0;
+  }
+
+  if (counts >= (float)INT32_MAX)
+  {
+    return INT32_MAX;
+  }
+
+  return (int32_t)(counts + 0.5f);
+}
+
+static double TremorPosition_SelectDuty(int32_t absErrorCounts)
+{
+  double duty;
+
+  if (absErrorCounts > POSITION_MEDIUM_ZONE_COUNTS)
+  {
+    duty = POSITION_FAST_DUTY;
+  }
+  else if (absErrorCounts > POSITION_SLOW_ZONE_COUNTS)
+  {
+    duty = POSITION_MEDIUM_DUTY;
+  }
+  else
+  {
+    duty = POSITION_SLOW_DUTY;
+  }
+
+  /* Never request more than the reviewed motor-bench configuration permits. */
+  if (duty > MOTOR_COMMAND_MAX_DUTY_FRACTION)
+  {
+    duty = MOTOR_COMMAND_MAX_DUTY_FRACTION;
+  }
+
+
+  if (duty < 0.0)
+  {
+    duty = 0.0;
+  }
+
+  return duty;
+}
+
+static void TremorPosition_EnterFault(void)
+{
+  tremorPositionFaultLatched = 1U;
+  tremorPositionState = TREMOR_POSITION_FAULT;
+  motor_runtime_fault_latched = 1U;
+  lengthAdjustActive = 0U;
+  ControlPipeline_ForceSafe();
+}
+
+static uint8_t App_StartPendingAdjustment(
+    int32_t currentCount,
+    uint8_t resumeHolding
+)
+{
+  float deltaMm;
+  int32_t requestedCounts;
+
+  if (lengthAdjustPending == 0U)
+  {
+    return 0U;
+  }
+
+  deltaMm = appRequestedLengthMm - currentLengthMm;
+  requestedCounts = Encoder_MmToCounts(deltaMm);
+
+  /* A sub-count request is already effectively complete. */
+  if (requestedCounts <= 0)
+  {
+    currentLengthMm = appRequestedLengthMm;
+    targetLengthMm = appRequestedLengthMm;
+    lengthErrorMm = 0.0f;
+    lengthAdjustPending = 0U;
+    lengthAdjustActive = 0U;
+    lengthAdjustBlocked = 0U;
+    lengthAdjustCompleteCount++;
+
+    if (resumeHolding == 0U)
+    {
+      baseCableLengthMm = currentLengthMm;
+      tremorHomeCount = currentCount;
+      tremorTargetCount = currentCount;
+    }
+
+    return 0U;
+  }
+
+  positionMoveStartCount = currentCount;
+  positionMoveRequestedCounts = requestedCounts;
+  positionMoveTravelCounts = 0;
+  positionMoveStartLengthMm = currentLengthMm;
+  positionMoveLengthDirection = (deltaMm < 0.0f) ? -1 : 1;
+  appAdjustmentResumeHolding = (resumeHolding != 0U) ? 1U : 0U;
+
+  targetLengthMm = appRequestedLengthMm;
+  lengthErrorMm = targetLengthMm - currentLengthMm;
+  lengthAdjustActive = 1U;
+  lengthAdjustBlocked = 0U;
+  tremorPositionState = TREMOR_POSITION_APP_ADJUSTING;
+
+  return 1U;
+}
+
+static void TremorPositionController_Init(void)
+{
+  tremorPositionState = TREMOR_POSITION_IDLE;
+  tremorHomeCount = encoder_count;
+  tremorTargetCount = tremorHomeCount;
+  tremorPositionErrorCounts = 0;
+  tremorPositionFaultLatched = 0U;
+  tremorPullTriggerCount = 0U;
+  tremorReturnCompleteCount = 0U;
+  tremorActualPulledCounts = 0;
+
+  positionMoveStartCount = encoder_count;
+  positionMoveRequestedCounts = 0;
+  positionMoveTravelCounts = 0;
+  positionMoveStartLengthMm = INITIAL_CABLE_LENGTH_MM;
+  positionMoveLengthDirection = 0;
+
+  baseCableLengthMm = INITIAL_CABLE_LENGTH_MM;
+  appRequestedLengthMm = INITIAL_CABLE_LENGTH_MM;
+  targetLengthMm = INITIAL_CABLE_LENGTH_MM;
+  currentLengthMm = INITIAL_CABLE_LENGTH_MM;
+  lengthErrorMm = 0.0f;
+}
+
+static uint8_t TremorPositionController_Update(
+    uint8_t gateActive,
+    int8_t *motorDirection,
+    double *dutyFraction
+)
+{
+  QuadratureEncoderSnapshot snapshot;
+  int32_t currentCount;
+  int32_t remainingCounts;
+  float availablePullMm;
+  float pullMm;
+
+  if ((motorDirection == NULL) || (dutyFraction == NULL))
+  {
+    TremorPosition_EnterFault();
+    return 0U;
+  }
+
+  *motorDirection = 0;
+  *dutyFraction = 0.0;
+
+  memset(&snapshot, 0, sizeof(snapshot));
+  if (SnapshotEncoder(&snapshot) != 1U)
+  {
+    TremorPosition_EnterFault();
+    return 0U;
+  }
+
+  currentCount = snapshot.count;
+  encoder_count = currentCount;
+
+  switch (tremorPositionState)
+  {
+    case TREMOR_POSITION_IDLE:
+      tremorHomeCount = currentCount;
+      tremorTargetCount = currentCount;
+      tremorPositionErrorCounts = 0;
+      lengthAdjustActive = 0U;
+      targetLengthMm = baseCableLengthMm;
+
+      /* App adjustment is allowed in IDLE and is handled before a new Gate. */
+      if (lengthAdjustPending != 0U)
+      {
+        (void)App_StartPendingAdjustment(currentCount, 0U);
+        return 0U;
+      }
+
+      if (gateActive != 0U)
+      {
+        /* Each tremor event captures the current encoder count as its own Home.
+         * Completion depends only on travelled encoder counts, not count sign. */
+        tremorHomeCount = currentCount;
+
+        availablePullMm = currentLengthMm - LENGTH_MIN_MM;
+        pullMm = TREMOR_PULL_LENGTH_MM;
+        if (pullMm > availablePullMm)
+        {
+          pullMm = availablePullMm;
+        }
+
+        positionMoveStartCount = currentCount;
+        positionMoveRequestedCounts = Encoder_MmToCounts(pullMm);
+        positionMoveTravelCounts = 0;
+        positionMoveStartLengthMm = currentLengthMm;
+        positionMoveLengthDirection = -1; /* TAKE-UP shortens cable. */
+
+        tremorTargetCount = currentCount; /* legacy debug only; sign-independent. */
+        targetLengthMm = currentLengthMm - pullMm;
+        tremorActualPulledCounts = 0;
+        tremorPositionErrorCounts = positionMoveRequestedCounts;
+        tremorPositionState = TREMOR_POSITION_PULLING;
+        tremorPullTriggerCount++;
+      }
+      return 0U;
+
+    case TREMOR_POSITION_PULLING:
+      positionMoveTravelCounts =
+          Encoder_AbsDeltaCounts(currentCount, positionMoveStartCount);
+      remainingCounts =
+          positionMoveRequestedCounts - positionMoveTravelCounts;
+      if (remainingCounts < 0)
+      {
+        remainingCounts = 0;
+      }
+      tremorPositionErrorCounts = remainingCounts;
+      lengthAdjustActive = 1U;
+
+      /* Gate disappeared before full pull: remember exactly how many encoder
+       * counts were actually wound, then release that same distance. */
+      if (gateActive == 0U)
+      {
+        tremorActualPulledCounts = positionMoveTravelCounts;
+        positionMoveStartCount = currentCount;
+        positionMoveRequestedCounts = tremorActualPulledCounts;
+        positionMoveTravelCounts = 0;
+        positionMoveStartLengthMm = currentLengthMm;
+        positionMoveLengthDirection = 1; /* RELEASE lengthens cable. */
+        targetLengthMm = baseCableLengthMm;
+        tremorTargetCount = tremorHomeCount;
+        tremorPositionState = TREMOR_POSITION_RETURNING;
+        return 0U;
+      }
+
+      if (positionMoveTravelCounts >= positionMoveRequestedCounts)
+      {
+        tremorActualPulledCounts = positionMoveTravelCounts;
+        currentLengthMm = targetLengthMm;
+        tremorPositionState = TREMOR_POSITION_HOLDING;
+        tremorPositionErrorCounts = 0;
+        lengthAdjustActive = 0U;
+        return 0U;
+      }
+
+      *motorDirection = POSITION_TAKE_UP_MOTOR_DIRECTION;
+      *dutyFraction = TremorPosition_SelectDuty(remainingCounts);
+      return (*dutyFraction > 0.0) ? 1U : 0U;
+
+    case TREMOR_POSITION_HOLDING:
+      lengthAdjustActive = 0U;
+      tremorPositionErrorCounts = 0;
+
+      if (gateActive == 0U)
+      {
+        /* Return by the actual encoder distance from this tremor event. */
+        tremorActualPulledCounts =
+            Encoder_AbsDeltaCounts(currentCount, tremorHomeCount);
+        positionMoveStartCount = currentCount;
+        positionMoveRequestedCounts = tremorActualPulledCounts;
+        positionMoveTravelCounts = 0;
+        positionMoveStartLengthMm = currentLengthMm;
+        positionMoveLengthDirection = 1; /* RELEASE */
+        targetLengthMm = baseCableLengthMm;
+        tremorTargetCount = tremorHomeCount;
+        tremorPositionState = TREMOR_POSITION_RETURNING;
+        return 0U;
+      }
+
+      /* App may fine-tune the held cable length.  Home remains unchanged so
+       * Gate-off still returns to the pre-tremor baseline. */
+      if (lengthAdjustPending != 0U)
+      {
+        (void)App_StartPendingAdjustment(currentCount, 1U);
+      }
+      return 0U;
+
+    case TREMOR_POSITION_RETURNING:
+      positionMoveTravelCounts =
+          Encoder_AbsDeltaCounts(currentCount, positionMoveStartCount);
+      remainingCounts =
+          positionMoveRequestedCounts - positionMoveTravelCounts;
+      if (remainingCounts < 0)
+      {
+        remainingCounts = 0;
+      }
+      tremorPositionErrorCounts = remainingCounts;
+      lengthAdjustActive = 1U;
+
+      if (positionMoveTravelCounts >= positionMoveRequestedCounts)
+      {
+        currentLengthMm = baseCableLengthMm;
+        tremorPositionState = TREMOR_POSITION_IDLE;
+        tremorHomeCount = currentCount;
+        tremorTargetCount = currentCount;
+        tremorPositionErrorCounts = 0;
+        targetLengthMm = baseCableLengthMm;
+        lengthAdjustActive = 0U;
+        tremorReturnCompleteCount++;
+        return 0U;
+      }
+
+      *motorDirection = POSITION_RETURN_MOTOR_DIRECTION;
+      *dutyFraction = TremorPosition_SelectDuty(remainingCounts);
+      return (*dutyFraction > 0.0) ? 1U : 0U;
+
+    case TREMOR_POSITION_APP_ADJUSTING:
+      positionMoveTravelCounts =
+          Encoder_AbsDeltaCounts(currentCount, positionMoveStartCount);
+      remainingCounts =
+          positionMoveRequestedCounts - positionMoveTravelCounts;
+      if (remainingCounts < 0)
+      {
+        remainingCounts = 0;
+      }
+      tremorPositionErrorCounts = remainingCounts;
+      lengthAdjustActive = 1U;
+      targetLengthMm = appRequestedLengthMm;
+
+      if (positionMoveTravelCounts >= positionMoveRequestedCounts)
+      {
+        currentLengthMm = appRequestedLengthMm;
+        lengthErrorMm = 0.0f;
+        lengthAdjustPending = 0U;
+        lengthAdjustActive = 0U;
+        lengthAdjustBlocked = 0U;
+        lengthAdjustCompleteCount++;
+        tremorPositionErrorCounts = 0;
+
+        if (appAdjustmentResumeHolding != 0U)
+        {
+          /* App changed the held tension.  Re-measure actual pull distance from
+           * the original tremor Home so Gate-off releases exactly that amount. */
+          tremorActualPulledCounts =
+              Encoder_AbsDeltaCounts(currentCount, tremorHomeCount);
+          tremorPositionState = TREMOR_POSITION_HOLDING;
+        }
+        else
+        {
+          /* An IDLE App adjustment becomes the new baseline/home. */
+          baseCableLengthMm = currentLengthMm;
+          tremorHomeCount = currentCount;
+          tremorTargetCount = currentCount;
+          tremorPositionState = TREMOR_POSITION_IDLE;
+        }
+
+        return 0U;
+      }
+
+      if (positionMoveLengthDirection < 0)
+      {
+        *motorDirection = POSITION_TAKE_UP_MOTOR_DIRECTION;
+      }
+      else
+      {
+        *motorDirection = POSITION_RETURN_MOTOR_DIRECTION;
+      }
+
+      *dutyFraction = TremorPosition_SelectDuty(remainingCounts);
+      return (*dutyFraction > 0.0) ? 1U : 0U;
+
+    case TREMOR_POSITION_FAULT:
+    default:
+      lengthAdjustActive = 0U;
+      return 0U;
+  }
+}
+
+static void Encoder_UpdateLength(void)
+{
+  QuadratureEncoderSnapshot snapshot;
+  int32_t travelCounts;
+  float movedMm;
+
+  memset(&snapshot, 0, sizeof(snapshot));
+  if (SnapshotEncoder(&snapshot) != 1U)
+  {
+    encoder_position_zeroed = 0U;
+    calibration_required = 1U;
+    TremorPosition_EnterFault();
+    return;
+  }
+
+  if ((tremorPositionState == TREMOR_POSITION_PULLING) ||
+      (tremorPositionState == TREMOR_POSITION_RETURNING) ||
+      (tremorPositionState == TREMOR_POSITION_APP_ADJUSTING))
+  {
+    travelCounts =
+        Encoder_AbsDeltaCounts(snapshot.count, positionMoveStartCount);
+    positionMoveTravelCounts = travelCounts;
+    movedMm = (float)travelCounts / ENCODER_COUNTS_PER_MM;
+
+    currentLengthMm =
+        positionMoveStartLengthMm +
+        ((float)positionMoveLengthDirection * movedMm);
+
+    if (currentLengthMm < LENGTH_MIN_MM)
+    {
+      currentLengthMm = LENGTH_MIN_MM;
+    }
+    else if (currentLengthMm > LENGTH_MAX_MM)
+    {
+      currentLengthMm = LENGTH_MAX_MM;
+    }
+  }
+
+  encoderLengthCalibrated = 1U;
+  encoder_position_zeroed = 1U;
+  calibration_required = 0U;
+  lengthErrorMm = targetLengthMm - currentLengthMm;
+  lengthAdjustBlocked = (tremorPositionFaultLatched != 0U) ? 1U : 0U;
+}
+
+static void ControlPipeline_ForceSafe(void)
+{
+  HAL_StatusTypeDef safe_status = HAL_ERROR;
+
+  /* This path is safe before adapter initialization and from Error_Handler. */
+  __HAL_RCC_GPIOA_CLK_ENABLE();
+  __HAL_RCC_GPIOG_CLK_ENABLE();
+  __HAL_RCC_GPIOK_CLK_ENABLE();
+
+  if (tb6612_hal.initialized == 1U)
+  {
+    safe_status = STM32_TB6612_HAL_ForceSafe(&tb6612_hal);
+    if (safe_status != HAL_OK)
+    {
+      motor_hal_error_debug = 1U;
+      motor_runtime_fault_latched = 1U;
+    }
+  }
+
+  if (safe_status != HAL_OK)
+  {
+    HAL_GPIO_WritePin(MOTOR_STBY_GPIO_PORT, MOTOR_STBY_PIN, GPIO_PIN_RESET);
+    if (htim1.Instance == TIM1)
+    {
+      __HAL_TIM_SET_COMPARE(&htim1, MOTOR_PWM_CHANNEL, 0U);
+    }
+    HAL_GPIO_WritePin(MOTOR_AIN1_GPIO_PORT, MOTOR_AIN1_PIN, GPIO_PIN_RESET);
+    HAL_GPIO_WritePin(MOTOR_AIN2_GPIO_PORT, MOTOR_AIN2_PIN, GPIO_PIN_RESET);
+  }
+
+  motor_applied_ccr = 0U;
+  motor_applied_ain1 = 0U;
+  motor_applied_ain2 = 0U;
+  motor_applied_stby = 0U;
+  motor_applied_direction = 0;
+  motor_output_active_debug = 0U;
+  motorEnabledForApp = 0U;
+  motor_applied_state = MOTOR_STOP;
 }
 
 static void Encoder_ProcessSetZeroRequest(void)
 {
+  QuadratureEncoderSnapshot snapshot;
+  uint8_t strict_valid;
+  uint8_t bridge_is_off;
+
   if (encoder_set_zero_request == 0U)
   {
     return;
@@ -1026,887 +1769,520 @@ static void Encoder_ProcessSetZeroRequest(void)
 
   encoder_set_zero_request = 0U;
   encoder_set_zero_status = 0;
+  ControlPipeline_ForceSafe();
 
-  /*
-   * 0823 SetZero is accepted only while the bridge is forced safe and the
-   * encoder has no latched invalid/overflow condition.
-   */
-  Motor_ForceSafe();
+  memset(&snapshot, 0, sizeof(snapshot));
+  strict_valid = SnapshotEncoder(&snapshot);
+  bridge_is_off =
+      ((motor_output_active_debug == 0U) &&
+       (HAL_GPIO_ReadPin(MOTOR_STBY_GPIO_PORT,
+                         MOTOR_STBY_PIN) == GPIO_PIN_RESET) &&
+       (__HAL_TIM_GET_COMPARE(&htim1, MOTOR_PWM_CHANNEL) == 0U))
+      ? 1U : 0U;
 
-  if ((encoder_valid == 0U) ||
-      (encoder_invalid_latched != 0U) ||
-      (encoder_overflow_latched != 0U))
+  if ((motor_chain_initialized != 1U) ||
+      (strict_valid != 1U) ||
+      (bridge_is_off != 1U) ||
+      (MotorPositionGuard_SetZero(
+           &motor_position_guard,
+           snapshot.count,
+           strict_valid,
+           bridge_is_off) != 1U))
   {
     encoder_position_zeroed = 0U;
     calibration_required = 1U;
     encoder_set_zero_status = -1;
+    position_fault_debug = motor_position_guard.fault;
     return;
   }
 
-  encoder_zero_count = encoder_count;
+  encoder_zero_count = snapshot.count;
   encoder_position_zeroed = 1U;
   calibration_required = 0U;
   encoder_set_zero_status = 1;
-}
-
-static void Encoder_UpdateLength(void)
-{
-  int32_t countSnapshot;
-
-  countSnapshot = encoder_count - encoder_zero_count;
-
-  if ((ENCODER_COUNTS_PER_MM > 0.0f) &&
-      (encoder_position_zeroed != 0U))
+  position_fault_debug = (uint8_t)MOTOR_POSITION_FAULT_NONE;
+  motor_output_guard_ready_debug = 1U;
+  if ((motor_hal_error_debug == 0U) &&
+      (driver_fault_debug == (uint8_t)TB6612_DRIVER_FAULT_NONE) &&
+      (mapper_fault_debug == (uint8_t)MOTOR_MAPPER_FAULT_NONE))
   {
-    currentLengthMm =
-        INITIAL_CABLE_LENGTH_MM +
-        (ENCODER_LENGTH_SIGN *
-         ((float)countSnapshot /
-          ENCODER_COUNTS_PER_MM));
-
-    encoderLengthCalibrated = 1U;
+    /* A verified neutral SetZero may recover a position-guard latch, but not
+     * an encoder, mapper, driver or HAL fault. */
+    motor_runtime_fault_latched = 0U;
   }
-  else
-  {
-    /*
-     * Raw encoder_count still works.
-     * mm control remains locked until calibration.
-     */
-    currentLengthMm = INITIAL_CABLE_LENGTH_MM;
-    encoderLengthCalibrated = 0U;
-  }
-
-  lengthErrorMm =
-      targetLengthMm - currentLengthMm;
-}
-
-/*
- * Return 1:
- * App length control owns / blocks motor control in this update.
- *
- * Return 0:
- * Normal tremor state machine may continue.
- */
-static uint8_t Length_Adjustment_Update(void)
-{
-  Encoder_UpdateLength();
-
-  if (lengthAdjustPending == 0U)
-  {
-    lengthAdjustActive = 0U;
-    lengthAdjustBlocked = 0U;
-    return 0U;
-  }
-
-  /*
-   * Only IDLE / HOLDING may execute length adjustment.
-   */
-  if ((actuator_state != ACTUATOR_IDLE) &&
-      (actuator_state != ACTUATOR_HOLDING))
-  {
-    lengthAdjustActive = 0U;
-    lengthAdjustBlocked = 1U;
-    return 0U;
-  }
-
-  /*
-   * Tremor suppression has priority while IDLE.
-   */
-  if ((actuator_state == ACTUATOR_IDLE) &&
-      (suppression_start_allowed != 0U))
-  {
-    lengthAdjustActive = 0U;
-    lengthAdjustBlocked = 1U;
-    return 0U;
-  }
-
-  /*
-   * Safety lock before counts/mm calibration.
-   */
-  if (encoderLengthCalibrated == 0U)
-  {
-    Motor_UpdateWithDeadtime(MOTOR_STOP);
-
-    lengthAdjustActive = 0U;
-    lengthAdjustBlocked = 1U;
-
-    return 1U;
-  }
-
-  lengthAdjustBlocked = 0U;
-
-  if (fabsf(lengthErrorMm) <= LENGTH_TOLERANCE_MM)
-  {
-    Motor_UpdateWithDeadtime(MOTOR_STOP);
-
-    lengthAdjustActive = 0U;
-    lengthAdjustPending = 0U;
-
-    lengthAdjustCompleteCount++;
-
-    return 1U;
-  }
-
-  lengthAdjustActive = 1U;
-
-  if (lengthErrorMm > 0.0f)
-  {
-    /* Too tight -> longer cable -> release */
-    Motor_UpdateWithDeadtime(MOTOR_RELEASE_DIRECTION);
-  }
-  else
-  {
-    /* Too loose -> shorter cable -> tighten */
-    Motor_UpdateWithDeadtime(MOTOR_PULL_DIRECTION);
-  }
-
-  return 1U;
 }
 
 /* ========================================================================== */
-/* MOTOR                                                                       */
+/* SINGLE AUTHORITATIVE 100 Hz CONTROL PIPELINE                                */
 /* ========================================================================== */
 
-static uint32_t Motor_DutyPercentToCcr(uint8_t dutyPercent)
+static double SelectTremorAxisDps(float gx, float gy, float gz)
 {
-  uint32_t ccr;
-
-  if (dutyPercent > 100U)
-  {
-    dutyPercent = 100U;
-  }
-
-  ccr =
-      ((uint32_t)dutyPercent * MOTOR_PWM_FULL_SCALE_CCR) /
-      100U;
-
-  if (ccr >= MOTOR_PWM_FULL_SCALE_CCR)
-  {
-    ccr = MOTOR_PWM_FULL_SCALE_CCR - 1U;
-  }
-
-  return ccr;
+#if (TREMOR_INPUT_AXIS == TREMOR_AXIS_X)
+  (void)gy;
+  (void)gz;
+  return (double)gx;
+#elif (TREMOR_INPUT_AXIS == TREMOR_AXIS_Y)
+  (void)gx;
+  (void)gz;
+  return (double)gy;
+#elif (TREMOR_INPUT_AXIS == TREMOR_AXIS_Z)
+  (void)gx;
+  (void)gy;
+  return (double)gz;
+#else
+#error "TREMOR_INPUT_AXIS must be X, Y, or Z"
+#endif
 }
 
-static void Motor_ForceSafe(void)
+static void PublishSuppressionTelemetry(void)
 {
-  /*
-   * This may also be called from Error_Handler before all peripherals have
-   * finished initialization, so make the GPIO writes self-contained and touch
-   * TIM1 only after htim1.Instance has been assigned.
-   */
-  __HAL_RCC_GPIOA_CLK_ENABLE();
-  __HAL_RCC_GPIOG_CLK_ENABLE();
-  __HAL_RCC_GPIOK_CLK_ENABLE();
+  tremorEstimate = suppression_output.tremor_estimate_dps;
+  diagnosticFrequencyHz = suppression_output.diagnostic_frequency_hz;
+  compensationRequestDps = suppression_output.compensation_request_dps;
 
-  /* 0823 ForceSafe ordering: STBY low, PWM zero, direction inputs low. */
-  HAL_GPIO_WritePin(MOTOR_STBY_GPIO_PORT, MOTOR_STBY_PIN, GPIO_PIN_RESET);
+  gate_enabled_debug = suppression_output.gate_enabled;
+  suppression_fault_debug = suppression_output.current_fault;
+  hardened_gate_ready =
+      ((suppression_control_ready_debug == 1U) &&
+       (suppression_output.current_fault ==
+        (uint8_t)SUPPRESSION_CONTROL_FAULT_NONE))
+      ? 1U : 0U;
+  gate_precondition_ok_debug =
+      ((hardened_gate_ready == 1U) &&
+       (gate_enabled_debug == 1U))
+      ? 1U : 0U;
 
-  if (htim1.Instance == TIM1)
+  actuation_permitted_debug = suppression_output.actuation_permitted;
+}
+
+static void PublishSafeDriverTelemetry(const Tb6612Output *output)
+{
+  if (output != NULL)
   {
-    __HAL_TIM_SET_COMPARE(&htim1, MOTOR_PWM_CHANNEL, 0U);
+    driver_fault_debug = output->fault;
   }
-
-  HAL_GPIO_WritePin(MOTOR_AIN1_GPIO_PORT, MOTOR_AIN1_PIN, GPIO_PIN_RESET);
-  HAL_GPIO_WritePin(MOTOR_AIN2_GPIO_PORT, MOTOR_AIN2_PIN, GPIO_PIN_RESET);
-
   motor_applied_ccr = 0U;
   motor_applied_ain1 = 0U;
   motor_applied_ain2 = 0U;
   motor_applied_stby = 0U;
+  motor_applied_direction = 0;
+  motor_applied_state = MOTOR_STOP;
   motor_output_active_debug = 0U;
-  motor_applied_state = MOTOR_STOP;
+  motorEnabledForApp = 0U;
 }
 
-static void Motor_InitSafePwm(void)
+static uint8_t ControlPipeline_Init(void)
 {
-  Motor_ForceSafe();
-
-  /*
-   * TIM1 is the 20 kHz carrier. Starting the channel with CCR=0 is safe and
-   * allows later updates without software-generated PWM.
-   */
-  motor_pwm_start_status =
-      HAL_TIM_PWM_Start(&htim1, MOTOR_PWM_CHANNEL);
-
-  __HAL_TIM_SET_COMPARE(&htim1, MOTOR_PWM_CHANNEL, 0U);
-  Motor_ForceSafe();
-}
-
-void Motor_Control(MotorState state)
-{
-  uint32_t ccr;
-
-  /*
-   * 0823 authoritative motion chain:
-   * hardened gate -> SuppressionControl -> PositionGuard -> TB6612 output.
-   *
-   * This supplied project does not yet contain the authoritative
-   * SuppressionControl/PositionGuard integration, so physical output remains
-   * fail-safe locked. This prevents a gate result alone from energizing the
-   * bridge.
-   */
-  suppression_control_ready_debug =
-      (SUPPRESSION_CONTROL_INTEGRATED != 0U) ? 1U : 0U;
-
-  motor_output_guard_ready_debug =
-      (MOTOR_POSITION_GUARD_INTEGRATED != 0U) ? 1U : 0U;
-
-  if ((state == MOTOR_STOP) ||
-      (actuation_permitted_debug == 0U) ||
-      (suppression_control_ready_debug == 0U) ||
-      (motor_output_guard_ready_debug == 0U) ||
-      (calibration_required != 0U) ||
-      (encoder_position_zeroed == 0U) ||
-      (encoder_valid == 0U) ||
-      (encoder_invalid_latched != 0U) ||
-      (encoder_overflow_latched != 0U) ||
-      (motor_pwm_start_status != HAL_OK))
-  {
-    Motor_ForceSafe();
-    return;
-  }
-
-  ccr = Motor_DutyPercentToCcr(motorIntensityPercent);
-
-  if (ccr == 0U)
-  {
-    Motor_ForceSafe();
-    return;
-  }
-
-  if (state == MOTOR_FORWARD)
-  {
-    HAL_GPIO_WritePin(MOTOR_AIN1_GPIO_PORT, MOTOR_AIN1_PIN, GPIO_PIN_SET);
-    HAL_GPIO_WritePin(MOTOR_AIN2_GPIO_PORT, MOTOR_AIN2_PIN, GPIO_PIN_RESET);
-    motor_applied_ain1 = 1U;
-    motor_applied_ain2 = 0U;
-  }
-  else if (state == MOTOR_REVERSE)
-  {
-    HAL_GPIO_WritePin(MOTOR_AIN1_GPIO_PORT, MOTOR_AIN1_PIN, GPIO_PIN_RESET);
-    HAL_GPIO_WritePin(MOTOR_AIN2_GPIO_PORT, MOTOR_AIN2_PIN, GPIO_PIN_SET);
-    motor_applied_ain1 = 0U;
-    motor_applied_ain2 = 1U;
-  }
-  else
-  {
-    Motor_ForceSafe();
-    return;
-  }
-
-  __HAL_TIM_SET_COMPARE(&htim1, MOTOR_PWM_CHANNEL, ccr);
-  HAL_GPIO_WritePin(MOTOR_STBY_GPIO_PORT, MOTOR_STBY_PIN, GPIO_PIN_SET);
-
-  motor_applied_ccr = ccr;
-  motor_applied_stby = 1U;
-  motor_output_active_debug = 1U;
-}
-
-void Motor_Deadtime_Reset(void)
-{
-  Motor_Control(MOTOR_STOP);
-
-  motor_applied_state = MOTOR_STOP;
-  motor_last_drive_direction = MOTOR_STOP;
-  motor_pending_direction = MOTOR_STOP;
-
-  motor_reverse_wait_active = 0U;
-
-  motor_stop_started_ms = HAL_GetTick();
-  motor_reverse_wait_elapsed_ms = 0U;
-}
-
-void Motor_UpdateWithDeadtime(MotorState requestedState)
-{
-  uint32_t nowMs;
-
-  nowMs = HAL_GetTick();
-
-  if ((requestedState != MOTOR_STOP) &&
-      (requestedState != MOTOR_FORWARD) &&
-      (requestedState != MOTOR_REVERSE))
-  {
-    requestedState = MOTOR_STOP;
-  }
-
-  if (requestedState == MOTOR_STOP)
-  {
-    if (motor_applied_state != MOTOR_STOP)
-    {
-      motor_stop_started_ms = nowMs;
-    }
-
-    Motor_Control(MOTOR_STOP);
-    motor_applied_state = MOTOR_STOP;
-
-    if ((motor_last_drive_direction != MOTOR_STOP) ||
-        (motor_reverse_wait_active != 0U))
-    {
-      motor_reverse_wait_elapsed_ms =
-          nowMs - motor_stop_started_ms;
-
-      if (motor_reverse_wait_elapsed_ms >=
-          MOTOR_REVERSE_DEADTIME_MS)
-      {
-        motor_last_drive_direction = MOTOR_STOP;
-        motor_pending_direction = MOTOR_STOP;
-        motor_reverse_wait_active = 0U;
-        motor_reverse_wait_elapsed_ms = 0U;
-      }
-    }
-    else
-    {
-      motor_reverse_wait_elapsed_ms = 0U;
-    }
-
-    return;
-  }
-
-  /*
-   * If stopped, or continuing same direction, drive immediately.
-   */
-  if ((motor_last_drive_direction == MOTOR_STOP) ||
-      (requestedState == motor_last_drive_direction))
-  {
-    Motor_Control(requestedState);
-
-    if (motor_output_active_debug != 0U)
-    {
-      motor_applied_state = requestedState;
-      motor_last_drive_direction = requestedState;
-    }
-    else
-    {
-      motor_applied_state = MOTOR_STOP;
-      motor_last_drive_direction = MOTOR_STOP;
-    }
-
-    motor_pending_direction = MOTOR_STOP;
-
-    motor_reverse_wait_active = 0U;
-    motor_reverse_wait_elapsed_ms = 0U;
-
-    return;
-  }
-
-  /*
-   * Direction reversal:
-   * stop first.
-   */
-  if (motor_applied_state != MOTOR_STOP)
-  {
-    Motor_Control(MOTOR_STOP);
-
-    motor_applied_state = MOTOR_STOP;
-    motor_stop_started_ms = nowMs;
-  }
-
-  if ((motor_reverse_wait_active == 0U) ||
-      (motor_pending_direction != requestedState))
-  {
-    motor_pending_direction = requestedState;
-    motor_reverse_wait_active = 1U;
-    motor_reverse_event_count++;
-  }
-
-  motor_reverse_wait_elapsed_ms =
-      nowMs - motor_stop_started_ms;
-
-  if (motor_reverse_wait_elapsed_ms >=
-      MOTOR_REVERSE_DEADTIME_MS)
-  {
-    Motor_Control(requestedState);
-
-    if (motor_output_active_debug != 0U)
-    {
-      motor_applied_state = requestedState;
-      motor_last_drive_direction = requestedState;
-    }
-    else
-    {
-      motor_applied_state = MOTOR_STOP;
-      motor_last_drive_direction = MOTOR_STOP;
-    }
-
-    motor_pending_direction = MOTOR_STOP;
-
-    motor_reverse_wait_active = 0U;
-    motor_reverse_wait_elapsed_ms = 0U;
-  }
-  else
-  {
-    Motor_Control(MOTOR_STOP);
-    motor_applied_state = MOTOR_STOP;
-  }
-}
-
-/* ========================================================================== */
-/* ACTUATOR STATE MACHINE                                                      */
-/* ========================================================================== */
-
-void Actuator_StateMachine_Reset(void)
-{
-  Motor_Deadtime_Reset();
-
-  actuator_state = ACTUATOR_IDLE;
-  actuator_state_started_ms = HAL_GetTick();
-  actuator_state_elapsed_ms = 0U;
-}
-
-void Actuator_StateMachine_Update(void)
-{
-  uint32_t nowMs;
-
-  nowMs = HAL_GetTick();
-
-  actuator_state_elapsed_ms =
-      nowMs - actuator_state_started_ms;
-
-  switch (actuator_state)
-  {
-    case ACTUATOR_IDLE:
-
-      actuator_state_elapsed_ms = 0U;
-
-      /*
-       * Tremor suppression has priority.
-       */
-      if (suppression_start_allowed != 0U)
-      {
-        if (lengthAdjustPending != 0U)
-        {
-          lengthAdjustActive = 0U;
-          lengthAdjustBlocked = 1U;
-        }
-
-        actuator_state = ACTUATOR_PULLING;
-        actuator_state_started_ms = nowMs;
-        actuator_state_elapsed_ms = 0U;
-
-        actuator_pull_count++;
-
-        Motor_UpdateWithDeadtime(MOTOR_PULL_DIRECTION);
-        break;
-      }
-
-      /*
-       * App adjustment is allowed in IDLE.
-       */
-      if (Length_Adjustment_Update() != 0U)
-      {
-        break;
-      }
-
-      Motor_UpdateWithDeadtime(MOTOR_STOP);
-      break;
-
-    case ACTUATOR_PULLING:
-
-      if (lengthAdjustPending != 0U)
-      {
-        lengthAdjustActive = 0U;
-        lengthAdjustBlocked = 1U;
-      }
-
-      if (actuator_state_elapsed_ms >=
-          MOTOR_PULL_TIME_MS)
-      {
-        Motor_UpdateWithDeadtime(MOTOR_STOP);
-
-        actuator_state = ACTUATOR_HOLDING;
-        actuator_state_started_ms = nowMs;
-        actuator_state_elapsed_ms = 0U;
-      }
-      else
-      {
-        Motor_UpdateWithDeadtime(MOTOR_PULL_DIRECTION);
-      }
-
-      break;
-
-    case ACTUATOR_HOLDING:
-
-      /*
-       * If tremor disappeared, finish normal RETURNING first.
-       * Pending App adjustment is kept and will run in IDLE.
-       */
-      /*
-       * 0823: legacy tremor_active / freqEstimate are diagnostics only.
-       * Leave HOLDING when the hardened gate-level permission disappears.
-       */
-      if (suppression_start_allowed == 0U)
-      {
-        if (lengthAdjustPending != 0U)
-        {
-          lengthAdjustActive = 0U;
-          lengthAdjustBlocked = 1U;
-        }
-
-        actuator_state = ACTUATOR_RETURNING;
-        actuator_state_started_ms = nowMs;
-        actuator_state_elapsed_ms = 0U;
-
-        actuator_return_count++;
-
-        Motor_UpdateWithDeadtime(MOTOR_RELEASE_DIRECTION);
-        break;
-      }
-
-      /*
-       * Tremor still active:
-       * App adjustment is allowed in HOLDING.
-       */
-      if (Length_Adjustment_Update() != 0U)
-      {
-        break;
-      }
-
-      Motor_UpdateWithDeadtime(MOTOR_STOP);
-      break;
-
-    case ACTUATOR_RETURNING:
-
-      if (lengthAdjustPending != 0U)
-      {
-        lengthAdjustActive = 0U;
-        lengthAdjustBlocked = 1U;
-      }
-
-      if (actuator_state_elapsed_ms >=
-          MOTOR_RELEASE_TIME_MS)
-      {
-        Motor_UpdateWithDeadtime(MOTOR_STOP);
-
-        actuator_state = ACTUATOR_IDLE;
-        actuator_state_started_ms = nowMs;
-        actuator_state_elapsed_ms = 0U;
-      }
-      else
-      {
-        Motor_UpdateWithDeadtime(MOTOR_RELEASE_DIRECTION);
-      }
-
-      break;
-
-    default:
-
-      Actuator_StateMachine_Reset();
-      break;
-  }
-}
-
-/* ========================================================================== */
-/* ALGORITHM                                                                   */
-/* ========================================================================== */
-
-void Tremor_Gate_Reset(void)
-{
-  selectedGyroInputDps = 0.0;
-  tremorPowerEma = 0.0;
-  tremorRmsDps = 0.0;
-  controlValueDebug = 0.0;
-
-  tremor_active = 0U;
-  frequency_gate_ok = 0U;
-  amplitude_gate_ok = 0U;
-
-  tremor_on_count = 0U;
-  tremor_off_count = 0U;
-  algo_warmup_count = 0U;
-}
-
-void Algorithm_Init(void)
-{
-  eHWFLC_KF_step_init();
-  Tremor_Gate_Reset();
-}
-
-void Bandpass_TremorGate_Init(void)
-{
-  bandpass_tremor_gate_config =
-      TremorGate_DefaultConfig();
-
-  TremorGate_Init(
-      &bandpass_tremor_gate,
-      &bandpass_tremor_gate_config
+  Stm32Tb6612HalConfig hal_config;
+  Tb6612Output initial_output;
+  uint8_t suppression_ok;
+
+  memset(&suppression_control, 0, sizeof(suppression_control));
+  memset(&suppression_output, 0, sizeof(suppression_output));
+  memset(&motor_mapper, 0, sizeof(motor_mapper));
+  memset(&motor_command_output, 0, sizeof(motor_command_output));
+  memset(&motor_position_guard, 0, sizeof(motor_position_guard));
+  memset(&position_guard_output, 0, sizeof(position_guard_output));
+  memset(&tb6612_driver, 0, sizeof(tb6612_driver));
+  memset(&tb6612_output, 0, sizeof(tb6612_output));
+  memset(&tb6612_hal, 0, sizeof(tb6612_hal));
+  memset(&hal_config, 0, sizeof(hal_config));
+  memset(&initial_output, 0, sizeof(initial_output));
+
+  motor_runtime_armed = MOTOR_DEFAULT_RUNTIME_ARMED;
+  motor_runtime_fault_latched = 0U;
+  motor_hal_error_debug = 0U;
+  motor_chain_initialized = 0U;
+  motor_output_guard_ready_debug = 0U;
+  calibration_required = 1U;
+  ControlPipeline_ForceSafe();
+
+  /* NULL selects the reviewed hardened gate default inside SuppressionControl.
+   * Estimator diagnostic frequency is never consumed by a gate or App field. */
+  suppression_ok = SuppressionControl_Init(
+      &suppression_control,
+      MOTOR_SUPPRESSION_ESTIMATOR,
+      NULL
   );
+  suppression_control_ready_debug = suppression_ok;
 
-  Bandpass_TremorGate_Reset();
-}
+  hal_config.pwm_timer = &htim1;
+  hal_config.pwm_channel = MOTOR_PWM_CHANNEL;
+  hal_config.pwm_full_scale_ccr = MOTOR_PWM_FULL_SCALE_CCR;
+  hal_config.max_active_ccr = MOTOR_MAX_ACTIVE_CCR;
+  hal_config.release_ain1_level = MOTOR_RELEASE_AIN1_LEVEL;
+  hal_config.ain1_port = MOTOR_AIN1_GPIO_PORT;
+  hal_config.ain1_pin = MOTOR_AIN1_PIN;
+  hal_config.ain2_port = MOTOR_AIN2_GPIO_PORT;
+  hal_config.ain2_pin = MOTOR_AIN2_PIN;
+  hal_config.stby_port = MOTOR_STBY_GPIO_PORT;
+  hal_config.stby_pin = MOTOR_STBY_PIN;
 
-void Bandpass_TremorGate_Reset(void)
-{
-  TremorGate_Reset(&bandpass_tremor_gate);
+  motor_pwm_start_status = STM32_TB6612_HAL_Init(&tb6612_hal, &hal_config);
+  if (motor_pwm_start_status != HAL_OK)
+  {
+    motor_hal_error_debug = 1U;
+    motor_runtime_fault_latched = 1U;
+    ControlPipeline_ForceSafe();
+    return suppression_ok;
+  }
 
-  bandpass_gate_enabled = 0U;
-  gate_enabled_debug = 0U;
-  hardened_gate_ready = 0U;
-  hardened_gate_fault = (uint8_t)TREMOR_GATE_FAULT_NONE;
-  gate_precondition_ok_debug = 0U;
-  suppression_control_ready_debug =
-      (SUPPRESSION_CONTROL_INTEGRATED != 0U) ? 1U : 0U;
-  actuation_permitted_debug = 0U;
-  suppression_start_allowed = 0U;
+  Encoder_Init();
+  TremorPositionController_Init();
 
-  bandpass_tremor_envelope = 0.0f;
-  bandpass_voluntary_envelope = 0.0f;
-  bandpass_tremor_ratio = 0.0f;
+#if (MOTOR_BENCH_CONFIG_APPROVED == 1U)
+  if ((MotorCommandMapper_Init(
+           &motor_mapper,
+           &motor_mapper_config,
+           &approved_motor_mapper_config) != 1U) ||
+      (TB6612Driver_Init(
+           &tb6612_driver,
+           &tb6612_driver_config,
+           &initial_output) == TB6612_DRIVER_ERROR) ||
+      (STM32_TB6612_HAL_Apply(
+           &tb6612_hal,
+           &initial_output) != HAL_OK))
+  {
+    mapper_fault_debug = motor_mapper.current_fault;
+    driver_fault_debug = initial_output.fault;
+    position_fault_debug = motor_position_guard.fault;
+    motor_runtime_fault_latched = 1U;
+    ControlPipeline_ForceSafe();
+    return suppression_ok;
+  }
 
-  bandpass_on_count = 0U;
-  bandpass_off_count = 0U;
-}
-
-void Bandpass_TremorGate_Update(double gyroDps)
-{
-  bandpass_gate_enabled =
-      TremorGate_Update(
-          &bandpass_tremor_gate,
-          gyroDps
-      );
-
-  bandpass_tremor_envelope =
-      bandpass_tremor_gate.tremor_envelope;
-
-  bandpass_voluntary_envelope =
-      bandpass_tremor_gate.voluntary_envelope;
-
-  bandpass_tremor_ratio =
-      bandpass_tremor_gate.tremor_ratio;
-
-  bandpass_on_count =
-      bandpass_tremor_gate.on_count;
-
-  bandpass_off_count =
-      bandpass_tremor_gate.off_count;
-
-  /*
-   * 0823 motor-start condition at the gate layer:
-   *   - hardened TremorGate must be healthy
-   *   - hardened TremorGate must be enabled
-   *   - eHWFLC freqEstimate / tremor_active do not authorize the motor
-   *
-   * Full 0823 final integration requires the authoritative SuppressionControl
-   * output and MotorPositionGuard before physical motion is permitted.
-   */
-  hardened_gate_ready = TremorGate_IsReady(&bandpass_tremor_gate);
-  hardened_gate_fault = bandpass_tremor_gate.last_fault;
-  gate_enabled_debug = bandpass_gate_enabled;
-
-  gate_precondition_ok_debug =
-      ((hardened_gate_ready != 0U) &&
-       (hardened_gate_fault == (uint8_t)TREMOR_GATE_FAULT_NONE) &&
-       (gate_enabled_debug != 0U))
-      ? 1U : 0U;
-
-  /*
-   * 0823 explicitly separates gate_enabled from actuation_permitted.
-   * Do NOT promote the gate directly to motor permission.
-   *
-   * The authoritative SuppressionControl source/API was not supplied, so the
-   * only compliant fail-safe value here is 0 until that module is integrated.
-   */
-  suppression_control_ready_debug =
-      (SUPPRESSION_CONTROL_INTEGRATED != 0U) ? 1U : 0U;
-
-  actuation_permitted_debug = 0U;
-  suppression_start_allowed = 0U;
-}
-
-void Tremor_Detector_Update(float gx, float gy, float gz)
-{
-  double inputGyro;
-  double instantaneousPower;
-  uint8_t keepActive;
-  uint32_t t0;
-
-#if (TREMOR_INPUT_AXIS == TREMOR_AXIS_X)
-  selectedGyroInputDps = (double)gx;
-#elif (TREMOR_INPUT_AXIS == TREMOR_AXIS_Y)
-  selectedGyroInputDps = (double)gy;
-#elif (TREMOR_INPUT_AXIS == TREMOR_AXIS_Z)
-  selectedGyroInputDps = (double)gz;
+#if (MOTOR_POWERED_BENCH_MODE == 0U)
+  if ((MotorPositionGuard_Init(
+           &motor_position_guard,
+           &motor_position_config) != 1U) ||
+      (encoder_valid != 1U))
+  {
+    position_fault_debug = motor_position_guard.fault;
+    motor_runtime_fault_latched = 1U;
+    ControlPipeline_ForceSafe();
+    return suppression_ok;
+  }
 #else
-#error "TREMOR_INPUT_AXIS must be X, Y, or Z"
+  /* Encoder-position mode: the legacy MotorPositionGuard remains bypassed,
+   * but the quadrature encoder itself is now authoritative for stopping. */
+  (void)motor_position_config;
+  calibration_required = (encoder_valid != 0U) ? 0U : 1U;
+  motor_output_guard_ready_debug = (encoder_valid != 0U) ? 1U : 0U;
 #endif
 
-  inputGyro = selectedGyroInputDps;
+  motor_chain_initialized = 1U;
+#else
+  /* Explicit disabled profile. */
+  (void)motor_mapper_config;
+  (void)approved_motor_mapper_config;
+  (void)motor_position_config;
+  (void)tb6612_driver_config;
+  motor_chain_initialized = 0U;
+#endif
 
-  t0 = DWT->CYCCNT;
+  ControlPipeline_ForceSafe();
+  return suppression_ok;
+}
 
-  eHWFLC_KF_step(
-      inputGyro,
-      &tremorEstimate,
-      &freqEstimate
+static void ControlPipeline_ApplySafeTick(void)
+{
+  QuadratureEncoderSnapshot snapshot;
+  Tb6612Output safe_output;
+  Tb6612DriverResult safe_result;
+  uint8_t encoder_ok;
+
+  suppression_start_allowed = 0U;
+  memset(&motor_command_output, 0, sizeof(motor_command_output));
+  memset(&position_guard_output, 0, sizeof(position_guard_output));
+  memset(&safe_output, 0, sizeof(safe_output));
+  memset(&snapshot, 0, sizeof(snapshot));
+
+  if (motor_chain_initialized != 1U)
+  {
+    ControlPipeline_ForceSafe();
+    return;
+  }
+
+  (void)MotorCommandMapper_Update(
+      &motor_mapper, 0.0, 0U, 0U, 0U, &motor_command_output);
+  mapper_fault_debug = motor_command_output.current_fault;
+
+  safe_result = TB6612Driver_Update(
+      &tb6612_driver, 0, 0.0, 0U, &safe_output);
+  driver_fault_debug = safe_output.fault;
+  if (safe_result == TB6612_DRIVER_ERROR)
+  {
+    motor_runtime_fault_latched = 1U;
+    ControlPipeline_ForceSafe();
+    return;
+  }
+
+  encoder_ok = SnapshotEncoder(&snapshot);
+  if ((motor_position_guard.zeroed == 1U) && (encoder_ok == 1U))
+  {
+    (void)MotorPositionGuard_Update(
+        &motor_position_guard,
+        snapshot.count,
+        encoder_ok,
+        MOTOR_POSITION_DIRECTION_STOP,
+        0U,
+        &position_guard_output
+    );
+    position_fault_debug = position_guard_output.fault;
+  }
+
+  if (STM32_TB6612_HAL_Apply(&tb6612_hal, &safe_output) != HAL_OK)
+  {
+    motor_hal_error_debug = 1U;
+    motor_runtime_fault_latched = 1U;
+    ControlPipeline_ForceSafe();
+    return;
+  }
+
+  PublishSafeDriverTelemetry(&safe_output);
+  motor_output_guard_ready_debug =
+      ((MOTOR_POWERED_BENCH_MODE == 1U) ||
+       ((motor_position_guard.zeroed == 1U) &&
+        (motor_position_guard.fault_latched == 0U) &&
+        (encoder_ok == 1U)))
+      ? 1U : 0U;
+}
+
+static void ControlPipeline_100HzFreshSample(double raw_gyro_dps)
+{
+  Tb6612Output candidate;
+  Tb6612Output safe_output;
+  Tb6612DriverResult driver_result;
+  Tb6612DriverResult safe_result;
+  uint32_t cycle_start;
+  uint32_t irq_primask;
+  HAL_StatusTypeDef apply_status;
+  uint8_t suppression_permission;
+  uint8_t gate_trigger;
+  uint8_t hardware_permission;
+  uint8_t position_command_active;
+  uint8_t candidate_active;
+  uint8_t prior_driver_fault;
+  uint8_t final_recheck_ok;
+  int8_t position_direction;
+  double position_duty;
+
+  memset(&candidate, 0, sizeof(candidate));
+  memset(&safe_output, 0, sizeof(safe_output));
+  memset(&motor_command_output, 0, sizeof(motor_command_output));
+
+  prior_driver_fault =
+      ((motor_runtime_fault_latched != 0U) ||
+       (motor_hal_error_debug != 0U) ||
+       (driver_fault_debug != (uint8_t)TB6612_DRIVER_FAULT_NONE) ||
+       (tremorPositionFaultLatched != 0U))
+      ? 1U : 0U;
+
+  cycle_start = DWT->CYCCNT;
+  suppression_permission = SuppressionControl_Update(
+      &suppression_control,
+      raw_gyro_dps,
+      1U,
+      0U,
+      prior_driver_fault,
+      0U,
+      &suppression_output
+  );
+  algo_cycles = DWT->CYCCNT - cycle_start;
+  algo_time_us =
+      (float)algo_cycles / ((float)SystemCoreClock / 1000000.0f);
+  algo_call_count++;
+  PublishSuppressionTelemetry();
+
+  if (suppression_control_ready_debug != 1U)
+  {
+    ControlPipeline_ForceSafe();
+    return;
+  }
+
+  /* Gate is now a TRIGGER only.  tremorEstimate / compensationRequestDps sign
+   * is still available for diagnostics but no longer commands motor direction. */
+  gate_trigger =
+      ((suppression_permission == 1U) &&
+       (suppression_output.actuation_permitted == 1U) &&
+       (gate_enabled_debug == 1U))
+      ? 1U : 0U;
+  suppression_start_allowed = gate_trigger;
+
+  hardware_permission =
+      ((motor_bench_config_approved == 1U) &&
+       (motor_chain_initialized == 1U) &&
+       (motor_runtime_armed == 1U) &&
+       (motor_runtime_fault_latched == 0U) &&
+       (tremorPositionFaultLatched == 0U) &&
+       (encoder_valid != 0U))
+      ? 1U : 0U;
+
+  if (hardware_permission != 1U)
+  {
+    ControlPipeline_ForceSafe();
+    return;
+  }
+
+  position_direction = 0;
+  position_duty = 0.0;
+  position_command_active = TremorPositionController_Update(
+      gate_trigger,
+      &position_direction,
+      &position_duty
   );
 
-  algo_cycles = DWT->CYCCNT - t0;
-
-  algo_time_us =
-      (float)algo_cycles /
-      ((float)SystemCoreClock / 1000000.0f);
-
-  if ((!isfinite(tremorEstimate)) ||
-      (!isfinite(freqEstimate)))
+  if ((tremorPositionFaultLatched != 0U) ||
+      (motor_runtime_fault_latched != 0U))
   {
-    Tremor_Gate_Reset();
+    ControlPipeline_ForceSafe();
     return;
   }
 
-  instantaneousPower =
-      tremorEstimate * tremorEstimate;
+  /* Keep the existing Live Expressions useful even though the signed tremor
+   * mapper is intentionally bypassed by the position controller. */
+  motor_command_output.direction =
+      (position_command_active != 0U) ? position_direction : 0;
+  motor_command_output.duty_fraction =
+      (position_command_active != 0U) ? position_duty : 0.0;
+  motor_command_output.bridge_enable =
+      (position_command_active != 0U) ? 1U : 0U;
+  motor_command_output.current_fault = (uint8_t)MOTOR_MAPPER_FAULT_NONE;
+  mapper_fault_debug = (uint8_t)MOTOR_MAPPER_FAULT_NONE;
 
-  tremorPowerEma +=
-      TREMOR_POWER_EMA_ALPHA *
-      (instantaneousPower - tremorPowerEma);
+  driver_result = TB6612Driver_Update(
+      &tb6612_driver,
+      (position_command_active != 0U) ? position_direction : 0,
+      (position_command_active != 0U) ? position_duty : 0.0,
+      (position_command_active != 0U) ? 1U : 0U,
+      &candidate
+  );
+  driver_fault_debug = candidate.fault;
 
-  if (tremorPowerEma < 0.0)
+  if (driver_result == TB6612_DRIVER_ERROR)
   {
-    tremorPowerEma = 0.0;
-  }
-
-  tremorRmsDps = sqrt(tremorPowerEma);
-
-  /*
-   * 200 samples @ 100 Hz = 2 seconds warm-up.
-   */
-  if (algo_warmup_count <
-      ALGO_WARMUP_SAMPLES)
-  {
-    algo_warmup_count++;
-    controlValueDebug = 0.0;
+    motor_runtime_fault_latched = 1U;
+    ControlPipeline_ForceSafe();
     return;
   }
 
-  if (tremor_active == 0U)
+  candidate_active =
+      ((driver_result == TB6612_DRIVER_ACTIVE) &&
+       (candidate.stby == 1U) &&
+       (candidate.ccr > 0U))
+      ? 1U : 0U;
+
+  if (candidate_active == 1U)
   {
-    frequency_gate_ok =
-        ((freqEstimate >= TREMOR_FREQ_ON_MIN_HZ) &&
-         (freqEstimate <= TREMOR_FREQ_ON_MAX_HZ))
+    irq_primask = __get_PRIMASK();
+    __disable_irq();
+
+    final_recheck_ok =
+        ((fresh_sample_available == 1U) &&
+         (scheduler_overrun_this_tick == 0U) &&
+         (tick_flag == 0U) &&
+         (software_tick_count == control_tick_count) &&
+         (motor_runtime_fault_latched == 0U) &&
+         (tremorPositionFaultLatched == 0U) &&
+         (motor_runtime_armed == 1U) &&
+         (motor_bench_config_approved == 1U) &&
+         (quadrature_encoder.initialized == 1U) &&
+         (quadrature_encoder.invalid_transition_latched == 0U) &&
+         (quadrature_encoder.overflow_latched == 0U))
         ? 1U : 0U;
 
-    amplitude_gate_ok =
-        (tremorRmsDps >= TREMOR_RMS_ON_DPS)
-        ? 1U : 0U;
-
-    if ((frequency_gate_ok != 0U) &&
-        (amplitude_gate_ok != 0U))
+    if (final_recheck_ok == 1U)
     {
-      if (tremor_on_count <
-          TREMOR_ON_CONFIRM_SAMPLES)
+      apply_status = STM32_TB6612_HAL_Apply(&tb6612_hal, &candidate);
+      if (apply_status == HAL_OK)
       {
-        tremor_on_count++;
+        motor_applied_ccr = candidate.ccr;
+        motor_applied_ain1 = candidate.ain1;
+        motor_applied_ain2 = candidate.ain2;
+        motor_applied_stby = candidate.stby;
+        motor_applied_direction = candidate.direction;
+        motor_applied_state =
+            (candidate.direction == MOTOR_POSITION_DIRECTION_RELEASE) ?
+            MOTOR_FORWARD : MOTOR_REVERSE;
+        motor_output_active_debug = 1U;
+        motorEnabledForApp = 1U;
       }
     }
     else
     {
-      tremor_on_count = 0U;
+      apply_status = HAL_ERROR;
     }
 
-    if (tremor_on_count >=
-        TREMOR_ON_CONFIRM_SAMPLES)
+    __set_PRIMASK(irq_primask);
+
+    if (apply_status != HAL_OK)
     {
-      tremor_active = 1U;
-      tremor_on_count = 0U;
-      tremor_off_count = 0U;
-    }
-  }
-  else
-  {
-    frequency_gate_ok =
-        ((freqEstimate >= TREMOR_FREQ_OFF_MIN_HZ) &&
-         (freqEstimate <= TREMOR_FREQ_OFF_MAX_HZ))
-        ? 1U : 0U;
-
-    amplitude_gate_ok =
-        (tremorRmsDps >= TREMOR_RMS_OFF_DPS)
-        ? 1U : 0U;
-
-    keepActive =
-        ((frequency_gate_ok != 0U) &&
-         (amplitude_gate_ok != 0U))
-        ? 1U : 0U;
-
-    if (keepActive == 0U)
-    {
-      if (tremor_off_count <
-          TREMOR_OFF_CONFIRM_SAMPLES)
+      (void)TB6612Driver_Update(
+          &tb6612_driver, 0, 0.0, 0U, &safe_output);
+      if (final_recheck_ok == 1U)
       {
-        tremor_off_count++;
+        motor_hal_error_debug = 1U;
+        motor_runtime_fault_latched = 1U;
       }
-    }
-    else
-    {
-      tremor_off_count = 0U;
-    }
-
-    if (tremor_off_count >=
-        TREMOR_OFF_CONFIRM_SAMPLES)
-    {
-      tremor_active = 0U;
-
-      tremor_on_count = 0U;
-      tremor_off_count = 0U;
-
-      controlValueDebug = 0.0;
+      ControlPipeline_ForceSafe();
       return;
     }
   }
-
-  if (tremor_active == 0U)
+  else
   {
-    controlValueDebug = 0.0;
-    return;
+    safe_result = TB6612Driver_Update(
+        &tb6612_driver, 0, 0.0, 0U, &safe_output);
+    if ((safe_result == TB6612_DRIVER_ERROR) ||
+        (STM32_TB6612_HAL_Apply(&tb6612_hal, &safe_output) != HAL_OK))
+    {
+      motor_hal_error_debug = 1U;
+      motor_runtime_fault_latched = 1U;
+      ControlPipeline_ForceSafe();
+      return;
+    }
+    PublishSafeDriverTelemetry(&safe_output);
   }
 
-  controlValueDebug =
-      -(MOTOR_GAIN * tremorEstimate);
+  motor_output_guard_ready_debug =
+      ((encoder_valid != 0U) &&
+       (tremorPositionFaultLatched == 0U) &&
+       (motor_runtime_fault_latched == 0U))
+      ? 1U : 0U;
+}
+
+static void ControlPipeline_RejectStaleSample(void)
+{
+  uint8_t prior_driver_fault;
+
+  stale_sample_reject_count++;
+  fresh_sample_available = 0U;
+  prior_driver_fault =
+      ((motor_runtime_fault_latched != 0U) ||
+       (motor_hal_error_debug != 0U) ||
+       (driver_fault_debug != (uint8_t)TB6612_DRIVER_FAULT_NONE) ||
+       (motor_position_guard.fault_latched != 0U))
+      ? 1U : 0U;
+
+  if (suppression_control_ready_debug == 1U)
+  {
+    (void)SuppressionControl_Update(
+        &suppression_control,
+        0.0,
+        0U,
+        1U,
+        prior_driver_fault,
+        SUPPRESSION_CONTROL_INHIBIT_SYSTEM,
+        &suppression_output
+    );
+    PublishSuppressionTelemetry();
+  }
+  ControlPipeline_ApplySafeTick();
 }
 
 /* ========================================================================== */
 /* IMU                                                                         */
 /* ========================================================================== */
-
-void Read_IMU_TestData(float *gx, float *gy, float *gz)
-{
-  static uint32_t sampleIndex = 0U;
-
-  double phase;
-  float testValue;
-
-  phase =
-      2.0 *
-      PI_D *
-      TEST_TREMOR_FREQ_HZ *
-      ((double)sampleIndex /
-       CONTROL_SAMPLE_RATE_HZ);
-
-  testValue =
-      (float)(
-          TEST_TREMOR_AMPLITUDE_DPS *
-          sin(phase)
-      );
-
-  *gx = 0.0f;
-  *gy = 0.0f;
-  *gz = 0.0f;
-
-#if (TREMOR_INPUT_AXIS == TREMOR_AXIS_X)
-  *gx = testValue;
-#elif (TREMOR_INPUT_AXIS == TREMOR_AXIS_Y)
-  *gy = testValue;
-#elif (TREMOR_INPUT_AXIS == TREMOR_AXIS_Z)
-  *gz = testValue;
-#endif
-
-  sampleIndex++;
-
-  if (sampleIndex >=
-      (uint32_t)CONTROL_SAMPLE_RATE_HZ)
-  {
-    sampleIndex = 0U;
-  }
-}
 
 HAL_StatusTypeDef Read_IMU_RealData(
     float *gx,
@@ -1916,11 +2292,30 @@ HAL_StatusTypeDef Read_IMU_RealData(
 {
   HAL_StatusTypeDef status;
 
+  if ((gx == NULL) || (gy == NULL) || (gz == NULL))
+  {
+    gyroXRaw = 0;
+    gyroYRaw = 0;
+    gyroZRaw = 0;
+    return HAL_ERROR;
+  }
+
   status =
       ReadData(
           &BNO055_Data,
           SENSOR_GYRO
       );
+
+  if ((status == HAL_OK) &&
+      ((!isfinite(BNO055_Data.Gyro.X)) ||
+       (!isfinite(BNO055_Data.Gyro.Y)) ||
+       (!isfinite(BNO055_Data.Gyro.Z)) ||
+       (fabsf(BNO055_Data.Gyro.X) > GYRO_RAW_MAX_ABS_DPS) ||
+       (fabsf(BNO055_Data.Gyro.Y) > GYRO_RAW_MAX_ABS_DPS) ||
+       (fabsf(BNO055_Data.Gyro.Z) > GYRO_RAW_MAX_ABS_DPS)))
+  {
+    status = HAL_ERROR;
+  }
 
   if (status == HAL_OK)
   {
@@ -1931,23 +2326,26 @@ HAL_StatusTypeDef Read_IMU_RealData(
     gyroXRaw =
         (int16_t)(
             BNO055_Data.Gyro.X *
-            16.0f
+            GYRO_RAW_LSB_PER_DPS
         );
 
     gyroYRaw =
         (int16_t)(
             BNO055_Data.Gyro.Y *
-            16.0f
+            GYRO_RAW_LSB_PER_DPS
         );
 
     gyroZRaw =
         (int16_t)(
             BNO055_Data.Gyro.Z *
-            16.0f
+            GYRO_RAW_LSB_PER_DPS
         );
   }
   else
   {
+    *gx = 0.0f;
+    *gy = 0.0f;
+    *gz = 0.0f;
     gyroXRaw = 0;
     gyroYRaw = 0;
     gyroZRaw = 0;
@@ -1965,13 +2363,18 @@ HAL_StatusTypeDef Read_IMU_RealData(
 int main(void)
 {
   /* USER CODE BEGIN 1 */
-
+  uint32_t tick_primask;
+  uint32_t pending_ticks;
   /* USER CODE END 1 */
 /* USER CODE BEGIN Boot_Mode_Sequence_0 */
-  int32_t timeout;
+/* int32_t timeout; */  /* CM4 synchronization disabled for CM7-only test. */
 /* USER CODE END Boot_Mode_Sequence_0 */
 
 /* USER CODE BEGIN Boot_Mode_Sequence_1 */
+/*
+ * CM4 / D2 domain startup synchronization disabled for CM7-only test.
+ * Original code is intentionally kept here as comments and can be restored.
+ *
   timeout = 0xFFFF;
 
   while ((__HAL_RCC_GET_FLAG(RCC_FLAG_D2CKRDY) != RESET) &&
@@ -1983,6 +2386,7 @@ int main(void)
   {
     Error_Handler();
   }
+*/
 /* USER CODE END Boot_Mode_Sequence_1 */
   /* MCU Configuration--------------------------------------------------------*/
 
@@ -1991,12 +2395,22 @@ int main(void)
 
   /* USER CODE BEGIN Init */
 
+  /*
+   * Cold-boot diagnostic delay:
+   * allow board power rails and external clock source to stabilize
+   * before SystemClock_Config().
+   */
+  HAL_Delay(1000U);
+
   /* USER CODE END Init */
 
   /* Configure the system clock */
   SystemClock_Config();
 /* USER CODE BEGIN Boot_Mode_Sequence_2 */
-
+/*
+ * CM4 HSEM wake-up / D2 domain synchronization disabled for CM7-only test.
+ * Original code is intentionally kept here as comments and can be restored.
+ *
   __HAL_RCC_HSEM_CLK_ENABLE();
 
   HAL_HSEM_FastTake(HSEM_ID_0);
@@ -2014,7 +2428,7 @@ int main(void)
   {
     Error_Handler();
   }
-
+*/
 /* USER CODE END Boot_Mode_Sequence_2 */
 
   /* USER CODE BEGIN SysInit */
@@ -2028,24 +2442,39 @@ int main(void)
   MX_I2C4_Init();
   MX_USART3_UART_Init();
   MX_TIM1_Init();
+  MX_ADC1_Init();
   /* USER CODE BEGIN 2 */
-
-  /* 0823 boot-safe motor state before any control logic is allowed to run. */
-  Motor_InitSafePwm();
-
-  Encoder_Init();
-
-  Actuator_StateMachine_Reset();
 
   DWT_Init();
 
-  Algorithm_Init();
+  /* Initializes the gate/estimator and powered-bench motor path.  GPIO still
+   * starts safe; STBY rises only after a fresh sample makes the gate active. */
+  (void)ControlPipeline_Init();
 
-  Bandpass_TremorGate_Init();
+  /*
+   * Battery ADC calibration + first reading.
+   * PC0 / ADC1_IN10 is configured by the reviewed CubeIDE MSP file.
+   */
+  if (HAL_ADCEx_Calibration_Start(
+          &hadc1,
+          ADC_CALIB_OFFSET,
+          ADC_SINGLE_ENDED
+      ) != HAL_OK)
+  {
+    batteryAdcErrorCount++;
+  }
+
+  Battery_Update();
+  nextBatteryTickMs = HAL_GetTick() + BATTERY_UPDATE_INTERVAL_MS;
+  nextBatterySendTickMs = HAL_GetTick() + BATTERY_SEND_INTERVAL_MS;
 
   /*
    * Start real ESP32 -> STM32 UART reception.
+   * USART1 TX carries framed tremor/battery telemetry; RX consumes 3-byte
+   * App commands.  Keep its IRQ below the 100 Hz control-timer priority.
    */
+  HAL_NVIC_SetPriority(USART1_IRQn, 5, 0);
+  HAL_NVIC_EnableIRQ(USART1_IRQn);
   Control_StartReceive();
 
   /* ------------------------------------------------------------------------ */
@@ -2085,6 +2514,7 @@ int main(void)
   {
     bno_ready_29 = HAL_ERROR;
     bno_detected_address = 0x28U;
+    bno_i2c_address = (0x28U << 1);
 
     bno_probe_chip_id = 0U;
 
@@ -2108,12 +2538,10 @@ int main(void)
       if (bno_init_status == HAL_OK)
       {
         imu_ready = 1U;
-        using_test_data = 0U;
       }
       else
       {
         imu_ready = 0U;
-        using_test_data = 1U;
       }
     }
     else
@@ -2121,7 +2549,6 @@ int main(void)
       bno_init_status = HAL_ERROR;
 
       imu_ready = 0U;
-      using_test_data = 1U;
     }
   }
   else
@@ -2160,6 +2587,7 @@ int main(void)
     if (bno_ready_29 == HAL_OK)
     {
       bno_detected_address = 0x29U;
+      bno_i2c_address = (0x29U << 1);
 
       bno_probe_chip_id = 0U;
 
@@ -2174,14 +2602,17 @@ int main(void)
               100U
           );
 
-      /*
-       * Existing driver is still compiled for 0x28.
-       * Keep real actuator disabled if module is actually 0x29.
-       */
-      bno_init_status = HAL_ERROR;
-
-      imu_ready = 0U;
-      using_test_data = 1U;
+      if ((bno_read_status == HAL_OK) &&
+          (bno_probe_chip_id == BNO055_ID))
+      {
+        bno_init_status = Sensor_GyroOnly_Init();
+        imu_ready = (bno_init_status == HAL_OK) ? 1U : 0U;
+      }
+      else
+      {
+        bno_init_status = HAL_ERROR;
+        imu_ready = 0U;
+      }
     }
     else
     {
@@ -2194,7 +2625,6 @@ int main(void)
       bno_read_status = HAL_ERROR;
 
       imu_ready = 0U;
-      using_test_data = 1U;
     }
   }
 
@@ -2224,103 +2654,106 @@ int main(void)
 
   while (1)
   {
-    /*
-     * Fake App is checked continuously.
-     * When you write fakeAppTrigger = 1 in Live Expressions,
-     * this function processes the request once and clears trigger back to 0.
-     */
-    FakeApp_Process();
+    uint32_t nowMs;
+
     Encoder_ProcessSetZeroRequest();
+
+    /*
+     * Service battery telemetry only when a control tick is not already
+     * pending, so ADC/UART work cannot delay an available 100 Hz sample.
+     */
+    if (tick_flag == 0U)
+    {
+      nowMs = HAL_GetTick();
+
+      if ((int32_t)(nowMs - nextBatteryTickMs) >= 0)
+      {
+        nextBatteryTickMs = nowMs + BATTERY_UPDATE_INTERVAL_MS;
+        Battery_Update();
+      }
+
+      nowMs = HAL_GetTick();
+      if ((int32_t)(nowMs - nextBatterySendTickMs) >= 0)
+      {
+        nextBatterySendTickMs = nowMs + BATTERY_SEND_INTERVAL_MS;
+        Battery_SendStatus();
+      }
+    }
 
     if (tick_flag != 0U)
     {
+      /* Consume the Boolean timer flag and its monotonic count atomically.
+       * A pending count other than exactly one means at least one 100 Hz
+       * deadline was lost; that tick is inhibited instead of using old data. */
+      tick_primask = __get_PRIMASK();
+      __disable_irq();
+      pending_ticks = software_tick_count - control_tick_count;
+      scheduler_pending_tick_count = pending_ticks;
+      control_tick_count = software_tick_count;
       tick_flag = 0U;
+      __set_PRIMASK(tick_primask);
 
-      control_tick_count++;
-      fakeAppHeartbeat++;
+      scheduler_overrun_this_tick =
+          (pending_ticks == 1U) ? 0U : 1U;
+      fresh_sample_available = 0U;
 
-      if (imu_ready != 0U)
+      if (scheduler_overrun_this_tick != 0U)
       {
-        bno_read_status =
-            Read_IMU_RealData(
-                &gyroX,
-                &gyroY,
-                &gyroZ
-            );
-
-        if (bno_read_status == HAL_OK)
+        if (scheduler_overrun_count < UINT32_MAX)
         {
-          imu_read_ok_count++;
-          imu_consecutive_error_count = 0U;
+          scheduler_overrun_count++;
         }
-        else
-        {
-          imu_read_error_count++;
-          imu_consecutive_error_count++;
-
-          if (imu_consecutive_error_count >= 5U)
-          {
-            imu_ready = 0U;
-            using_test_data = 1U;
-
-            Tremor_Gate_Reset();
-            Bandpass_TremorGate_Reset();
-            Motor_ForceSafe();
-          }
-        }
-      }
-
-      /*
-       * If real BNO055 is unavailable,
-       * algorithm may still run on internal 5 Hz data.
-       * Real actuator remains reset below.
-       */
-      if (imu_ready == 0U)
-      {
-        Read_IMU_TestData(
-            &gyroX,
-            &gyroY,
-            &gyroZ
-        );
-      }
-
-      Tremor_Detector_Update(
-          gyroX,
-          gyroY,
-          gyroZ
-      );
-
-      Bandpass_TremorGate_Update(
-          selectedGyroInputDps
-      );
-
-      algo_call_count++;
-
-      Encoder_UpdateLength();
-
-      /*
-       * 0823: fake/test IMU data may exercise algorithms, but may never drive
-       * the real actuator. Also, because authoritative SuppressionControl and
-       * PositionGuard are not yet integrated, the physical output remains safe.
-       */
-      if ((imu_ready != 0U) &&
-          (bno_read_status == HAL_OK) &&
-          (suppression_control_ready_debug != 0U) &&
-          (motor_output_guard_ready_debug != 0U))
-      {
-        Actuator_StateMachine_Update();
+        ControlPipeline_RejectStaleSample();
       }
       else
       {
-        Actuator_StateMachine_Reset();
-        Motor_ForceSafe();
+        if (imu_ready != 0U)
+        {
+          bno_read_status =
+              Read_IMU_RealData(&gyroX, &gyroY, &gyroZ);
+
+          if (bno_read_status == HAL_OK)
+          {
+            imu_read_ok_count++;
+            imu_consecutive_error_count = 0U;
+
+            /* A successful hardware read is the only producer of a new control
+             * sample identity.  Test/fallback data never reaches this path. */
+            imu_sample_generation++;
+            selectedGyroInputDps =
+                SelectTremorAxisDps(gyroX, gyroY, gyroZ);
+            fresh_sample_available =
+                (imu_sample_generation !=
+                 last_controlled_sample_generation)
+                ? 1U : 0U;
+          }
+          else
+          {
+            imu_read_error_count++;
+            imu_consecutive_error_count++;
+
+            if (imu_consecutive_error_count >= 5U)
+            {
+              imu_ready = 0U;
+            }
+          }
+        }
+
+        if (fresh_sample_available != 0U)
+        {
+          ControlPipeline_100HzFreshSample(selectedGyroInputDps);
+          last_controlled_sample_generation = imu_sample_generation;
+        }
+        else
+        {
+          /* A failed/missing read must reset the gate/estimator and force the
+           * bridge safe; the previous gyro sample is never processed again. */
+          ControlPipeline_RejectStaleSample();
+        }
       }
 
-      Tremor_TransmitCurrentSample(
-          ((imu_ready != 0U) &&
-           (bno_read_status == HAL_OK))
-          ? 1U : 0U
-      );
+      Encoder_UpdateLength();
+      Tremor_TransmitCurrentSample(fresh_sample_available);
     }
 
     /* USER CODE END WHILE */
@@ -2389,6 +2822,71 @@ void SystemClock_Config(void)
   {
     Error_Handler();
   }
+}
+
+/**
+  * @brief ADC1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_ADC1_Init(void)
+{
+
+  /* USER CODE BEGIN ADC1_Init 0 */
+
+  /* USER CODE END ADC1_Init 0 */
+
+  ADC_MultiModeTypeDef multimode = {0};
+  ADC_ChannelConfTypeDef sConfig = {0};
+
+  /* USER CODE BEGIN ADC1_Init 1 */
+
+  /* USER CODE END ADC1_Init 1 */
+  /** Common config
+  */
+  hadc1.Instance = ADC1;
+  hadc1.Init.ClockPrescaler = ADC_CLOCK_ASYNC_DIV2;
+  hadc1.Init.Resolution = ADC_RESOLUTION_12B;
+  hadc1.Init.ScanConvMode = ADC_SCAN_DISABLE;
+  hadc1.Init.EOCSelection = ADC_EOC_SINGLE_CONV;
+  hadc1.Init.LowPowerAutoWait = DISABLE;
+  hadc1.Init.ContinuousConvMode = DISABLE;
+  hadc1.Init.NbrOfConversion = 1;
+  hadc1.Init.DiscontinuousConvMode = DISABLE;
+  hadc1.Init.ExternalTrigConv = ADC_SOFTWARE_START;
+  hadc1.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_NONE;
+  hadc1.Init.ConversionDataManagement = ADC_CONVERSIONDATA_DR;
+  hadc1.Init.Overrun = ADC_OVR_DATA_PRESERVED;
+  hadc1.Init.LeftBitShift = ADC_LEFTBITSHIFT_NONE;
+  hadc1.Init.OversamplingMode = DISABLE;
+  if (HAL_ADC_Init(&hadc1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /** Configure the ADC multi-mode
+  */
+  multimode.Mode = ADC_MODE_INDEPENDENT;
+  if (HAL_ADCEx_MultiModeConfigChannel(&hadc1, &multimode) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /** Configure Regular Channel
+  */
+  sConfig.Channel = ADC_CHANNEL_10;
+  sConfig.Rank = ADC_REGULAR_RANK_1;
+  sConfig.SamplingTime = ADC_SAMPLETIME_64CYCLES_5;
+  sConfig.SingleDiff = ADC_SINGLE_ENDED;
+  sConfig.OffsetNumber = ADC_OFFSET_NONE;
+  sConfig.Offset = 0;
+  sConfig.OffsetSignedSaturation = DISABLE;
+  if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN ADC1_Init 2 */
+
+  /* USER CODE END ADC1_Init 2 */
+
 }
 
 /**
@@ -2673,7 +3171,8 @@ static void MX_GPIO_Init(void)
 
   /*
    * 0823 boot-safe bridge levels MUST be established before enabling outputs.
-   * STBY also requires the external ~10 kOhm pulldown to GND.
+   * STBY must be wired to D4/PK1, never hardwired to 3V3.  The TB6612 input
+   * has an internal pulldown; an external ~10 kOhm fail-low is optional.
    */
   HAL_GPIO_WritePin(MOTOR_AIN1_GPIO_PORT, MOTOR_AIN1_PIN, GPIO_PIN_RESET);
   HAL_GPIO_WritePin(MOTOR_AIN2_GPIO_PORT, MOTOR_AIN2_PIN, GPIO_PIN_RESET);
@@ -2698,12 +3197,12 @@ static void MX_GPIO_Init(void)
    */
   GPIO_InitStruct.Pin = ENCODER_B_PIN;
   GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING_FALLING;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
   HAL_GPIO_Init(ENCODER_B_GPIO_PORT, &GPIO_InitStruct);
 
   GPIO_InitStruct.Pin = ENCODER_A_PIN;
   GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING_FALLING;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
   HAL_GPIO_Init(ENCODER_A_GPIO_PORT, &GPIO_InitStruct);
 
   /* EXTI interrupt init */
@@ -2737,17 +3236,9 @@ void HAL_GPIO_EXTI_Callback(
     uint16_t GPIO_Pin
 )
 {
-  static const int8_t transitionTable[16] =
-  {
-     0, -1,  1,  0,
-     1,  0,  0, -1,
-    -1,  0,  0,  1,
-     0,  1, -1,  0
-  };
-
-  uint8_t currentAB;
-  uint8_t index;
-  int8_t delta;
+  uint8_t level_a;
+  uint8_t level_b;
+  int32_t live_count;
 
   if ((GPIO_Pin != ENCODER_A_PIN) &&
       (GPIO_Pin != ENCODER_B_PIN))
@@ -2756,57 +3247,47 @@ void HAL_GPIO_EXTI_Callback(
   }
 
   encoder_edge_count++;
+  level_a = ReadDigitalLevel(ENCODER_A_GPIO_PORT, ENCODER_A_PIN);
+  level_b = ReadDigitalLevel(ENCODER_B_GPIO_PORT, ENCODER_B_PIN);
+  (void)QuadratureEncoder_OnEdge(
+      &quadrature_encoder,
+      level_a,
+      level_b
+  );
+  encoder_prev_ab = (uint8_t)((level_a << 1U) | level_b);
+  live_count = quadrature_encoder.count;
+  encoder_count = live_count;
 
-  currentAB = Encoder_ReadAB();
-
-  index =
-      (uint8_t)(
-          (encoder_prev_ab << 2) |
-          currentAB
-      );
-
-  delta = transitionTable[index];
-
-  if (delta > 0)
+  if ((quadrature_encoder.initialized != 1U) ||
+      (quadrature_encoder.invalid_transition_latched != 0U) ||
+      (quadrature_encoder.overflow_latched != 0U))
   {
-    if (encoder_count == INT32_MAX)
-    {
-      encoder_overflow_latched = 1U;
-      encoder_valid = 0U;
-      Motor_ForceSafe();
-    }
-    else
-    {
-      encoder_count++;
-      encoder_valid_transition_count++;
-    }
-  }
-  else if (delta < 0)
-  {
-    if (encoder_count == INT32_MIN)
-    {
-      encoder_overflow_latched = 1U;
-      encoder_valid = 0U;
-      Motor_ForceSafe();
-    }
-    else
-    {
-      encoder_count--;
-      encoder_valid_transition_count++;
-    }
-  }
-  else
-  {
-    if (encoder_prev_ab != currentAB)
-    {
-      encoder_invalid_transition_count++;
-      encoder_invalid_latched = 1U;
-      encoder_valid = 0U;
-      Motor_ForceSafe();
-    }
+    encoder_valid = 0U;
+    calibration_required = 1U;
+    tremorPositionFaultLatched = 1U;
+    tremorPositionState = TREMOR_POSITION_FAULT;
+    motor_runtime_fault_latched = 1U;
+    ControlPipeline_ForceSafe();
+    return;
   }
 
-  encoder_prev_ab = currentAB;
+  /* Encoder is the stopping authority.  Stop immediately when the requested
+   * travel distance has been reached.  Count sign is intentionally ignored. */
+  if ((tremorPositionState == TREMOR_POSITION_PULLING) ||
+      (tremorPositionState == TREMOR_POSITION_RETURNING) ||
+      (tremorPositionState == TREMOR_POSITION_APP_ADJUSTING))
+  {
+    const int32_t live_travel =
+        Encoder_AbsDeltaCounts(live_count, positionMoveStartCount);
+
+    positionMoveTravelCounts = live_travel;
+
+    if ((positionMoveRequestedCounts > 0) &&
+        (live_travel >= positionMoveRequestedCounts))
+    {
+      ControlPipeline_ForceSafe();
+    }
+  }
 }
 
 /* USER CODE END 4 */
@@ -2822,7 +3303,7 @@ void Error_Handler(void)
    * 0823 fail-safe: any fatal main-level error must remove bridge/PWM output
    * before the CPU enters the permanent error loop.
    */
-  Motor_ForceSafe();
+  ControlPipeline_ForceSafe();
   __disable_irq();
 
   while (1)

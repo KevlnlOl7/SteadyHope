@@ -21,7 +21,6 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "stm32h7xx_it.h"
-
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 
@@ -69,15 +68,6 @@
 static void Motor_EmergencyForceSafe(void);
 
 /* USER CODE END PFP */
-
-/* External variables --------------------------------------------------------*/
-
-extern TIM_HandleTypeDef htim6;
-extern UART_HandleTypeDef huart1;
-
-/* USER CODE BEGIN EV */
-
-/* USER CODE END EV */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
@@ -162,11 +152,16 @@ static void Motor_EmergencyForceSafe(void)
 
 /* USER CODE END 0 */
 
+/* External variables --------------------------------------------------------*/
+extern TIM_HandleTypeDef htim6;
+extern UART_HandleTypeDef huart1;
+/* USER CODE BEGIN EV */
+
+/* USER CODE END EV */
 
 /******************************************************************************/
-/*           Cortex Processor Interruption and Exception Handlers             */
+/*           Cortex Processor Interruption and Exception Handlers          */
 /******************************************************************************/
-
 /**
   * @brief This function handles Non maskable interrupt.
   */
@@ -182,7 +177,6 @@ void NMI_Handler(void)
   Motor_EmergencyForceSafe();
 
   /* USER CODE END NonMaskableInt_IRQn 0 */
-
   /* USER CODE BEGIN NonMaskableInt_IRQn 1 */
 
   while (1)
@@ -194,7 +188,6 @@ void NMI_Handler(void)
 
   /* USER CODE END NonMaskableInt_IRQn 1 */
 }
-
 
 /**
   * @brief This function handles Hard fault interrupt.
@@ -211,7 +204,6 @@ void HardFault_Handler(void)
   Motor_EmergencyForceSafe();
 
   /* USER CODE END HardFault_IRQn 0 */
-
   while (1)
   {
     /* USER CODE BEGIN W1_HardFault_IRQn 0 */
@@ -223,7 +215,6 @@ void HardFault_Handler(void)
     /* USER CODE END W1_HardFault_IRQn 0 */
   }
 }
-
 
 /**
   * @brief This function handles Memory management fault.
@@ -240,7 +231,6 @@ void MemManage_Handler(void)
   Motor_EmergencyForceSafe();
 
   /* USER CODE END MemoryManagement_IRQn 0 */
-
   while (1)
   {
     /* USER CODE BEGIN W1_MemoryManagement_IRQn 0 */
@@ -252,7 +242,6 @@ void MemManage_Handler(void)
     /* USER CODE END W1_MemoryManagement_IRQn 0 */
   }
 }
-
 
 /**
   * @brief This function handles Pre-fetch fault, memory access fault.
@@ -269,7 +258,6 @@ void BusFault_Handler(void)
   Motor_EmergencyForceSafe();
 
   /* USER CODE END BusFault_IRQn 0 */
-
   while (1)
   {
     /* USER CODE BEGIN W1_BusFault_IRQn 0 */
@@ -281,7 +269,6 @@ void BusFault_Handler(void)
     /* USER CODE END W1_BusFault_IRQn 0 */
   }
 }
-
 
 /**
   * @brief This function handles Undefined instruction or illegal state.
@@ -298,7 +285,6 @@ void UsageFault_Handler(void)
   Motor_EmergencyForceSafe();
 
   /* USER CODE END UsageFault_IRQn 0 */
-
   while (1)
   {
     /* USER CODE BEGIN W1_UsageFault_IRQn 0 */
@@ -311,7 +297,6 @@ void UsageFault_Handler(void)
   }
 }
 
-
 /**
   * @brief This function handles System service call via SWI instruction.
   */
@@ -320,12 +305,10 @@ void SVC_Handler(void)
   /* USER CODE BEGIN SVCall_IRQn 0 */
 
   /* USER CODE END SVCall_IRQn 0 */
-
   /* USER CODE BEGIN SVCall_IRQn 1 */
 
   /* USER CODE END SVCall_IRQn 1 */
 }
-
 
 /**
   * @brief This function handles Debug monitor.
@@ -335,12 +318,10 @@ void DebugMon_Handler(void)
   /* USER CODE BEGIN DebugMonitor_IRQn 0 */
 
   /* USER CODE END DebugMonitor_IRQn 0 */
-
   /* USER CODE BEGIN DebugMonitor_IRQn 1 */
 
   /* USER CODE END DebugMonitor_IRQn 1 */
 }
-
 
 /**
   * @brief This function handles Pendable request for system service.
@@ -350,12 +331,10 @@ void PendSV_Handler(void)
   /* USER CODE BEGIN PendSV_IRQn 0 */
 
   /* USER CODE END PendSV_IRQn 0 */
-
   /* USER CODE BEGIN PendSV_IRQn 1 */
 
   /* USER CODE END PendSV_IRQn 1 */
 }
-
 
 /**
   * @brief This function handles System tick timer.
@@ -365,14 +344,11 @@ void SysTick_Handler(void)
   /* USER CODE BEGIN SysTick_IRQn 0 */
 
   /* USER CODE END SysTick_IRQn 0 */
-
   HAL_IncTick();
-
   /* USER CODE BEGIN SysTick_IRQn 1 */
 
   /* USER CODE END SysTick_IRQn 1 */
 }
-
 
 /******************************************************************************/
 /* STM32H7xx Peripheral Interrupt Handlers                                    */
@@ -389,30 +365,12 @@ void EXTI9_5_IRQHandler(void)
   /* USER CODE BEGIN EXTI9_5_IRQn 0 */
 
   /* USER CODE END EXTI9_5_IRQn 0 */
-
-  /*
-   * Encoder A
-   *
-   * PE6 -> EXTI6
-   */
-  HAL_GPIO_EXTI_IRQHandler(
-      GPIO_PIN_6
-  );
-
-  /*
-   * Encoder B
-   *
-   * PI8 -> EXTI8
-   */
-  HAL_GPIO_EXTI_IRQHandler(
-      GPIO_PIN_8
-  );
-
+  HAL_GPIO_EXTI_IRQHandler(GPIO_PIN_6);
+  HAL_GPIO_EXTI_IRQHandler(GPIO_PIN_8);
   /* USER CODE BEGIN EXTI9_5_IRQn 1 */
 
   /* USER CODE END EXTI9_5_IRQn 1 */
 }
-
 
 /**
   * @brief This function handles USART1 global interrupt.
@@ -422,62 +380,27 @@ void USART1_IRQHandler(void)
   /* USER CODE BEGIN USART1_IRQn 0 */
 
   /* USER CODE END USART1_IRQn 0 */
-
-  /*
-   * Keep the current communication architecture unchanged.
-   *
-   * USART1:
-   * STM32 <-> ESP32
-   */
-  HAL_UART_IRQHandler(
-      &huart1
-  );
-
+  HAL_UART_IRQHandler(&huart1);
   /* USER CODE BEGIN USART1_IRQn 1 */
 
   /* USER CODE END USART1_IRQn 1 */
 }
 
-
 /**
-  * @brief This function handles TIM6 global interrupt,
-  *        DAC1_CH1 and DAC1_CH2 underrun error interrupts.
+  * @brief This function handles TIM6 global interrupt, DAC1_CH1 and DAC1_CH2 underrun error interrupts.
   */
 void TIM6_DAC_IRQHandler(void)
 {
   /* USER CODE BEGIN TIM6_DAC_IRQn 0 */
 
   /* USER CODE END TIM6_DAC_IRQn 0 */
-
-  /*
-   * TIM6
-   *
-   * 100 Hz control timing
-   *
-   * HAL_TIM_IRQHandler()
-   *
-   *          |
-   *          v
-   *
-   * HAL_TIM_PeriodElapsedCallback()
-   *
-   *          |
-   *          v
-   *
-   * tick_flag = 1
-   */
-  HAL_TIM_IRQHandler(
-      &htim6
-  );
-
+  HAL_TIM_IRQHandler(&htim6);
   /* USER CODE BEGIN TIM6_DAC_IRQn 1 */
 
   /* USER CODE END TIM6_DAC_IRQn 1 */
 }
 
-
 /* USER CODE BEGIN 1 */
 
 /* USER CODE END 1 */
-
 /************************ (C) COPYRIGHT STMicroelectronics *****END OF FILE****/
