@@ -1,6 +1,6 @@
 import Foundation
 
-/// 專門負責與後端 API 對接的帳號數據傳輸物件 (Data Transfer Object)
+/// 負責與後端 API 對接的帳號資料傳輸物件 (DTO)
 struct UserDataDTO: Codable {
     let userID: Int?
     let userName: String?
@@ -8,10 +8,10 @@ struct UserDataDTO: Codable {
     let gender: Int
     let birthday: Date?
     let diseaseStage: String?
-    let role:Int
+    let role: Int
     let pairingCode: String?
-    
-    // 處理後端 JSON 欄位命名不一致
+
+    // 處理後端 JSON 欄位命名對應
     enum CodingKeys: String, CodingKey {
         case userID = "id"
         case userName = "name"
@@ -22,27 +22,28 @@ struct UserDataDTO: Codable {
         case role = "role"
         case pairingCode = "pairingCode"
     }
-    
-    /// 將 DTO 轉換為可存入 SwiftData 的 UserData 模型
+
+    /// 將 DTO 轉換為本機實體模型
     func toModel() -> UserData {
-        return UserData(
+        UserData(
             userID: self.userID ?? 0,
             userName: self.userName ?? "未知用戶",
             email: self.email,
             gender: self.gender,
             birthday: self.birthday ?? Date(),
             diseaseStage: self.diseaseStage ?? "尚未設定",
-            role:self.role,
+            role: self.role,
             pairingCode: self.pairingCode
         )
     }
 }
+
 enum Gender: Int, Codable {
     case unknown = 0
     case male = 1
     case female = 2
     case other = 3
-    
+
     var label: String {
         switch self {
         case .male: return "男"
@@ -51,4 +52,14 @@ enum Gender: Int, Codable {
         case .unknown: return "未設定"
         }
     }
+}
+
+/// 更新個人資料請求之資料傳輸物件
+struct UpdateProfileRequestDTO: Codable {
+    var name: String?
+    var birth: Date?
+    var gender: Int?
+    var diseaseStage: String?
+    var oldPassword: String?
+    var newPassword: String?
 }

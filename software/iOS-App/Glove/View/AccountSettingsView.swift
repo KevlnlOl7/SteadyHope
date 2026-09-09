@@ -34,10 +34,9 @@ struct AccountSettingsView: View {
     var body: some View {
         Form {
             accountInfoSection
-            securitySection
             bondManagementSection
         }
-        .navigationTitle("帳號設定")
+        .navigationTitle("連動與帳號管理")
         .alert("您的安全配對碼", isPresented: $isShowingPairingCodeAlert) {
             Button("確定", role: .cancel) {}
         } message: {

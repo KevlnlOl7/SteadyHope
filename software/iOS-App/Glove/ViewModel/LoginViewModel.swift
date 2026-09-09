@@ -144,6 +144,50 @@ class LoginViewModel: ObservableObject {
         }
     }
 
+    /// 執行更新個人資料與密碼設定
+    /// - Parameters:
+    ///   - request: 更新資料請求物件
+    ///   - modelContext: SwiftData 上下文環境（選填，若傳入則同步寫入資料庫）
+    func updateProfile(
+        request: UpdateProfileRequestDTO,
+        modelContext: ModelContext? = nil
+    ) async throws {
+        let updatedDTO = try await authRepository.updateProfile(
+            request: request
+        )
+
+        if let updatedUser = updatedDTO {
+            let userModel = updatedUser.toModel()
+            self.userData = userModel
+
+            if let modelContext = modelContext {
+                let descriptor = FetchDescriptor<UserData>()
+                if let oldUsers = try? modelContext.fetch(descriptor) {
+                    for user in oldUsers {
+                        modelContext.delete(user)
+                    }
+                }
+                modelContext.insert(userModel)
+                try? modelContext.save()
+            }
+        } else if let currentUser = self.userData {
+            if let name = request.name {
+                currentUser.userName = name
+            }
+            if let birth = request.birth {
+                currentUser.birthday = birth
+            }
+            if let gender = request.gender {
+                currentUser.gender = gender
+            }
+            if currentUser.role == 0, let stage = request.diseaseStage {
+                currentUser.diseaseStage = stage
+            }
+            self.userData = currentUser
+            try? modelContext?.save()
+        }
+    }
+
     /// 使用者登出並清除本機快取與權限
     /// - Parameter modelContext: SwiftData 上下文環境（選填）
     func logout(modelContext: ModelContext? = nil) {

@@ -86,22 +86,36 @@ struct ProfileSideMenuView: View {
 
     /// 使用者頭像與身分資訊
     private var headerView: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Image(systemName: "person.crop.circle.fill")
-                .font(.system(size: 56))
-                .foregroundColor(.gray)
+        NavigationLink(destination: EditProfileView(loginVM: loginVM)) {
 
-            Text(loginVM.userData?.userName ?? "用戶")
-                .font(.system(size: 20, weight: .bold))
+            VStack(alignment: .leading, spacing: 8) {
+                Image(systemName: "person.crop.circle.fill")
+                    .font(.system(size: 56))
+                    .foregroundColor(.gray)
 
-            Text(loginVM.userData?.role == 1 ? "照護者" : "使用者")
-                .font(.caption2)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 3)
-                .background(Color.blue.opacity(0.12))
-                .foregroundColor(.blue)
-                .cornerRadius(6)
+                Text(loginVM.userData?.userName ?? "用戶")
+                    .font(.system(size: 20, weight: .bold))
+                    .foregroundColor(.primary)
+
+                HStack {
+                    Text(loginVM.userData?.role == 1 ? "照護者" : "使用者")
+                        .font(.caption2)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(Color.blue.opacity(0.12))
+                        .foregroundColor(.blue)
+                        .cornerRadius(6)
+
+                    Spacer()
+
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(.gray.opacity(0.5))
+                }
+            }
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
         .padding(.horizontal, 20)
         .padding(.top, 50)
         .padding(.bottom, 16)
@@ -178,7 +192,7 @@ struct ProfileSideMenuView: View {
                 }
 
                 NavigationLink(destination: AccountSettingsView(loginVM: loginVM)) {
-                    MenuRow(icon: "gearshape", title: "帳號設定")
+                    MenuRow(icon: "gearshape", title: "家屬連動設定")
                 }
 
                 NavigationLink(destination: AboutUsView()) {
