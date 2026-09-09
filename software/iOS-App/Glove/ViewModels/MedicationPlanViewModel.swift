@@ -136,7 +136,7 @@ final class MedicationPlanViewModel: ObservableObject {
 
     /// 表單輸入內容是否無效
     var isFormInvalid: Bool {
-        if planMedType == .oral {
+        if planMedType == .oral || planMedType == .injection {
             let isNameEmpty = planName.trimmingCharacters(in: .whitespaces).isEmpty
             let isDoseEmpty = planDose.trimmingCharacters(in: .whitespaces).isEmpty
             let isUnitEmpty = planUnit.trimmingCharacters(in: .whitespaces).isEmpty

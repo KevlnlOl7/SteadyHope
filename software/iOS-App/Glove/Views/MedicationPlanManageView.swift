@@ -41,7 +41,7 @@ struct MedicationPlanManageView: View {
             }
 
             VStack(spacing: 0) {
-                // 用藥方式選擇（口服 / 貼片）
+                // 用藥方式選擇（口服 / 貼片 / 注射）
                 HStack(spacing: 12) {
                     Image(systemName: "square.grid.2x2.fill")
                         .foregroundColor(.blue)
@@ -52,13 +52,26 @@ struct MedicationPlanManageView: View {
                         }
                     }
                     .pickerStyle(.segmented)
+                    .onChange(of: planVM.planMedType) {
+                        if planVM.planMedType == .injection {
+                            if let injectionPreset = MedicationPresets.allList.first(where: { $0.medType == .injection }) {
+                                planVM.planName = injectionPreset.name
+                                let doseStr = injectionPreset.commonDoses.first ?? "1ml"
+                                planVM.planDose = String(doseStr.filter { $0.isNumber || $0 == "." })
+                                planVM.planUnit = String(doseStr.filter { !$0.isNumber && $0 != "." })
+                            }
+                        } else if planVM.planMedType == .oral {
+                            planVM.planName = ""
+                            planVM.planDose = ""
+                            planVM.planUnit = ""
+                        }
+                    }
                 }
                 .padding()
 
                 Divider().padding(.leading, 44)
 
-                // 口服藥物專屬輸入欄位
-                if planVM.planMedType == .oral {
+                if planVM.planMedType == .oral || planVM.planMedType == .injection {
                     HStack(spacing: 12) {
                         Image(systemName: "pill.fill")
                             .foregroundColor(.blue)
@@ -67,63 +80,51 @@ struct MedicationPlanManageView: View {
                         // 藥品名稱輸入框
                         TextField("藥品名稱", text: $planVM.planName)
 
-                        // 下拉式快選選
-                        Menu {
-                            let groupedList = Dictionary(
-                                grouping: MedicationPresets.oralList,
-                                by: { $0.category }
-                            )
+                        if planVM.planMedType == .oral {
+                            Menu {
+                                let groupedList = Dictionary(
+                                    grouping: MedicationPresets.oralList,
+                                    by: { $0.category }
+                                )
+                                
+                                ForEach(groupedList.keys.sorted(), id: \.self) { category in
+                                    Section(header: Text(category)) {
+                                        ForEach(groupedList[category] ?? []) { item in
+                                            Button {
+                                                planVM.planName = "\(item.name) (\(item.strength))"
 
-                            ForEach(groupedList.keys.sorted(), id: \.self) {
-                                category in
-                                Section(header: Text(category)) {
-                                    ForEach(groupedList[category] ?? []) {
-                                        item in
-                                        Button {
-                                            planVM.planName =
-                                                "\(item.name) (\(item.strength))"
-
-                                            // 自動解析常用劑量與單位
-                                            let doseStr =
-                                                item.commonDoses.first ?? "1顆"
-                                            if doseStr == "半顆" {
-                                                planVM.planDose = "0.5"
-                                                planVM.planUnit = "顆"
-                                            } else {
-                                                planVM.planDose = String(
-                                                    doseStr.filter {
-                                                        $0.isNumber || $0 == "."
-                                                    }
-                                                )
-                                                let unit = String(
-                                                    doseStr.filter {
-                                                        !$0.isNumber
-                                                            && $0 != "."
-                                                    }
-                                                )
-                                                planVM.planUnit =
-                                                    unit.isEmpty ? "顆" : unit
+                                                let doseStr = item.commonDoses.first ?? "1顆"
+                                                if doseStr == "半顆" {
+                                                    planVM.planDose = "0.5"
+                                                    planVM.planUnit = "顆"
+                                                } else {
+                                                    planVM.planDose = String(
+                                                        doseStr.filter { $0.isNumber || $0 == "." }
+                                                    )
+                                                    let unit = String(
+                                                        doseStr.filter { !$0.isNumber && $0 != "." }
+                                                    )
+                                                    planVM.planUnit = unit.isEmpty ? "顆" : unit
+                                                }
+                                            } label: {
+                                                Text("\(item.name) (\(item.strength))")
                                             }
-                                        } label: {
-                                            Text(
-                                                "\(item.name) (\(item.strength))"
-                                            )
                                         }
                                     }
                                 }
+                            } label: {
+                                HStack(spacing: 4) {
+                                    Text("快選")
+                                        .font(.subheadline.bold())
+                                    Image(systemName: "chevron.down")
+                                        .font(.caption.bold())
+                                }
+                                .foregroundColor(.blue)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 6)
+                                .background(Color.blue.opacity(0.1))
+                                .cornerRadius(8)
                             }
-                        } label: {
-                            HStack(spacing: 4) {
-                                Text("快選")
-                                    .font(.subheadline.bold())
-                                Image(systemName: "chevron.down")
-                                    .font(.caption.bold())
-                            }
-                            .foregroundColor(.blue)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 6)
-                            .background(Color.blue.opacity(0.1))
-                            .cornerRadius(8)
                         }
                     }
                     .padding()
