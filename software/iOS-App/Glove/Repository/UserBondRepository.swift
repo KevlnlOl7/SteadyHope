@@ -2,41 +2,62 @@ import Foundation
 
 class UserBondRepository {
     private let bondService = UserBondService.shared
-    
+
+    /// 取得當前 Token 的輔助檢查
+    private func getValidToken() throws -> String {
+        guard let token = AuthManager.shared.getToken() else {
+            throw NetworkError.serverError(reason: "認證已過期，請重新登入")
+        }
+        return token
+    }
+
     /// 被照護者（病患）要求產生一組新的 6 位數安全配對碼
     /// - Returns: 包含配對碼與過期時間的 PairingCodeResponseDTO
-    /// - Throws: 未登入或 Token 過期時拋出認證錯誤，或網路請求失敗錯誤
     func requestPairingCode() async throws -> PairingCodeResponseDTO {
-        // 從 AuthManager 自動取得 Token
-        guard let token = AuthManager.shared.getToken() else {
-            throw UserBondService.NetworkError.serverError(reason: "認證已過期，請重新登入")
-        }
+        let token = try getValidToken()
         return try await bondService.fetchPairingCode(token: token)
     }
-    
-    /// 獲取目前綁定對象（照護者或被照護者）的基本資料
-    /// - Returns: 包含綁定對象詳細資料的 LinkedPartnerResponseDTO
-    /// - Throws: 未登入或 Token 過期時拋出認證錯誤，或網路請求失敗錯誤
-    func fetchMyBoundPartnerInfo() async throws -> LinkedPartnerResponseDTO {
-        // 從 AuthManager 自動取得 Token
-        guard let token = AuthManager.shared.getToken() else {
-            throw UserBondService.NetworkError.serverError(reason: "認證已過期，請重新登入")
-        }
-        return try await bondService.getMyBoundPartner(token: token)
+
+    /// 病患端：獲取所有已綁定的照護者列表
+    /// - Returns: [LinkedPartnerResponseDTO]
+    func fetchBoundCaregivers() async throws -> [LinkedPartnerResponseDTO] {
+        let token = try getValidToken()
+        return try await bondService.getBoundCaregivers(token: token)
     }
-    
+
+    /// 照護者端：獲取目前綁定的病患資訊
+    /// - Returns: LinkedPartnerResponseDTO
+    func fetchBoundPatientInfo() async throws -> LinkedPartnerResponseDTO {
+        let token = try getValidToken()
+        return try await bondService.getBoundPatient(token: token)
+    }
+
     /// 照護者輸入病患 Email 與配對碼進行安全綁定
     /// - Parameters:
     ///   - email: 病患的電子郵件
     ///   - code: 病患產生的 6 位數配對碼
     /// - Returns: 綁定成功後回傳的 LinkedPartnerResponseDTO
-    /// - Throws: 未登入或 Token 過期時拋出認證錯誤，或配對碼無效/過期等網路錯誤
     func linkWithPatient(email: String, code: String) async throws -> LinkedPartnerResponseDTO {
-        // 從 AuthManager 自動取得 Token
-        guard let token = AuthManager.shared.getToken() else {
-            throw UserBondService.NetworkError.serverError(reason: "認證已過期，請重新登入")
-        }
-        
+        let token = try getValidToken()
         return try await bondService.linkPatient(token: token, patientEmail: email, pairingCode: code)
+    }
+
+    /// 病患端：解除指定照護者的綁定關係
+    /// - Parameters:
+    ///   - caregiverEmail: 指定欲解除之照護者 Email（二選一）
+    ///   - caregiverID: 指定欲解除之照護者 ID（二選一）
+    func unlinkCaregiver(caregiverEmail: String? = nil, caregiverID: Int? = nil) async throws {
+        let token = try getValidToken()
+        let requestDTO = UnlinkBondRequestDTO(
+            caregiverEmail: caregiverEmail,
+            caregiverID: caregiverID
+        )
+        try await bondService.unlinkBond(token: token, request: requestDTO)
+    }
+
+    /// 照護者端：自動解除與當前被照護者的綁定（無需帶 Body）
+    func unlinkCurrentPatient() async throws {
+        let token = try getValidToken()
+        try await bondService.unlinkBond(token: token, request: nil)
     }
 }
