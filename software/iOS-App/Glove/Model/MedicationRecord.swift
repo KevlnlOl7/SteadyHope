@@ -5,6 +5,7 @@ import SwiftData
 enum MedicationType: String, Codable, CaseIterable {
     case oral = "口服"
     case patch = "貼片"
+    case injection = "注射"
 }
 
 /// 藥物貼片黏貼解剖部位
