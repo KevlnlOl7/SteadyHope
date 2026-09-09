@@ -3,6 +3,12 @@ import Foundation
 /// 藍牙低功耗 (BLE) 感測手套傳輸之單筆震顫原始資料點
 public struct TremorDataPoint {
     
+    /// 藍牙封包類型標頭辨識碼 (0x01 代表震顫資料)
+    public static let bleType: UInt8 = 0x01
+
+    /// 單筆取樣點資料位元組大小 (固定為 16 位元組)
+    public static let sampleSize = 16
+
     /// 採樣封包序號
     public var sequence: UInt32
 
@@ -51,52 +57,45 @@ public struct TremorDataPoint {
         self.motorEnabled = motorEnabled
     }
 
-    /// 解析硬體端傳輸之二進位 Data 封包（支援單筆 16 Bytes 或多筆批次傳輸）
-    /// - Parameter data: 二進位封包資料（長度須為 16 Bytes 之整數倍數）
-    /// - Returns: 解析後之 TremorDataPoint 陣列
+    /// 解析 ESP32 傳遞之完整 BLE IMU Notify 批次二進位封包
+    /// - Parameter data: 接收到的原始二進位資料 (包含 Byte 0 之型態標頭 0x01)
+    /// - Returns: 解析完成之 TremorDataPoint 物件陣列，若長度或格式不合則回傳空陣列
     public static func parseBatch(from data: Data) -> [TremorDataPoint] {
-        let sampleSize = 16
-        guard data.count % sampleSize == 0 && !data.isEmpty else { return [] }
+        guard data.count >= 1 + sampleSize else {
+            return []
+        }
+
+        guard data[0] == bleType else {
+            return []
+        }
+
+        let payloadCount = data.count - 1
+        guard payloadCount % sampleSize == 0 else {
+            return []
+        }
+
+        let sampleCount = payloadCount / sampleSize
+        guard sampleCount > 0 else {
+            return []
+        }
 
         var results: [TremorDataPoint] = []
-        let count = data.count / sampleSize
+        results.reserveCapacity(sampleCount)
 
-        data.withUnsafeBytes { ptr in
-            guard let baseAddress = ptr.baseAddress else { return }
+        for i in 0..<sampleCount {
+            let offset = 1 + i * sampleSize
 
-            for i in 0..<count {
-                let offset = i * sampleSize
-                let seq = baseAddress.load(
-                    fromByteOffset: offset + 0,
-                    as: UInt32.self
-                ).littleEndian
-                let tick = baseAddress.load(
-                    fromByteOffset: offset + 4,
-                    as: UInt32.self
-                ).littleEndian
-                let gxRaw = baseAddress.load(
-                    fromByteOffset: offset + 8,
-                    as: Int16.self
-                ).littleEndian
-                let gyRaw = baseAddress.load(
-                    fromByteOffset: offset + 10,
-                    as: Int16.self
-                ).littleEndian
-                let gzRaw = baseAddress.load(
-                    fromByteOffset: offset + 12,
-                    as: Int16.self
-                ).littleEndian
-                let valid = baseAddress.load(
-                    fromByteOffset: offset + 14,
-                    as: UInt8.self
-                )
-                let motor = baseAddress.load(
-                    fromByteOffset: offset + 15,
-                    as: UInt8.self
-                )
+            let sequence = readUInt32LE(data, at: offset + 0)
+            let tick = readUInt32LE(data, at: offset + 4)
+            let gxRaw = readInt16LE(data, at: offset + 8)
+            let gyRaw = readInt16LE(data, at: offset + 10)
+            let gzRaw = readInt16LE(data, at: offset + 12)
+            let valid = data[offset + 14]
+            let motor = data[offset + 15]
 
-                let point = TremorDataPoint(
-                    sequence: seq,
+            results.append(
+                TremorDataPoint(
+                    sequence: sequence,
                     sampleTickMs: tick,
                     // 硬體規範：原始感測數值除以 16 轉換為實際角速度 (deg/s)
                     gyroXDps: Double(gxRaw) / 16.0,
@@ -105,10 +104,43 @@ public struct TremorDataPoint {
                     sensorValid: valid,
                     motorEnabled: motor
                 )
-                results.append(point)
-            }
+            )
         }
+
         return results
+    }
+
+    /// 從二進位資料指定位移處依 Little Endian 格式讀取 16 位元無號整數 (UInt16)
+    /// - Parameters:
+    ///   - data: 原始二進位資料
+    ///   - offset: 讀取之起始位移索引
+    /// - Returns: 組合完成之 UInt16 數值
+    private static func readUInt16LE(_ data: Data, at offset: Int) -> UInt16 {
+        let b0 = UInt16(data[offset])
+        let b1 = UInt16(data[offset + 1]) << 8
+        return b0 | b1
+    }
+
+    /// 從二進位資料指定位移處依 Little Endian 格式讀取 16 位元有號整數 (Int16)
+    /// - Parameters:
+    ///   - data: 原始二進位資料
+    ///   - offset: 讀取之起始位移索引
+    /// - Returns: 轉換完成之 Int16 數值
+    private static func readInt16LE(_ data: Data, at offset: Int) -> Int16 {
+        return Int16(bitPattern: readUInt16LE(data, at: offset))
+    }
+
+    /// 從二進位資料指定位移處依 Little Endian 格式讀取 32 位元無號整數 (UInt32)
+    /// - Parameters:
+    ///   - data: 原始二進位資料
+    ///   - offset: 讀取之起始位移索引
+    /// - Returns: 組合完成之 UInt32 數值
+    private static func readUInt32LE(_ data: Data, at offset: Int) -> UInt32 {
+        let b0 = UInt32(data[offset])
+        let b1 = UInt32(data[offset + 1]) << 8
+        let b2 = UInt32(data[offset + 2]) << 16
+        let b3 = UInt32(data[offset + 3]) << 24
+        return b0 | b1 | b2 | b3
     }
 }
 

@@ -2,95 +2,182 @@ import CoreBluetooth
 import Foundation
 
 /// 負責串接藍牙即時數據串流、滑動視窗緩衝區管理與定時觸發震顫分析之處理管線
-public class TremorPipeline {
-    
-    /// 藍牙連線與通訊管理員實例
-    public let bluetoothManager = BluetoothManager()
+final class TremorPipeline {
 
-    /// 震顫訊號演算法分析器實例
+    /// 原始取樣緩衝區與演算法分析器
+    private var rawBuffer: [TremorDataPoint] = []
     private let analyzer = TremorAnalyzer()
 
-    /// 訊號取樣滑動視窗緩衝區（固定上限為 400 筆，對應 4 秒資料）
-    private var buffer: [TremorDataPoint] = []
-
-    /// 新進取樣點累計計數器（每累積 50 筆觸發一次分析）
-    private var newSampleCounter = 0
-
-    /// 視窗長度常數（400 筆資料點）
+    /// 視窗取樣設定與時序控制常數
     private let windowSize = 400
+    private let strideSize = 50
+    private var accumulatedSinceLastAnalysis = 0
+    private var lastMotorEnabled: UInt8?
 
-    /// 分析觸發步長常數（50 筆資料點，約 0.5 秒）
-    private let stepSize = 50
+    /// 震顫數據分析與原始取樣批次產出回呼閉包
+    var onAnalysisUpdated: ((TremorAnalysisResult, [TremorDataPoint]) -> Void)?
+    var onLiveAnalysisUpdated: ((TremorAnalysisResult, [TremorDataPoint]) -> Void)?
+    var onNewRawBatchAppended: (([TremorDataPoint]) -> Void)?
 
-    /// 震顫分析結果更新回呼閉包
-    public var onAnalysisUpdated: ((TremorAnalysisResult) -> Void)?
+    /// 硬體狀態、電量與致動回呼閉包
+    var onBatteryUpdated: ((BatteryStatus) -> Void)?
+    var onMotorEnabledChanged: ((Bool) -> Void)?
+    var onStatusChanged: ((String) -> Void)?
+    var onBluetoothStateChanged: ((CBManagerState) -> Void)?
+    var onConnectionChanged: ((Bool) -> Void)?
 
-    /// 藍牙連線狀態變更回呼閉包
-    public var onConnectionChanged: ((Bool) -> Void)?
+    /// 長度調整控制指令回呼閉包（負值縮短，正值加長）
+    var onSendLengthAdjustment: ((Int) -> Void)?
+    var onSendManualLengthInput: ((Int) -> Void)?
 
-    /// 初始化震顫處理管線，並設定自身為藍牙事件委派對象
-    public init() {
-        bluetoothManager.delegate = self
-    }
-}
+    /// 接收單筆取樣點並推進視窗緩衝區，於累積滿足步進條件時執行頻譜特徵運算
+    /// - Parameter point: 剛接收到的震顫取樣數據點
+    func pushRawPoint(_ point: TremorDataPoint) {
+        rawBuffer.append(point)
+        accumulatedSinceLastAnalysis += 1
 
-// MARK: - BluetoothManagerDelegate
+        publishMotorStateIfNeeded(point.motorEnabled)
 
-extension TremorPipeline: BluetoothManagerDelegate {
-    /// 接收藍牙傳入之批次震顫資料點，維護滑動視窗並於每滿指定步長時觸發演算法分析
-    /// - Parameters:
-    ///   - manager: 發送事件之 BluetoothManager 實例
-    ///   - points: 剛接收並解析完成之 TremorDataPoint 陣列
-    public func bluetoothManager(
-        _ manager: BluetoothManager,
-        didReceivePoints points: [TremorDataPoint]
-    ) {
-        buffer.append(contentsOf: points)
-        newSampleCounter += points.count
-
-        if buffer.count > windowSize {
-            buffer.removeFirst(buffer.count - windowSize)
+        if rawBuffer.count < windowSize {
+            onStatusChanged?("資料累積中 (\(rawBuffer.count)/\(windowSize))")
+            return
         }
 
-        guard buffer.count == windowSize else { return }
+        if accumulatedSinceLastAnalysis >= strideSize {
+            onStatusChanged?("資料正常")
 
-        // 每累積 50 筆新資料（0.5 秒）觸發一次演算法計算
-        if newSampleCounter >= stepSize {
-            newSampleCounter = 0
+            let windowData = Array(rawBuffer.suffix(windowSize))
+            let result = analyzer.analyze(data: windowData)
+            onAnalysisUpdated?(result, windowData)
+            onLiveAnalysisUpdated?(result, windowData)
 
-            let result = analyzer.analyze(data: buffer)
-            DispatchQueue.main.async { [weak self] in
-                self?.onAnalysisUpdated?(result)
+            let newBatch = Array(rawBuffer.suffix(accumulatedSinceLastAnalysis))
+            onNewRawBatchAppended?(newBatch)
+
+            accumulatedSinceLastAnalysis = 0
+
+            if rawBuffer.count > 1000 {
+                rawBuffer.removeFirst(rawBuffer.count - windowSize)
             }
         }
     }
 
-    /// 監聽藍牙硬體狀態變更，若藍牙非可用狀態則重置緩衝區
+    /// 批次接收並處理多筆連續取樣點
+    /// - Parameter points: 批次收到的震顫取樣點陣列
+    func pushRawPoints(_ points: [TremorDataPoint]) {
+        for point in points {
+            pushRawPoint(point)
+        }
+    }
+
+    /// 檢查並於馬達狀態產生實質變更時觸發狀態廣播
+    /// - Parameter rawValue: 原始硬體回傳之致動旗標（0 代表停止，1 代表致動）
+    private func publishMotorStateIfNeeded(_ rawValue: UInt8) {
+        guard rawValue == 0 || rawValue == 1 else {
+            print("[Pipeline] WARNING: motor_enabled 非 0/1：\(rawValue)")
+            return
+        }
+
+        guard lastMotorEnabled != rawValue else {
+            return
+        }
+
+        lastMotorEnabled = rawValue
+        onMotorEnabledChanged?(rawValue == 1)
+    }
+
+    /// 轉發滑桿微調指令至底層藍牙管理器
+    /// - Parameter offsetMm: 相對線長調整量（單位：公釐）
+    public func sendLengthAdjustment(_ offsetMm: Int) {
+        print("[Pipeline] sendLengthAdjustment: \(offsetMm) mm")
+
+        guard let sender = onSendLengthAdjustment else {
+            print("[Pipeline] ERROR: onSendLengthAdjustment 尚未綁定到 BluetoothManager")
+            return
+        }
+
+        sender(offsetMm)
+    }
+
+    /// 轉發手動數值輸入微調指令至底層藍牙管理器
+    /// - Parameter signedMm: 帶正負號之相對位移量（單位：公釐）
+    public func sendManualLengthInput(_ signedMm: Int) {
+        print("[Pipeline] sendManualLengthInput: \(signedMm) mm")
+
+        guard let sender = onSendManualLengthInput else {
+            print("[Pipeline] ERROR: onSendManualLengthInput 尚未綁定到 BluetoothManager")
+            return
+        }
+
+        sender(signedMm)
+    }
+
+    /// 重設管線內部緩衝區與時序計數狀態
+    public func resetBuffer() {
+        rawBuffer.removeAll()
+        accumulatedSinceLastAnalysis = 0
+        lastMotorEnabled = nil
+        onStatusChanged?("資料累積中 (0/\(windowSize))")
+    }
+}
+
+extension TremorPipeline: BluetoothManagerDelegate {
+
+    /// 處理藍牙手套電量資訊更新通知
     /// - Parameters:
-    ///   - manager: 發送事件之 BluetoothManager 實例
-    ///   - state: 最新之 CBManagerState 狀態
+    ///   - manager: 藍牙傳輸管理實體
+    ///   - battery: 最新接收之電池狀態結構
+    public func bluetoothManager(
+        _ manager: BluetoothManager,
+        didUpdateBattery battery: BatteryStatus
+    ) {
+        DispatchQueue.main.async { [weak self] in
+            self?.onBatteryUpdated?(battery)
+        }
+    }
+
+    /// 處理藍牙手套接收到的原始取樣點批次資料
+    /// - Parameters:
+    ///   - manager: 藍牙傳輸管理實體
+    ///   - points: 解析完成之震顫取樣點集合
+    public func bluetoothManager(
+        _ manager: BluetoothManager,
+        didReceivePoints points: [TremorDataPoint]
+    ) {
+        DispatchQueue.main.async { [weak self] in
+            self?.pushRawPoints(points)
+        }
+    }
+
+    /// 處理手機系統藍牙硬體狀態變更事件
+    /// - Parameters:
+    ///   - manager: 藍牙傳輸管理實體
+    ///   - state: 最新之 CoreBluetooth 狀態列舉值
     public func bluetoothManager(
         _ manager: BluetoothManager,
         didUpdateState state: CBManagerState
     ) {
         if state != .poweredOn {
-            buffer.removeAll()
-            newSampleCounter = 0
+            resetBuffer()
+        }
+
+        DispatchQueue.main.async { [weak self] in
+            self?.onBluetoothStateChanged?(state)
         }
     }
 
-    /// 監聽藍牙連線狀態變更，若斷線則清空緩衝區並派發狀態更新事件
+    /// 處理藍牙周邊裝置連線與斷線狀態變更事件
     /// - Parameters:
-    ///   - manager: 發送事件之 BluetoothManager 實例
-    ///   - isConnected: 是否已成功連線
+    ///   - manager: 藍牙傳輸管理實體
+    ///   - isConnected: 藍牙連線狀態旗標
     public func bluetoothManager(
         _ manager: BluetoothManager,
         didUpdateConnection isConnected: Bool
     ) {
         if !isConnected {
-            buffer.removeAll()
-            newSampleCounter = 0
+            resetBuffer()
         }
+
         DispatchQueue.main.async { [weak self] in
             self?.onConnectionChanged?(isConnected)
         }
