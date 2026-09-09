@@ -129,7 +129,7 @@ struct AccountSettingsView: View {
         }
     }
 
-    /// 病患端連動介面（支援一對多）
+    /// 病患端連動介面（支援一對多，並可管理個別照護者權限）
     @ViewBuilder
     private var patientBondView: some View {
         Button(action: {
@@ -155,18 +155,25 @@ struct AccountSettingsView: View {
                 .font(.footnote)
                 .foregroundColor(.gray)
         } else {
-            ForEach(boundCaregivers, id: \.partnerEmail) { caregiver in
-                HStack {
-                    VStack(alignment: .leading, spacing: 4) {
-                        HStack {
-                            Text(
-                                caregiver.partnerName.isEmpty
-                                    ? "未具名照護者" : caregiver.partnerName
-                            )
-                            .font(.body)
-                            .bold()
+            ForEach(Array(boundCaregivers.enumerated()), id: \.element.partnerEmail) { index, caregiver in
+                // 點擊可以進入該照護者的專屬權限設定頁面
+                NavigationLink {
+                    CaregiverDetailSettingsView(
+                        caregiver: $boundCaregivers[index],
+                        loginVM: loginVM,
+                        onUnlink: {
+                            targetCaregiverToUnlink = caregiver
+                            showUnlinkConfirmationAlert = true
+                        }
+                    )
+                } label: {
+                    HStack(spacing: 12) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack(spacing: 6) {
+                                Text(caregiver.partnerName.isEmpty ? "未具名照護者" : caregiver.partnerName)
+                                    .font(.body)
+                                    .bold()
 
-                            HStack(spacing: 4) {
                                 Circle()
                                     .frame(width: 6, height: 6)
                                     .foregroundColor(.green)
@@ -174,35 +181,13 @@ struct AccountSettingsView: View {
                                     .font(.caption2)
                                     .foregroundColor(.green)
                             }
+
+                            Text(caregiver.partnerEmail)
+                                .font(.footnote)
+                                .foregroundColor(.gray)
                         }
-
-                        Text(caregiver.partnerEmail)
-                            .font(.footnote)
-                            .foregroundColor(.gray)
                     }
-
-                    Spacer()
-
-                    Button(role: .destructive) {
-                        targetCaregiverToUnlink = caregiver
-                        showUnlinkConfirmationAlert = true
-                    } label: {
-                        Text("解除")
-                            .font(.caption.bold())
-                            .foregroundColor(.red)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 5)
-                            .background(Color.red.opacity(0.1))
-                            .cornerRadius(8)
-                    }
-                    .buttonStyle(.plain)
-                }
-                .padding(.vertical, 2)
-            }
-            .onDelete { indexSet in
-                if let firstIndex = indexSet.first {
-                    targetCaregiverToUnlink = boundCaregivers[firstIndex]
-                    showUnlinkConfirmationAlert = true
+                    .padding(.vertical, 4)
                 }
             }
         }
@@ -382,5 +367,91 @@ struct AccountSettingsView: View {
             alertMessage = "解除連動失敗：\(error.localizedDescription)"
             showAlert = true
         }
+    }
+}
+
+/// 照護者詳細設定與權限管理子頁面
+struct CaregiverDetailSettingsView: View {
+    @Binding var caregiver: LinkedPartnerResponseDTO
+    @ObservedObject var loginVM: LoginViewModel
+    var onUnlink: () -> Void
+
+    var body: some View {
+        Form {
+            Section(header: Text("照護者資訊")) {
+                HStack {
+                    Text("姓名")
+                    Spacer()
+                    Text(caregiver.partnerName.isEmpty ? "未具名" : caregiver.partnerName)
+                        .foregroundColor(.gray)
+                }
+                HStack {
+                    Text("電子信箱")
+                    Spacer()
+                    Text(caregiver.partnerEmail)
+                        .foregroundColor(.gray)
+                }
+            }
+
+            Section(
+                header: Text("協助權限控管"),
+                footer: Text("開啟後，該照護者將能協助您建立用藥清單或新增用藥紀錄。")
+            ) {
+                Toggle(
+                    "允許協助建立或修改用藥清單",
+                    isOn: Binding(
+                        get: { caregiver.canManageMedPlan ?? false },
+                        set: { newValue in
+                            caregiver.canManageMedPlan = newValue
+                            
+                            let requestDTO = PermissionRequestDTO(
+                                caregiverID: caregiver.caregiverID ?? 0,
+                                canManageMedPlan: caregiver.canManageMedPlan,
+                                canAddMedRecord: caregiver.canAddMedRecord
+                            )
+                            
+                            Task {
+                                await loginVM.updateCaregiverPermission(caregiver: requestDTO)
+                            }
+                        }
+                    )
+                )
+
+                Toggle(
+                    "允許協助新增或修改用藥紀錄",
+                    isOn: Binding(
+                        get: { caregiver.canAddMedRecord ?? false },
+                        set: { newValue in
+                            caregiver.canAddMedRecord = newValue
+                            
+                            let requestDTO = PermissionRequestDTO(
+                                caregiverID: caregiver.caregiverID ?? 0,
+                                canManageMedPlan: caregiver.canManageMedPlan,
+                                canAddMedRecord: caregiver.canAddMedRecord
+                            )
+                            
+                            Task {
+                                await loginVM.updateCaregiverPermission(caregiver: requestDTO)
+                            }
+                        }
+                    )
+                )
+            }
+
+            Section {
+                Button(role: .destructive) {
+                    onUnlink()
+                } label: {
+                    HStack {
+                        Spacer()
+                        Text("解除與此照護者的綁定")
+                            .bold()
+                        Spacer()
+                    }
+                }
+            }
+        }
+        .navigationTitle("照護者設定")
+        .navigationBarTitleDisplayMode(.inline)
     }
 }

@@ -92,21 +92,9 @@ struct MedicationPlan: Identifiable, Hashable {
     /// 勾選之每月日期原始字串
     var monthDaysRaw: String
 
-    /// 初始化用藥計畫實體模型
-    /// - Parameters:
-    ///   - id: 用藥計畫 ID
-    ///   - userID: 使用者 ID
-    ///   - name: 藥物名稱
-    ///   - dose: 用藥劑量
-    ///   - medType: 藥品劑型分類
-    ///   - defaultPatchRegion: 預設貼片黏貼部位（若非貼片劑型則為 nil）
-    ///   - timeSlotsRaw: 服藥時間點原始字串（以逗號分隔，例如："08:00,18:00"）
-    ///   - startDate: 推算重複週期的起始基準日期
-    ///   - repeatFrequency: 重複週期頻率
-    ///   - customInterval: 自訂重複週期之間隔數值
-    ///   - customUnit: 自訂重複週期之時間單位
-    ///   - weekdaysRaw: 勾選之星期原始字串
-    ///   - monthDaysRaw: 勾選之每月日期原始字串
+    /// 建立者身分角色（0: 患者本人, 1: 照護者）
+    var creatorRole: Int?
+
     init(
         id: Int? = nil,
         userID: Int,
@@ -120,7 +108,8 @@ struct MedicationPlan: Identifiable, Hashable {
         customInterval: Int = 1,
         customUnit: CustomRepeatUnit = .day,
         weekdaysRaw: String = "",
-        monthDaysRaw: String = ""
+        monthDaysRaw: String = "",
+        creatorRole: Int? = nil
     ) {
         self.id = id
         self.userID = userID
@@ -135,6 +124,7 @@ struct MedicationPlan: Identifiable, Hashable {
         self.customUnit = customUnit
         self.weekdaysRaw = weekdaysRaw
         self.monthDaysRaw = monthDaysRaw
+        self.creatorRole = creatorRole
     }
 
     /// 將 timeSlotsRaw 解析為乾淨的時間點字串陣列
@@ -212,8 +202,6 @@ struct MedicationPlan: Identifiable, Hashable {
     }
 
     /// 判斷指定目標日期是否符合服藥排程規則
-    /// - Parameter targetDate: 欲比對檢查之目標日期
-    /// - Returns: 若該日期需要服藥則回傳 true，否則回傳 false
     func shouldTakeMedicine(on targetDate: Date) -> Bool {
         let calendar = Calendar.current
 
@@ -314,7 +302,6 @@ struct MedicationPlan: Identifiable, Hashable {
     }
 
     /// 將領域模型轉換為資料傳輸物件 (DTO)
-    /// - Returns: 對應之 MedicationPlanDTO 實例
     func toDTO() -> MedicationPlanDTO {
         MedicationPlanDTO(
             id: self.id,
@@ -329,7 +316,8 @@ struct MedicationPlan: Identifiable, Hashable {
             customInterval: self.customInterval,
             customUnit: self.customUnit,
             weekdaysRaw: self.weekdaysRaw,
-            monthDaysRaw: self.monthDaysRaw
+            monthDaysRaw: self.monthDaysRaw,
+            creatorRole: self.creatorRole
         )
     }
 }

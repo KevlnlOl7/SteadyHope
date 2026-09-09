@@ -63,7 +63,68 @@ struct MedicationPlanManageView: View {
                         Image(systemName: "pill.fill")
                             .foregroundColor(.blue)
                             .frame(width: 20)
+
+                        // 藥品名稱輸入框
                         TextField("藥品名稱", text: $planVM.planName)
+
+                        // 下拉式快選選
+                        Menu {
+                            let groupedList = Dictionary(
+                                grouping: MedicationPresets.oralList,
+                                by: { $0.category }
+                            )
+
+                            ForEach(groupedList.keys.sorted(), id: \.self) {
+                                category in
+                                Section(header: Text(category)) {
+                                    ForEach(groupedList[category] ?? []) {
+                                        item in
+                                        Button {
+                                            planVM.planName =
+                                                "\(item.name) (\(item.strength))"
+
+                                            // 自動解析常用劑量與單位
+                                            let doseStr =
+                                                item.commonDoses.first ?? "1顆"
+                                            if doseStr == "半顆" {
+                                                planVM.planDose = "0.5"
+                                                planVM.planUnit = "顆"
+                                            } else {
+                                                planVM.planDose = String(
+                                                    doseStr.filter {
+                                                        $0.isNumber || $0 == "."
+                                                    }
+                                                )
+                                                let unit = String(
+                                                    doseStr.filter {
+                                                        !$0.isNumber
+                                                            && $0 != "."
+                                                    }
+                                                )
+                                                planVM.planUnit =
+                                                    unit.isEmpty ? "顆" : unit
+                                            }
+                                        } label: {
+                                            Text(
+                                                "\(item.name) (\(item.strength))"
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        } label: {
+                            HStack(spacing: 4) {
+                                Text("快選")
+                                    .font(.subheadline.bold())
+                                Image(systemName: "chevron.down")
+                                    .font(.caption.bold())
+                            }
+                            .foregroundColor(.blue)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(Color.blue.opacity(0.1))
+                            .cornerRadius(8)
+                        }
                     }
                     .padding()
 

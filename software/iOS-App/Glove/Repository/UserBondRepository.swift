@@ -60,4 +60,16 @@ class UserBondRepository {
         let token = try getValidToken()
         try await bondService.unlinkBond(token: token, request: nil)
     }
+    
+    /// 更新指定照護者的權限（限病患端呼叫）
+    /// - Parameters:
+    ///   - caregiverID: 照護者 ID
+    ///   - canManageMedPlan: 是否能管理用藥清單
+    ///   - canAddMedRecord: 是否能新增用藥紀錄
+    func updateCaregiverPermissions(caregiverID: Int,canManageMedPlan: Bool? = nil,canAddMedRecord: Bool? = nil) async throws {
+        let token = try getValidToken()
+        try await bondService.updateCaregiverPermissions(
+            token: token,caregiverID: caregiverID,canManageMedPlan: canManageMedPlan,canAddMedRecord: canAddMedRecord
+        )
+    }
 }

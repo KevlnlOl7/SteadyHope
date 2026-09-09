@@ -11,6 +11,7 @@ struct MedicationRecordDTO: Codable {
     var patchRegion: String?
     var skinCondition: String?
     var skinImageDataList: [String]
+    var creatorRole: Int?
 
     /// 將 DTO 轉換為本機實體模型
     func toModel() -> MedicationRecord {
@@ -26,7 +27,8 @@ struct MedicationRecordDTO: Codable {
             medType: MedicationType(rawValue: self.medType) ?? .oral,
             patchRegion: resolvedPatchRegion,
             skinCondition: self.skinCondition,
-            skinImageDataList: imageData
+            skinImageDataList: imageData,
+            creatorRole: self.creatorRole
         )
     }
 }
@@ -40,4 +42,5 @@ struct UpdateMedicationRequestDTO: Codable {
     var patchRegion: String?
     var skinCondition: String?
     var skinImageDataList: [Data]?
+    var creatorRole: Int?
 }

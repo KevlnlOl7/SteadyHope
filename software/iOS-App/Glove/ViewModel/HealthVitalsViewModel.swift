@@ -3,7 +3,7 @@ import Foundation
 import SwiftUI
 
 @MainActor
-class HealthVitalsViewModel: ObservableObject {
+final class HealthVitalsViewModel: ObservableObject {
     @Published var vitalsList: [HealthVitalsResponseDTO] = []
     @Published var isLoading: Bool = false
 

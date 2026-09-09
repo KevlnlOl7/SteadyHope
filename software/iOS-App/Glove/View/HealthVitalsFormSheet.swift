@@ -43,6 +43,10 @@ struct HealthVitalsFormSheet: View {
                     .foregroundColor(.secondary)
                 }
                 ToolbarItem(placement: .confirmationAction) {
+                    let isSettedSystolic = !vitalsVM.systolicBP.trimmingCharacters(in: .whitespaces).isEmpty
+                    let isSettedDiastolic = !vitalsVM.diastolicBP.trimmingCharacters(in: .whitespaces).isEmpty
+                    let isBloodPressureInvalid = isSettedSystolic != isSettedDiastolic
+
                     Button("儲存") {
                         Task {
                             let dateString = filterDate.toString(format: "yyyy-MM-dd")
@@ -50,7 +54,8 @@ struct HealthVitalsFormSheet: View {
                         }
                     }
                     .font(.system(size: 16, weight: .bold))
-                    .foregroundColor(.blue)
+                    .foregroundColor(isBloodPressureInvalid ? .gray : .blue)
+                    .disabled(isBloodPressureInvalid)
                 }
             }
         }
@@ -140,6 +145,16 @@ struct HealthVitalsFormSheet: View {
                         .font(.caption.bold())
                         .foregroundColor(.secondary)
                         .frame(width: 48, alignment: .trailing)
+                }
+
+                let isSettedSystolic = !vitalsVM.systolicBP.trimmingCharacters(in: .whitespaces).isEmpty
+                let isSettedDiastolic = !vitalsVM.diastolicBP.trimmingCharacters(in: .whitespaces).isEmpty
+
+                if isSettedSystolic != isSettedDiastolic {
+                    Text("* 血壓欄位需同時填寫收縮壓與舒張壓")
+                        .font(.caption2)
+                        .foregroundColor(.red)
+                        .padding(.top, 2)
                 }
             }
 

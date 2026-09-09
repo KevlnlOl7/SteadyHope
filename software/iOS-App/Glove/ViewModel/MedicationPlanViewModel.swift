@@ -15,7 +15,7 @@ struct ScheduledDoseItem: Identifiable {
 }
 
 @MainActor
-class MedicationPlanViewModel: ObservableObject {
+final class MedicationPlanViewModel: ObservableObject {
     @Published var planList: [MedicationPlan] = []
 
     // 處方管理表單屬性
@@ -102,9 +102,7 @@ class MedicationPlanViewModel: ObservableObject {
                 let success = try await planRepository.savePlan(planToSave)
                 if success {
                     await loadAllPlans()
-                    await MainActor.run {
-                        resetPlanForm()
-                    }
+                    resetPlanForm()
                 }
             } catch {
                 print("儲存排程失敗: \(error)")
@@ -128,11 +126,9 @@ class MedicationPlanViewModel: ObservableObject {
             do {
                 let success = try await planRepository.deletePlan(id: planID)
                 if success {
-                    await MainActor.run {
-                        planList.remove(at: index)
-                        if editingPlanIndex == index {
-                            resetPlanForm()
-                        }
+                    planList.remove(at: index)
+                    if editingPlanIndex == index {
+                        resetPlanForm()
                     }
                 }
             } catch {

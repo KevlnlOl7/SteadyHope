@@ -37,10 +37,26 @@ struct LinkedPartnerResponseDTO: Codable, Identifiable, Hashable {
 
     /// 連動對象的身份角色（0: 被照護者 / 患者, 1: 照護者）
     let partnerRole: Int?
+
+    /// 是否允許協助建立與管理用藥清單
+    var canManageMedPlan: Bool?
+
+    /// 是否允許協助新增用藥紀錄
+    var canAddMedRecord: Bool?
+    
+    let caregiverID: Int?
 }
 
 /// 解除綁定關係請求之資料傳輸物件
 struct UnlinkBondRequestDTO: Codable {
     var caregiverEmail: String?
     var caregiverID: Int?
+}
+
+
+// 建立傳遞的 Body 結構
+struct PermissionRequestDTO: Encodable {
+    let caregiverID: Int
+    let canManageMedPlan: Bool?
+    let canAddMedRecord: Bool?
 }

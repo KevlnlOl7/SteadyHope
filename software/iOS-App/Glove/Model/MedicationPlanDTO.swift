@@ -15,22 +15,8 @@ struct MedicationPlanDTO: Codable {
     var customUnit: CustomRepeatUnit
     var weekdaysRaw: String
     var monthDaysRaw: String
+    var creatorRole: Int?
 
-    /// 初始化用藥計畫傳輸物件
-    /// - Parameters:
-    ///   - id: 用藥計畫 ID
-    ///   - userID: 使用者 ID
-    ///   - name: 藥物名稱
-    ///   - dose: 用藥劑量
-    ///   - medType: 藥品劑型分類
-    ///   - defaultPatchRegion: 預設貼片部位
-    ///   - timeSlotsRaw: 服藥時間點原始字串
-    ///   - startDate: 重複週期起始日期
-    ///   - repeatFrequency: 重複週期頻率
-    ///   - customInterval: 自訂重複週期數值
-    ///   - customUnit: 自訂重複週期單位
-    ///   - weekdaysRaw: 勾選之星期原始字串
-    ///   - monthDaysRaw: 勾選之每月日期原始字串
     init(
         id: Int? = nil,
         userID: Int,
@@ -44,7 +30,8 @@ struct MedicationPlanDTO: Codable {
         customInterval: Int,
         customUnit: CustomRepeatUnit,
         weekdaysRaw: String,
-        monthDaysRaw: String
+        monthDaysRaw: String,
+        creatorRole: Int? = nil
     ) {
         self.id = id
         self.userID = userID
@@ -59,11 +46,10 @@ struct MedicationPlanDTO: Codable {
         self.customUnit = customUnit
         self.weekdaysRaw = weekdaysRaw
         self.monthDaysRaw = monthDaysRaw
+        self.creatorRole = creatorRole
     }
 
     /// 從 JSON 解碼器初始化並處理空字串轉 nil 防呆
-    /// - Parameter decoder: JSON 解碼器
-    /// - Throws: 解碼失敗時拋出錯誤
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
 
@@ -87,10 +73,10 @@ struct MedicationPlanDTO: Codable {
         customUnit = try container.decode(CustomRepeatUnit.self, forKey: .customUnit)
         weekdaysRaw = try container.decode(String.self, forKey: .weekdaysRaw)
         monthDaysRaw = try container.decode(String.self, forKey: .monthDaysRaw)
+        creatorRole = try container.decodeIfPresent(Int.self, forKey: .creatorRole)
     }
 
     /// 將 DTO 轉換為本機領域模型 MedicationPlan
-    /// - Returns: MedicationPlan 實例
     func toModel() -> MedicationPlan {
         MedicationPlan(
             id: id,
@@ -105,7 +91,8 @@ struct MedicationPlanDTO: Codable {
             customInterval: customInterval,
             customUnit: customUnit,
             weekdaysRaw: weekdaysRaw,
-            monthDaysRaw: monthDaysRaw
+            monthDaysRaw: monthDaysRaw,
+            creatorRole: creatorRole
         )
     }
 }

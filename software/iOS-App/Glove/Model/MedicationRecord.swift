@@ -56,17 +56,10 @@ class MedicationRecord: Identifiable {
     /// 貼片黏貼處皮膚患部照片之二進位資料清單
     var skinImageDataList: [Data]
 
+    /// 建立者身分角色（0: 患者本人, 1: 照護者）
+    var creatorRole: Int?
+
     /// 初始化用藥紀錄實體模型
-    /// - Parameters:
-    ///   - id: 用藥紀錄 ID
-    ///   - userID: 使用者 ID
-    ///   - date: 紀錄時間
-    ///   - name: 藥物名稱
-    ///   - dose: 用藥劑量
-    ///   - medType: 藥品劑型分類
-    ///   - patchRegion: 貼片黏貼部位（若非貼片劑型則為 nil）
-    ///   - skinCondition: 貼片黏貼處皮膚狀況描述
-    ///   - skinImageDataList: 貼片黏貼處皮膚患部照片之二進位資料清單
     init(
         id: Int? = nil,
         userID: Int,
@@ -76,7 +69,8 @@ class MedicationRecord: Identifiable {
         medType: MedicationType = .oral,
         patchRegion: PatchRegion? = nil,
         skinCondition: String? = nil,
-        skinImageDataList: [Data] = []
+        skinImageDataList: [Data] = [],
+        creatorRole: Int? = nil
     ) {
         self.id = id
         self.userID = userID
@@ -87,10 +81,10 @@ class MedicationRecord: Identifiable {
         self.patchRegion = patchRegion
         self.skinCondition = skinCondition
         self.skinImageDataList = skinImageDataList
+        self.creatorRole = creatorRole
     }
 
     /// 將 SwiftData 模型轉換為傳輸用 DTO 以便發送給後端 API
-    /// - Returns: 包含 Base64 圖片編碼之 MedicationRecordDTO 實例
     func toDTO() -> MedicationRecordDTO {
         let base64Images = self.skinImageDataList.map {
             $0.base64EncodedString()
@@ -105,7 +99,8 @@ class MedicationRecord: Identifiable {
             medType: self.medType.rawValue,
             patchRegion: self.patchRegion?.rawValue,
             skinCondition: self.skinCondition,
-            skinImageDataList: base64Images
+            skinImageDataList: base64Images,
+            creatorRole: self.creatorRole
         )
     }
 }

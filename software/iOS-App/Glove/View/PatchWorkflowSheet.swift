@@ -12,6 +12,12 @@ struct PatchWorkflowSheet: View {
     /// 接收欲編輯的紀錄（若為 nil 代表為全新打卡）
     var editingRecord: MedicationRecord? = nil
 
+    /// 紐普洛貼片規格選項
+    let strengthOptions = ["2mg", "4mg", "6mg", "8mg"]
+
+    /// 當前選取之貼片劑量規格
+    @State private var selectedStrength: String = "2mg"
+
     /// 是否已撕除舊貼片之安全確認狀態
     @State private var hasRemovedOldPatch: Bool = false
 
@@ -60,6 +66,7 @@ struct PatchWorkflowSheet: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 20) {
+                    patchStrengthSection
                     safetyCheckSection
                     bodyRegionPickerSection
                     skinConditionSection
@@ -107,9 +114,55 @@ struct PatchWorkflowSheet: View {
         }
     }
 
+    /// 貼片劑量規格選擇卡片
+    private var patchStrengthSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 6) {
+                Image(systemName: "square.grid.2x2.fill")
+                    .foregroundColor(.orange)
+                Text("Neupro 紐普洛穿皮貼片劑")
+                    .font(.subheadline.bold())
+            }
+
+            Text("請選擇今日貼片劑量規格：")
+                .font(.caption)
+                .foregroundColor(.secondary)
+
+            HStack(spacing: 10) {
+                ForEach(strengthOptions, id: \.self) { strength in
+                    Button {
+                        selectedStrength = strength
+                    } label: {
+                        Text(strength)
+                            .font(.subheadline.bold())
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 8)
+                            .background(
+                                selectedStrength == strength
+                                    ? Color.orange : Color.gray.opacity(0.12)
+                            )
+                            .foregroundColor(
+                                selectedStrength == strength ? .white : .primary
+                            )
+                            .cornerRadius(8)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+        .padding()
+        .background(Color.white)
+        .cornerRadius(14)
+    }
+
     /// 帶入既有貼片舊資料邏輯
     private func loadExistingDataIfNeeded() {
         guard let record = editingRecord else { return }
+
+        // 帶入既有劑量規格
+        if let matched = strengthOptions.first(where: { record.name.contains($0) || record.dose.contains($0) }) {
+            selectedStrength = matched
+        }
 
         // 確認撕除直接勾選
         hasRemovedOldPatch = true
@@ -152,6 +205,7 @@ struct PatchWorkflowSheet: View {
         if let record = editingRecord, let recordID = record.id {
             medVM.updatePatchRecord(
                 recordID: recordID,
+                dose: selectedStrength,
                 originalDate: record.date,
                 region: region,
                 skinCondition: selectedSkinCondition,
@@ -161,6 +215,7 @@ struct PatchWorkflowSheet: View {
             )
         } else {
             medVM.savePatchRecord(
+                dose: selectedStrength,
                 region: region,
                 skinCondition: selectedSkinCondition,
                 isCustomCondition: isCustomCondition,

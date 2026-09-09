@@ -5,10 +5,12 @@ import SwiftUI
 import UserNotifications
 
 @MainActor
-class MedicationViewModel: ObservableObject {
+final class MedicationViewModel: ObservableObject {
+
+    /// 用藥紀錄清單資料來源
     @Published var medicationList: [MedicationRecord] = []
 
-    // 單次紀錄表單狀態
+    /// 單次紀錄表單輸入狀態（名稱、劑量數值、劑量單位、用藥時間、給藥型態與貼片部位）
     @Published var inputName: String = ""
     @Published var inputDose: String = ""
     @Published var inputUnit: String = ""
@@ -16,19 +18,19 @@ class MedicationViewModel: ObservableObject {
     @Published var selectedMedType: MedicationType = .oral
     @Published var selectedPatchRegion: PatchRegion?
 
-    // 編輯既有紀錄狀態
+    /// 既有用藥紀錄編輯狀態與暫存屬性
     @Published var editingRecord: MedicationRecord?
     @Published var editName: String = ""
     @Published var editDose: String = ""
     @Published var editDate: Date = Date()
     @Published var editMedType: MedicationType = .oral
     @Published var editPatchRegion: PatchRegion?
-    /// 目前正在編輯的紀錄 ID（若為 nil 代表是新增模式）
     @Published var editingRecordID: Int? = nil
 
+    /// 用藥資料儲存庫實體
     private let repository = MedicationRepository()
 
-    /// 新增單次用藥紀錄表單輸入內容是否有效
+    /// 驗證單次用藥新增表單之各欄位是否皆已正確填寫
     var isAddRecordValid: Bool {
         let isNameFilled = !inputName.trimmingCharacters(in: .whitespaces).isEmpty
         let isDoseFilled = !inputDose.trimmingCharacters(in: .whitespaces).isEmpty
@@ -72,7 +74,6 @@ class MedicationViewModel: ObservableObject {
             let timeMatch = item.timeString == "未設定時間" || record.date.toString(format: "HH:mm") == item.timeString
             return nameMatch && doseMatch && typeMatch && dateMatch && timeMatch
         }) {
-            // 取消打卡並呼叫 API 刪除紀錄
             let recordToDelete = medicationList[existingIndex]
             if let recordID = recordToDelete.id {
                 cancelNotification(notificationID: "med_\(recordID)")
@@ -88,7 +89,6 @@ class MedicationViewModel: ObservableObject {
                 }
             }
         } else {
-            // 執行打卡並呼叫 API 新增紀錄
             let targetDate = combine(date: date, withTimeString: item.timeString)
             let newRecord = MedicationRecord(
                 id: nil,
@@ -171,7 +171,6 @@ class MedicationViewModel: ObservableObject {
         self.selectedMedType = record.medType
         self.selectedPatchRegion = record.patchRegion
 
-        // 自動拆解「數值」與「文字單位」（例如 "1.5顆" -> dose: "1.5", unit: "顆"）
         let rawDose = record.dose.trimmingCharacters(in: .whitespaces)
         if let numberMatch = rawDose.range(
             of: #"^[0-9]+(\.[0-9]+)?"#,
@@ -231,7 +230,7 @@ class MedicationViewModel: ObservableObject {
         }
     }
 
-    /// 取消編輯，清空輸入框與選取狀態
+    /// 取消編輯模式並重設輸入表單與選取狀態
     func cancelEditing() {
         self.editingRecordID = nil
         clearInputs()
@@ -239,6 +238,7 @@ class MedicationViewModel: ObservableObject {
 
     /// 儲存貼片用藥紀錄（包含背景圖片壓縮與後端同步）
     /// - Parameters:
+    ///   - dose: 貼片劑量規格
     ///   - region: 貼片部位
     ///   - skinCondition: 貼片處皮膚狀況描述
     ///   - isCustomCondition: 是否為自訂皮膚狀況
@@ -246,6 +246,7 @@ class MedicationViewModel: ObservableObject {
     ///   - images: 患部照片圖片清單
     ///   - planUserID: 使用者 ID
     func savePatchRecord(
+        dose: String,
         region: PatchRegion,
         skinCondition: String,
         isCustomCondition: Bool,
@@ -266,7 +267,6 @@ class MedicationViewModel: ObservableObject {
         let currentDate = Date()
 
         Task {
-            // 背景執行圖片尺寸縮小與 JPEG 壓縮，避免阻塞主執行緒
             let imageDatas = await Task.detached(priority: .userInitiated) {
                 images.compactMap { image -> Data? in
                     let targetWidth: CGFloat = 800
@@ -300,8 +300,8 @@ class MedicationViewModel: ObservableObject {
                 id: nil,
                 userID: planUserID,
                 date: currentDate,
-                name: "貼片",
-                dose: "",
+                name: "Neupro 紐普洛穿皮貼片",
+                dose: dose,
                 medType: .patch,
                 patchRegion: region,
                 skinCondition: finalCondition,
@@ -323,6 +323,7 @@ class MedicationViewModel: ObservableObject {
     /// 更新貼片用藥紀錄 (PUT /medication/:id)
     /// - Parameters:
     ///   - recordID: 欲更新之紀錄 ID
+    ///   - dose: 貼片劑量規格
     ///   - originalDate: 原用藥記錄日期時間
     ///   - region: 貼片部位
     ///   - skinCondition: 皮膚狀況描述
@@ -332,6 +333,7 @@ class MedicationViewModel: ObservableObject {
     ///   - targetDateString: 重新載入之目標日期字串（格式：yyyy-MM-dd）
     func updatePatchRecord(
         recordID: Int,
+        dose: String,
         originalDate: Date,
         region: PatchRegion,
         skinCondition: String,
@@ -373,8 +375,8 @@ class MedicationViewModel: ObservableObject {
 
             let updateDTO = UpdateMedicationRequestDTO(
                 date: originalDate,
-                name: "貼片",
-                dose: "",
+                name: "Neupro 紐普洛穿皮貼片",
+                dose: dose,
                 medType: MedicationType.patch.rawValue,
                 patchRegion: region.rawValue,
                 skinCondition: finalCondition,
@@ -417,7 +419,6 @@ class MedicationViewModel: ObservableObject {
                     }
                 }
             } else {
-                // 本地端防呆清理
                 medicationList.removeAll { record in
                     record.name == recordToDelete.name
                         && record.dose == recordToDelete.dose

@@ -162,6 +162,47 @@ class UserBondService {
             throw NetworkError.serverError(reason: reason)
         }
     }
+    
+    /// 更新照護者權限（限病患端呼叫）
+    /// - Parameters:
+    ///   - token: 使用者驗證 Token (Patient JWT)
+    ///   - caregiverID: 照護者 ID
+    ///   - canManageMedPlan: 是否能管理用藥清單 (選填)
+    ///   - canAddMedRecord: 是否能新增用藥紀錄 (選填)
+    func updateCaregiverPermissions(
+        token: String,
+        caregiverID: Int,
+        canManageMedPlan: Bool? = nil,
+        canAddMedRecord: Bool? = nil
+    ) async throws {
+        guard let url = URL(string: "\(baseURL)/permissions") else {
+            throw NetworkError.invalidURL
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "PUT"
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let bodyObj = PermissionRequestDTO(
+            caregiverID: caregiverID,
+            canManageMedPlan: canManageMedPlan,
+            canAddMedRecord: canAddMedRecord
+        )
+        request.httpBody = try JSONEncoder().encode(bodyObj)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw NetworkError.noData
+        }
+
+        // 成功回傳 200 OK
+        guard [200, 204].contains(httpResponse.statusCode) else {
+            let reason = parseServerError(data: data, code: httpResponse.statusCode)
+            throw NetworkError.serverError(reason: reason)
+        }
+    }
 
     /// 解析後端錯誤原因的輔助函式
     /// - Parameters:
