@@ -169,6 +169,10 @@ struct ProfileSideMenuView: View {
 
             VStack(spacing: 4) {
                 if !isUnlinkedCaregiver {
+                    NavigationLink(destination: AssessmentView(loginVM: loginVM)) {
+                        MenuRow(icon: "list.clipboard", title: "症狀評估量表")
+                    }
+
                     NavigationLink(
                         destination: ReminderSettingsView(
                             planVM: planVM,
@@ -275,65 +279,5 @@ struct MenuRow: View {
         }
         .padding(.vertical, 10)
         .padding(.horizontal, 8)
-    }
-}
-
-// 關於我們頁面
-struct AboutUsView: View {
-    var body: some View {
-        ScrollView {
-            VStack(spacing: 24) {
-                VStack(spacing: 12) {
-                    Image(systemName: "heart.text.clipboard.fill")
-                        .font(.system(size: 64))
-                        .foregroundColor(.blue)
-
-                    Text("健康照護監測系統")
-                        .font(.title2)
-                        .fontWeight(.bold)
-
-                    Text("Version 1.0.0")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-                .padding(.top, 40)
-
-                VStack(alignment: .leading, spacing: 16) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("系統簡介")
-                            .font(.headline)
-                        Text("本系統專為照護者與使用者打造，整合用藥排程、生理量測數據、日常症狀評估與智慧提醒，提供即時、精準的遠距健康追蹤。")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                            .lineSpacing(4)
-                    }
-
-                    Divider()
-
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("主要特色")
-                            .font(.headline)
-
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("• 智慧用藥與回診提醒")
-                            Text("• 生理訊號與動作症狀追蹤")
-                            Text("• MDS-UPDRS 臨床症狀自我評估")
-                            Text("• 照護者即時狀態連動")
-                        }
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                    }
-                }
-                .padding(20)
-                .background(Color(red: 0.96, green: 0.96, blue: 0.97))
-                .cornerRadius(14)
-                .padding(.horizontal, 20)
-
-                Spacer(minLength: 40)
-            }
-        }
-        .background(Color.white)
-        .navigationTitle("關於我們")
-        .navigationBarTitleDisplayMode(.inline)
     }
 }
