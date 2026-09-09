@@ -48,7 +48,7 @@ struct ProfileView: View {
                                 NavigationLink(
                                     destination: MedicationView(
                                         loginVM: loginVM,
-                                        medVM: medVM
+                                        dataVM:dataVM
                                     )
                                 ) {
                                     DataRow(title: "用藥資料", text: "查看")

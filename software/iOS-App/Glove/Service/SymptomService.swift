@@ -1,14 +1,14 @@
 import Foundation
 
-class MedicationService {
+class SymptomService {
     private let baseURL = APIConfig.baseURL
 
-    /// 新增用藥紀錄至遠端伺服器
-    /// - Parameter record: 包含用藥詳細資訊之 MedicationRecordDTO 實例
+    /// 新增症狀紀錄至遠端伺服器
+    /// - Parameter record: 包含症狀詳細資訊之 SymptomRecordDTO 實例
     /// - Returns: 新增成功回傳 true，否則回傳 false
-    /// - Throws: 網路連線錯誤、URL 格式錯誤或權限不足時拋出 Validation 錯誤
-    func addMedication(record: MedicationRecordDTO) async throws -> Bool {
-        guard let url = URL(string: "\(baseURL)/medication/add") else {
+    /// - Throws: 網路請求異常或驗證錯誤時拋出 Validation 錯誤
+    func addSymptom(record: SymptomRecordDTO) async throws -> Bool {
+        guard let url = URL(string: "\(baseURL)/symptom/add") else {
             throw Validation.server(message: "URL 格式錯誤")
         }
         guard let token = AuthManager.shared.getToken() else {
@@ -34,16 +34,16 @@ class MedicationService {
         return httpResponse.statusCode == 200 || httpResponse.statusCode == 201
     }
 
-    /// 依指定日期查詢或獲取全部遠端用藥紀錄清單
+    /// 依指定日期查詢或獲取全部遠端症狀紀錄清單
     /// - Parameter date: 查詢日期字串（格式：yyyy-MM-dd），若為 nil 則查詢全部紀錄
-    /// - Returns: 解碼完成之 MedicationRecordDTO 陣列
+    /// - Returns: 解碼完成之 SymptomRecordDTO 陣列
     /// - Throws: 網路請求失敗、伺服器異常或資料解碼錯誤時拋出錯誤
-    func fetchMedications(for date: String? = nil) async throws -> [MedicationRecordDTO] {
+    func fetchSymptoms(for date: String? = nil) async throws -> [SymptomRecordDTO] {
         let urlString: String
         if let targetDate = date {
-            urlString = "\(baseURL)/medication/search?date=\(targetDate)"
+            urlString = "\(baseURL)/symptom/search?date=\(targetDate)"
         } else {
-            urlString = "\(baseURL)/medication/search"
+            urlString = "\(baseURL)/symptom/search"
         }
 
         guard let url = URL(string: urlString) else {
@@ -69,15 +69,15 @@ class MedicationService {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = customDateDecodingStrategy()
 
-        return try decoder.decode([MedicationRecordDTO].self, from: data)
+        return try decoder.decode([SymptomRecordDTO].self, from: data)
     }
 
-    /// 根據用藥紀錄 ID 刪除遠端伺服器上的紀錄
-    /// - Parameter id: 欲刪除之用藥紀錄 ID
+    /// 根據症狀紀錄 ID 刪除遠端伺服器上的紀錄
+    /// - Parameter id: 欲刪除之症狀紀錄 ID
     /// - Returns: 刪除成功回傳 true，否則回傳 false
     /// - Throws: 網路請求異常或驗證錯誤時拋出 Validation 錯誤
-    func deleteMedication(id: Int) async throws -> Bool {
-        guard let url = URL(string: "\(baseURL)/medication/\(id)") else {
+    func deleteSymptom(id: Int) async throws -> Bool {
+        guard let url = URL(string: "\(baseURL)/symptom/\(id)") else {
             throw Validation.server(message: "URL 格式錯誤")
         }
         guard let token = AuthManager.shared.getToken() else {
@@ -104,14 +104,12 @@ class MedicationService {
             let container = try decoder.singleValueContainer()
             let dateString = try container.decode(String.self)
 
-            // ISO8601 標準格式
             let isoFormatter = ISO8601DateFormatter()
             isoFormatter.formatOptions = [.withInternetDateTime]
             if let date = isoFormatter.date(from: dateString) {
                 return date
             }
 
-            // ISO8601 含毫秒格式
             isoFormatter.formatOptions = [
                 .withInternetDateTime,
                 .withFractionalSeconds
@@ -120,7 +118,6 @@ class MedicationService {
                 return date
             }
 
-            // 標準日期時間格式 (yyyy-MM-dd'T'HH:mm:ss)
             let fallbackFormatter = DateFormatter()
             fallbackFormatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
             fallbackFormatter.locale = Locale(identifier: "en_US_POSIX")

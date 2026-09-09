@@ -110,7 +110,7 @@ struct IndexView: View {
                         NavigationLink(
                             destination: MedicationView(
                                 loginVM: loginVM,
-                                medVM: medVM
+                                dataVM:dataVM
                             )
                         ) {
                             Image(systemName: "chevron.right")
@@ -246,11 +246,4 @@ struct IndexView: View {
             }
         }
     }
-}
-#Preview {
-    NavigationBarView(
-        loginVM: LoginViewModel(),
-        dataVM: DataViewModel(),
-        medVM: MedicationViewModel()
-    )
 }
