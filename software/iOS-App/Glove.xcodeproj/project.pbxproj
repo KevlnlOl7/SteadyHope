@@ -6,19 +6,62 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		D7A3A19630220BEC00A7B3BA /* tremor_noisy_5hz.csv in Resources */ = {isa = PBXBuildFile; fileRef = D7A3A19130220BEC00A7B3BA /* tremor_noisy_5hz.csv */; };
+		D7A3A19730220BEC00A7B3BA /* gating_02hz.csv in Resources */ = {isa = PBXBuildFile; fileRef = D7A3A18F30220BEC00A7B3BA /* gating_02hz.csv */; };
+		D7A3A19830220BEC00A7B3BA /* tremor_5hz.csv in Resources */ = {isa = PBXBuildFile; fileRef = D7A3A19030220BEC00A7B3BA /* tremor_5hz.csv */; };
+		D7A3A19A30220BED00A7B3BA /* TremorAnalysisTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7A3A19430220BEC00A7B3BA /* TremorAnalysisTests.swift */; };
+		D7A3A19B30220C3400A7B3BA /* tremor_5hz.csv in Resources */ = {isa = PBXBuildFile; fileRef = D7A3A19030220BEC00A7B3BA /* tremor_5hz.csv */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		D7A39FCE3022094700A7B3BA /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = D7EEA7512F6714330089238C /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = D7EEA7582F6714330089238C;
+			remoteInfo = Glove;
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFileReference section */
+		D7A39FCA3022094700A7B3BA /* GloveTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = GloveTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		D7A3A18F30220BEC00A7B3BA /* gating_02hz.csv */ = {isa = PBXFileReference; lastKnownFileType = text; path = gating_02hz.csv; sourceTree = "<group>"; };
+		D7A3A19030220BEC00A7B3BA /* tremor_5hz.csv */ = {isa = PBXFileReference; lastKnownFileType = text; path = tremor_5hz.csv; sourceTree = "<group>"; };
+		D7A3A19130220BEC00A7B3BA /* tremor_noisy_5hz.csv */ = {isa = PBXFileReference; lastKnownFileType = text; path = tremor_noisy_5hz.csv; sourceTree = "<group>"; };
+		D7A3A19430220BEC00A7B3BA /* TremorAnalysisTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TremorAnalysisTests.swift; sourceTree = "<group>"; };
 		D7EEA7592F6714330089238C /* Glove.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Glove.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		D7EF995A30124309009ADA67 /* Exceptions for "Glove" folder in "Glove" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = D7EEA7582F6714330089238C /* Glove */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		D7EEA75B2F6714330089238C /* Glove */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				D7EF995A30124309009ADA67 /* Exceptions for "Glove" folder in "Glove" target */,
+			);
 			path = Glove;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		D7A39FC73022094700A7B3BA /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		D7EEA7562F6714330089238C /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -29,10 +72,30 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		D7A3A19230220BEC00A7B3BA /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				D7A3A18F30220BEC00A7B3BA /* gating_02hz.csv */,
+				D7A3A19030220BEC00A7B3BA /* tremor_5hz.csv */,
+				D7A3A19130220BEC00A7B3BA /* tremor_noisy_5hz.csv */,
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
+		D7A3A19530220BEC00A7B3BA /* GloveTests */ = {
+			isa = PBXGroup;
+			children = (
+				D7A3A19230220BEC00A7B3BA /* Resources */,
+				D7A3A19430220BEC00A7B3BA /* TremorAnalysisTests.swift */,
+			);
+			path = GloveTests;
+			sourceTree = "<group>";
+		};
 		D7EEA7502F6714330089238C = {
 			isa = PBXGroup;
 			children = (
 				D7EEA75B2F6714330089238C /* Glove */,
+				D7A3A19530220BEC00A7B3BA /* GloveTests */,
 				D7EEA75A2F6714330089238C /* Products */,
 			);
 			sourceTree = "<group>";
@@ -41,6 +104,7 @@
 			isa = PBXGroup;
 			children = (
 				D7EEA7592F6714330089238C /* Glove.app */,
+				D7A39FCA3022094700A7B3BA /* GloveTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -48,6 +112,26 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		D7A39FC93022094700A7B3BA /* GloveTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = D7A39FD03022094700A7B3BA /* Build configuration list for PBXNativeTarget "GloveTests" */;
+			buildPhases = (
+				D7A39FC63022094700A7B3BA /* Sources */,
+				D7A39FC73022094700A7B3BA /* Frameworks */,
+				D7A39FC83022094700A7B3BA /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				D7A39FCF3022094700A7B3BA /* PBXTargetDependency */,
+			);
+			name = GloveTests;
+			packageProductDependencies = (
+			);
+			productName = GloveTests;
+			productReference = D7A39FCA3022094700A7B3BA /* GloveTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 		D7EEA7582F6714330089238C /* Glove */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = D7EEA7662F6714340089238C /* Build configuration list for PBXNativeTarget "Glove" */;
@@ -80,6 +164,10 @@
 				LastSwiftUpdateCheck = 2630;
 				LastUpgradeCheck = 2630;
 				TargetAttributes = {
+					D7A39FC93022094700A7B3BA = {
+						CreatedOnToolsVersion = 26.3;
+						TestTargetID = D7EEA7582F6714330089238C;
+					};
 					D7EEA7582F6714330089238C = {
 						CreatedOnToolsVersion = 26.3;
 					};
@@ -100,21 +188,41 @@
 			projectRoot = "";
 			targets = (
 				D7EEA7582F6714330089238C /* Glove */,
+				D7A39FC93022094700A7B3BA /* GloveTests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		D7A39FC83022094700A7B3BA /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				D7A3A19630220BEC00A7B3BA /* tremor_noisy_5hz.csv in Resources */,
+				D7A3A19730220BEC00A7B3BA /* gating_02hz.csv in Resources */,
+				D7A3A19830220BEC00A7B3BA /* tremor_5hz.csv in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		D7EEA7572F6714330089238C /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				D7A3A19B30220C3400A7B3BA /* tremor_5hz.csv in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		D7A39FC63022094700A7B3BA /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				D7A3A19A30220BED00A7B3BA /* TremorAnalysisTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		D7EEA7552F6714330089238C /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -124,12 +232,76 @@
 		};
 /* End PBXSourcesBuildPhase section */
 
+/* Begin PBXTargetDependency section */
+		D7A39FCF3022094700A7B3BA /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			platformFilters = (
+				ios,
+				xros,
+			);
+			target = D7EEA7582F6714330089238C /* Glove */;
+			targetProxy = D7A39FCE3022094700A7B3BA /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
 /* Begin XCBuildConfiguration section */
+		D7A39FD13022094700A7B3BA /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = VKJYV79K6F;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.fannno.GloveTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = xros;
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Glove.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Glove";
+				XROS_DEPLOYMENT_TARGET = 26.2;
+			};
+			name = Debug;
+		};
+		D7A39FD23022094700A7B3BA /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = VKJYV79K6F;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.fannno.GloveTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = xros;
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Glove.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Glove";
+				VALIDATE_PRODUCT = YES;
+				XROS_DEPLOYMENT_TARGET = 26.2;
+			};
+			name = Release;
+		};
 		D7EEA7642F6714340089238C /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				CLANG_ANALYZER_NONNULL = YES;
 				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
 				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
@@ -192,6 +364,7 @@
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				CLANG_ANALYZER_NONNULL = YES;
 				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
 				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
@@ -246,6 +419,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = VKJYV79K6F;
@@ -254,6 +428,13 @@
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Glove/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = SteadyHope;
+				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "需要使用藍芽連線至抑震手套裝置";
+				INFOPLIST_KEY_NSBluetoothPeripheralUsageDescription = "需要使用藍芽連線至抑震手套裝置";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "我們需要使用您的麥克風來進行語音留言輸入。";
+				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "需要相簿存取權限以將照片儲存至您的手機。";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "我們需要使用語音辨識功能將您的語音轉換為文字便利貼。";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
@@ -290,6 +471,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = VKJYV79K6F;
@@ -298,6 +480,13 @@
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Glove/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = SteadyHope;
+				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "需要使用藍芽連線至抑震手套裝置";
+				INFOPLIST_KEY_NSBluetoothPeripheralUsageDescription = "需要使用藍芽連線至抑震手套裝置";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "我們需要使用您的麥克風來進行語音留言輸入。";
+				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "需要相簿存取權限以將照片儲存至您的手機。";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "我們需要使用語音辨識功能將您的語音轉換為文字便利貼。";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
@@ -332,6 +521,15 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		D7A39FD03022094700A7B3BA /* Build configuration list for PBXNativeTarget "GloveTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D7A39FD13022094700A7B3BA /* Debug */,
+				D7A39FD23022094700A7B3BA /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		D7EEA7542F6714330089238C /* Build configuration list for PBXProject "Glove" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
