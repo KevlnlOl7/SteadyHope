@@ -1,7 +1,7 @@
 import Foundation
 
 /// 震顫分析完成後寫入資料庫同步之歷史紀錄資料模型
-public struct TremorRecord: Codable, Identifiable {
+public struct TremorRecord: Codable, Identifiable, Sendable {
     
     /// 紀錄唯一識別碼
     public var id: UUID
@@ -9,8 +9,8 @@ public struct TremorRecord: Codable, Identifiable {
     /// 量測工作階段識別碼
     public var sessionId: String
 
-    /// 紀錄時間戳記（毫秒，UTC）
-    public var recordedAtUtcMs: Int64
+    /// 紀錄時間戳記（ISO 8601 格式時間字串）
+    public var recordedAt: String
 
     /// 主要震顫頻率（Hz，頻率不可靠時為 nil）
     public var dominantFrequencyHz: Double?
@@ -27,12 +27,26 @@ public struct TremorRecord: Codable, Identifiable {
     /// 主要頻率是否符合防呆門檻且具備可靠度
     public var frequencyReliable: Bool
 
-    /// 當前生理或日常情境標籤（例如：休息、活動、服藥後等）
-    public var activityTag: String
+    /// 當前生理或日常情境標籤（未標記時為 nil）
+    public var activityTag: String?
 
     /// 使用者自訂備註說明
     public var note: String?
 
+    /// 序列化與反序列化鍵值對應列舉
+    enum CodingKeys: String, CodingKey {
+        case id
+        case sessionId = "session_id"
+        case recordedAt
+        case dominantFrequencyHz = "dominant_frequency_hz"
+        case tremorStrengthRmsDps = "tremor_strength_rms_dps"
+        case motorOnFraction = "motor_on_fraction"
+        case dataValid = "data_valid"
+        case frequencyReliable = "frequency_reliable"
+        case activityTag = "activity_tag"
+        case note
+    }
+    
     /// 初始化震顫歷史紀錄模型
     /// - Parameters:
     ///   - id: 紀錄唯一識別碼，預設為新產生的 UUID
@@ -47,19 +61,19 @@ public struct TremorRecord: Codable, Identifiable {
     ///   - note: 使用者自訂備註說明
     public init(
         id: UUID = UUID(),
-        sessionId: String,
-        recordedAtUtcMs: Int64,
+        sessionId: String = UUID().uuidString,
+        recordedAt: String,
         dominantFrequencyHz: Double? = nil,
         tremorStrengthRmsDps: Double? = nil,
         motorOnFraction: Double = 0.0,
         dataValid: Bool = true,
         frequencyReliable: Bool = false,
-        activityTag: String = "休息",
+        activityTag: String? = nil,
         note: String? = nil
     ) {
         self.id = id
         self.sessionId = sessionId
-        self.recordedAtUtcMs = recordedAtUtcMs
+        self.recordedAt = recordedAt
         self.dominantFrequencyHz = dominantFrequencyHz
         self.tremorStrengthRmsDps = tremorStrengthRmsDps
         self.motorOnFraction = motorOnFraction
