@@ -3,7 +3,7 @@ import Foundation
 import SwiftUI
 
 @MainActor
-class AIChatViewModel: ObservableObject {
+final class AIChatViewModel: ObservableObject {
 
     /// 全域單例存取點
     static let shared = AIChatViewModel()

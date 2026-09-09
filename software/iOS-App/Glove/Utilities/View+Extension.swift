@@ -36,13 +36,26 @@ extension View {
 }
 
 extension Date {
-    /// 將 Date 物件依指定格式轉化為字串
+    /// 將 Date 物件依指定格式轉化為台灣時間字串
     /// - Parameter format: 日期格式化字串 (例如: "yyyy-MM-dd" 或 "HH:mm")
     /// - Returns: 格式化後的日期時間字串
-    func toString(format: String) -> String {
+    func toString(format: String = "yyyy-MM-dd HH:mm:ss") -> String {
         let formatter = DateFormatter()
         formatter.dateFormat = format
+        formatter.locale = Locale(identifier: "zh_Hant_TW")
         return formatter.string(from: self)
+    }
+}
+
+extension String {
+    /// 將字串依指定格式解析為 Date 物件
+    /// - Parameter format: 日期格式化字串 (例如: "yyyy-MM-dd" 或 "HH:mm")
+    /// - Returns: 解析後的 Date 物件
+    func toDate(format: String) -> Date? {
+        let formatter = DateFormatter()
+        formatter.dateFormat = format
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        return formatter.date(from: self)
     }
 }
 

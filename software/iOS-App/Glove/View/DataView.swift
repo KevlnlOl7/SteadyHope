@@ -284,6 +284,9 @@ struct DataView: View {
                             dataVM.selectedFilterDate = Date()
                             chartJumpTargetDate = Date()
                         }
+                        dataVM.selectedPoint = nil
+                        dataVM.expandedEventID = nil
+                        isChartCleared = false
                     } label: {
                         Text("回到今天")
                             .font(.caption2)
@@ -454,6 +457,7 @@ struct DataView: View {
             isViewingToday: isViewingToday,
             activeInfoSheet: $activeInfoSheet,
             selectedPoint: dataVM.selectedPoint,
+            isChartCleared: $isChartCleared, 
             jumpTargetDate: $chartJumpTargetDate,
             onPointSelected: { point in handleChartPointSelection(point, parentProxy: parentProxy) },
             onChartSelectionCleared: {
@@ -590,6 +594,7 @@ private struct RMSTrendChartViewContainer: View {
     let isViewingToday: Bool
     let activeInfoSheet: Binding<InfoSheetType?>
     let selectedPoint: DataViewModel.RMSTrendPoint?
+    @Binding var isChartCleared: Bool
     let jumpTargetDate: Binding<Date?>
     let onPointSelected: (DataViewModel.RMSTrendPoint) -> Void
     let onChartSelectionCleared: () -> Void
@@ -819,6 +824,7 @@ private struct RMSTrendChartViewContainer: View {
                             hasSelectedSpecificTime = false
                             selectedChartTime = Date()
                             clearChartSelection()
+                            isChartCleared = false
                             onReturnToNow()
                             showTimePicker = false
 
@@ -919,27 +925,27 @@ private struct RMSTrendChartViewContainer: View {
                     if point.rmsValue.isFinite && !point.rmsValue.isNaN {
                         LineMark(
                             x: .value("時間", point.timestamp),
-                            y: .value("強度", min(max(0, point.rmsValue), currentMaxY))
+                            y: .value("強度", max(0, point.rmsValue))
                         )
                         .foregroundStyle(Color(red: 0.16, green: 0.50, blue: 0.96))
                         .lineStyle(StrokeStyle(lineWidth: 2))
                         .interpolationMethod(.linear)
                     }
 
-                    if point.rmsValue >= 0.20 && point.rmsValue.isFinite {
+                    if isTappedPoint(point) {
                         PointMark(
                             x: .value("時間", point.timestamp),
-                            y: .value("強度", min(max(0, point.rmsValue), currentMaxY))
+                            y: .value("強度", max(0, point.rmsValue))
                         )
-                        .foregroundStyle(isTappedPoint(point) ? Color.red : Color.orange)
-                        .symbolSize(isTappedPoint(point) ? 100 : 38)
+                        .foregroundStyle(Color.red)
+                        .symbolSize(100)
                     }
                 }
 
                 ForEach(bufferedEvents) { event in
                     PointMark(
                         x: .value("事件時間", event.timestamp),
-                        y: .value("事件強度", max(0, min(event.rmsValue, currentMaxY)))
+                        y: .value("事件強度", max(0, event.rmsValue))
                     )
                     .foregroundStyle(isEventCorrespondingToTappedPoint(event) ? Color.red : Color.orange)
                     .symbolSize(isEventCorrespondingToTappedPoint(event) ? 100 : 34)

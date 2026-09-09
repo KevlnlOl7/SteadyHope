@@ -3,7 +3,8 @@ import Foundation
 import SwiftData
 import SwiftUI
 
-class RegisterViewModel: ObservableObject {
+@MainActor
+final class RegisterViewModel: ObservableObject {
     @Published var name = ""
     @Published var email = ""
     @Published var password = ""

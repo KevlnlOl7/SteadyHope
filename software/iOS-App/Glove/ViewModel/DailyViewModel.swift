@@ -2,7 +2,8 @@ import Combine
 import SwiftData
 import SwiftUI
 
-class DailyViewModel: ObservableObject {
+@MainActor
+final class DailyViewModel: ObservableObject {
     let loginVM: LoginViewModel
 
     /// 每日留言資料存取 Repository 層實例
@@ -100,9 +101,7 @@ class DailyViewModel: ObservableObject {
     @MainActor
     func loadAllNotes(modelContext: ModelContext, isSilent: Bool = false) async {
         if !isSilent {
-            await MainActor.run {
-                self.isLoadingData = true
-            }
+            self.isLoadingData = true
         }
 
         defer {

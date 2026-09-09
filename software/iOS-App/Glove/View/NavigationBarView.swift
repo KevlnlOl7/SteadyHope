@@ -4,6 +4,8 @@ struct NavigationBarView: View {
     @State private var selectedTab: Int = 0
     @State private var showBindReminderAlert: Bool = false
     @State private var showAIChat: Bool = false
+    @State private var showSideMenu: Bool = false
+
     @ObservedObject var loginVM: LoginViewModel
     @ObservedObject var dataVM: DataViewModel
     @ObservedObject var medVM: MedicationViewModel
@@ -12,6 +14,13 @@ struct NavigationBarView: View {
     @ObservedObject var vitalsVM: HealthVitalsViewModel
 
     @StateObject private var planVM = MedicationPlanViewModel()
+
+    @Environment(\.colorScheme) private var colorScheme
+
+    /// 判斷當前是否為尚未完成家屬綁定之照護者
+    private var isUnlinkedCaregiver: Bool {
+        loginVM.userData?.role == 1 && !loginVM.isLinked
+    }
 
     /// 病患端的分頁標籤與圖示設定
     private let patientTabs = [
@@ -24,9 +33,9 @@ struct NavigationBarView: View {
 
     /// 照護者端的分頁標籤與圖示設定
     private let caregiverTabs = [
+        (title: "Home", icon: "house.fill"),
         (title: "Daily", icon: "heart.text.clipboard.fill"),
-        (title: "Setting", icon: "gearshape.fill"),
-        (title: "Monitor", icon: "chart.xyaxis.line"),
+        (title: "Data", icon: "chart.bar.fill"),
         (title: "Medication", icon: "pills.fill"),
     ]
 
@@ -35,12 +44,18 @@ struct NavigationBarView: View {
             ZStack(alignment: .bottom) {
                 Color(red: 0.97, green: 0.97, blue: 0.97)
                     .ignoresSafeArea()
+                    .onTapGesture {
+                        hideKeyboard()
+                    }
 
-                // 根據身分載入不同的內容
-                if loginVM.userData?.role == 1 {
-                    caregiverPages
-                } else {
-                    patientPages
+                VStack(spacing: 0) {
+                    topHeaderBar
+
+                    if loginVM.userData?.role == 1 {
+                        caregiverPages
+                    } else {
+                        patientPages
+                    }
                 }
 
                 // 根據身分與連線狀態，帶入對應的動態 TabBar
@@ -51,19 +66,33 @@ struct NavigationBarView: View {
                             tabItems: caregiverTabs
                         )
                         .padding(.bottom, 10)
+                        .simultaneousGesture(
+                            TapGesture().onEnded {
+                                hideKeyboard()
+                            }
+                        )
                     }
                 } else {
-                    TabBar(
-                        selectedTab: $selectedTab,
-                        tabItems: patientTabs
-                    )
-                    .padding(.bottom, 10)
+                    TabBar(selectedTab: $selectedTab, tabItems: patientTabs)
+                        .padding(.bottom, 10)
+                        .simultaneousGesture(
+                            TapGesture().onEnded {
+                                hideKeyboard()
+                            }
+                        )
                 }
 
-                aiFloatingButton
-                    .padding(.bottom, 80)
-                    .padding(.trailing, 20)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+                if !isUnlinkedCaregiver {
+                    aiFloatingButton
+                        .padding(.bottom, 80)
+                        .padding(.trailing, 20)
+                        .frame(
+                            maxWidth: .infinity,
+                            maxHeight: .infinity,
+                            alignment: .bottomTrailing
+                        )
+                }
+
                 // 螢幕左側滑動感應區
                 if !showSideMenu {
                     edgeSwipeDetector
@@ -80,55 +109,25 @@ struct NavigationBarView: View {
                     vitalsVM: vitalsVM
                 )
             }
-            .navigationTitle("")
             .navigationBarHidden(true)
             .fullScreenCover(isPresented: $showAIChat) {
                 AIChatView()
             }
             .task {
                 await loginVM.loadPartnerIfNeeded()
-                
-                // 進入畫面後，定時同步並檢查家屬綁定連線狀態
+                await medVM.loadAllRecords()
+                await planVM.loadAllPlans()
                 while !Task.isCancelled {
                     await checkInitialConnectionStatus()
                     try? await Task.sleep(nanoseconds: 15_000_000_000)
                 }
             }
+            .onChange(of: selectedTab) {
+                hideKeyboard()
+            }
         }
     }
 
-        @Environment(\.colorScheme) private var colorScheme
-        @ViewBuilder
-        private var aiFloatingButton: some View {
-            Button {
-                showAIChat = true
-            } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: "sparkles")
-                        .font(.title3)
-                    Text("小安")
-                        .font(.subheadline)
-                        .fontWeight(.bold)
-                }
-                .foregroundColor(.white)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 11)
-                .background(
-                    LinearGradient(
-                        colors: [
-                            AppTheme.accent(for: colorScheme),
-                            Color(hex: "F2B278")
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-                .clipShape(Capsule())
-                .shadow(
-                    color: AppTheme.accent(for: colorScheme).opacity(0.35),
-                    radius: 6,
-                    x: 0,
-                    y: 3
     /// 螢幕左側邊緣滑動手勢偵測區域
     private var edgeSwipeDetector: some View {
         GeometryReader { geometry in
@@ -169,50 +168,83 @@ struct NavigationBarView: View {
             }
             Spacer()
         }
-    
-    /// 病患端專用的分頁視圖
+        .padding(.horizontal, 20)
+        .padding(.top, 10)
+        .padding(.bottom, 6)
+    }
+
+    /// AI 助理懸浮啟動按鈕
+    @ViewBuilder
+    private var aiFloatingButton: some View {
+        Button {
+            hideKeyboard()
+            showAIChat = true
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "sparkles")
+                    .font(.title3)
+                Text("小安")
+                    .font(.subheadline)
+                    .fontWeight(.bold)
+            }
+            .foregroundColor(.white)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 11)
+            .background(
+                LinearGradient(
+                    colors: [
+                        AppTheme.accent(for: colorScheme), Color(hex: "F2B278"),
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
+            .clipShape(Capsule())
+            .shadow(
+                color: AppTheme.accent(for: colorScheme).opacity(0.35),
+                radius: 6,
+                x: 0,
+                y: 3
+            )
+        }
+    }
+
+    /// 病患端主功能分頁視圖
     @ViewBuilder
     private var patientPages: some View {
         TabView(selection: $selectedTab) {
-            IndexView(loginVM: loginVM, dataVM: dataVM, medVM: medVM)
+            IndexView(loginVM: loginVM, dataVM: dataVM, medVM: medVM, bleVM: bleVM, selectedTab: $selectedTab)
                 .tag(0)
-
             SettingView(loginVM: loginVM)
                 .tag(1)
-
             DailyView(loginVM: loginVM)
                 .tag(2)
-
-            DataView(loginVM: loginVM, dataVM: dataVM,bleVM:bleVM)
+            DataView(loginVM: loginVM, dataVM: dataVM, bleVM: bleVM)
                 .tag(3)
-
             MedicationView(loginVM: loginVM, dataVM: dataVM, bleVM: bleVM)
                 .tag(4)
-
         }
         .tabViewStyle(.page(indexDisplayMode: .never))
+        .scrollDismissesKeyboard(.interactively)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    /// 照護者端專用的分頁視圖
+    /// 照護者端主功能分頁視圖
     @ViewBuilder
     private var caregiverPages: some View {
         if loginVM.isLinked {
-            // 已綁定病患：顯示完整的 4 個分頁
             TabView(selection: $selectedTab) {
-                DailyView(loginVM: loginVM)
+                IndexView(loginVM: loginVM, dataVM: dataVM, medVM: medVM, bleVM: bleVM, selectedTab: $selectedTab)
                     .tag(0)
-
-                SettingView(loginVM: loginVM)
+                DailyView(loginVM: loginVM)
                     .tag(1)
-
-                DataView(loginVM: loginVM, dataVM: dataVM,bleVM:bleVM)
+                DataView(loginVM: loginVM, dataVM: dataVM, bleVM: bleVM)
                     .tag(2)
-
                 MedicationView(loginVM: loginVM, dataVM: dataVM, bleVM: bleVM)
                     .tag(3)
             }
             .tabViewStyle(.page(indexDisplayMode: .never))
+            .scrollDismissesKeyboard(.interactively)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             VStack(spacing: 20) {
@@ -233,7 +265,7 @@ struct NavigationBarView: View {
             .alert("家屬連動提醒", isPresented: $showBindReminderAlert) {
                 Button("確定") {}
             } message: {
-                Text("您目前尚未連接任何被照護者。\n請至「帳號設定」進行家屬連動，\n以解鎖完整功能。")
+                Text("您目前尚未連接任何被照護者。\n請至「家屬連動設定」進行家屬連動，\n以解鎖完整功能。")
             }
         }
     }

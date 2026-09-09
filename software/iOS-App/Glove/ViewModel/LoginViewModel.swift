@@ -4,7 +4,7 @@ import SwiftData
 import SwiftUI
 
 @MainActor
-class LoginViewModel: ObservableObject {
+final class LoginViewModel: ObservableObject {
 
     /// 控制讀取狀態 防重送
     @Published var isLoading = false
@@ -99,6 +99,20 @@ class LoginViewModel: ObservableObject {
         self.showSessionExpiredAlert = true
     }
 
+    /// 向伺服器發送請求以更新特定照護者之操作權限設定
+    func updateCaregiverPermission(caregiver: PermissionRequestDTO) async {
+        do{
+            let bondRepo = UserBondRepository()
+            try await bondRepo.updateCaregiverPermissions(
+                caregiverID: caregiver.caregiverID,
+                canManageMedPlan: caregiver.canManageMedPlan ?? false,
+                canAddMedRecord: caregiver.canAddMedRecord ?? false
+            )
+        } catch {
+            print("[LoginVM] 更新照護者權限失敗: \(error.localizedDescription)")
+        }
+    }
+    
     /// 執行登入驗證邏輯
     /// - Parameters:
     ///   - email: 使用者帳號信箱
