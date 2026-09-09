@@ -80,7 +80,7 @@ struct PDFPreviewView: View {
             }
 
         } catch {
-            print("無法產生暫存 PDF 檔案進行分享: \(error.localizedDescription)")
+            AppLog.error("無法產生暫存 PDF 檔案: \(error.localizedDescription)")
         }
     }
 }

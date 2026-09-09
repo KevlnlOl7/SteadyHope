@@ -8,7 +8,7 @@ class NotificationScheduler {
     func requestAuthorization() {
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
             if let error = error {
-                print("推播權限請求失敗: \(error)")
+                AppLog.error("推播權限請求失敗: \(error)")
             }
         }
     }

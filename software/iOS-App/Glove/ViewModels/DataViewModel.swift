@@ -71,9 +71,6 @@ final class DataViewModel: ObservableObject {
     /// 標記是否已完成藍牙管線閉包綁定
     private var isPipelineBound: Bool = false
 
-    /// 標記是否已執行過 CSV 離線模擬載入
-    private var isCSVLoaded: Bool = false
-
     /// 原始資料上傳佇列暫存緩衝區
     private var rawUploadBuffer: [TremorDataPoint] = []
 
@@ -234,7 +231,7 @@ final class DataViewModel: ObservableObject {
                 lastVibrationTime = "--:--"
             }
         } catch {
-            print("[DataVM] 載入高震顫事件失敗: \(error.localizedDescription)")
+            AppLog.error("載入高震顫事件失敗: \(error.localizedDescription)")
             tremorEvents = []
             lastVibrationDate = "--"
             lastVibrationTime = "--:--"
@@ -271,7 +268,7 @@ final class DataViewModel: ObservableObject {
             selectedPoint = nil
             updateDashboard()
         } catch {
-            print("[DataVM] 載入原始走勢失敗: \(error.localizedDescription)")
+            AppLog.error("載入原始走勢失敗: \(error.localizedDescription)")
             if rmsTrendHistory.isEmpty {
                 rmsTrendHistory = buildFallbackTrendFromEvents()
             }
@@ -408,123 +405,6 @@ final class DataViewModel: ObservableObject {
         await loadRawDataTrend()
     }
 
-    /// 讀取本地 5Hz 震顫測試 CSV 檔案並進行離線資料流模擬
-    func load5HzCSVAndSimulate() {
-        guard !isCSVLoaded else { return }
-
-        guard let url = Bundle.main.url(forResource: "tremor_5hz", withExtension: "csv") else { return }
-
-        do {
-            let content = try String(contentsOf: url, encoding: .utf8)
-            let rows = content.components(separatedBy: .newlines).filter {
-                !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            }
-
-            var allPoints = [TremorDataPoint]()
-            for row in rows.dropFirst() {
-                let columns = row.components(separatedBy: ",")
-                if columns.count >= 5 {
-                    let seq = UInt32(columns[0].trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0
-                    let tick = UInt32(Double(columns[1].trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0)
-                    var gx = 0.0, gy = 0.0, gz = 0.0
-                    var valid: UInt8 = 1, motor: UInt8 = 0
-
-                    if columns.count >= 7 {
-                        gx = Double(columns[2].trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0
-                        gy = Double(columns[3].trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0
-                        gz = Double(columns[4].trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0
-                        valid = UInt8(columns[5].trimmingCharacters(in: .whitespacesAndNewlines)) ?? 1
-                        motor = UInt8(columns[6].trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0
-                    } else {
-                        gx = Double(columns[3].trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0
-                    }
-
-                    allPoints.append(
-                        TremorDataPoint(
-                            sequence: seq,
-                            sampleTickMs: tick,
-                            gyroXDps: gx,
-                            gyroYDps: gy,
-                            gyroZDps: gz,
-                            sensorValid: valid,
-                            motorEnabled: motor
-                        )
-                    )
-                }
-            }
-
-            let repeatedPoints = Array(repeating: allPoints, count: 10).flatMap { $0 }
-            var newHistory = [RMSTrendPoint]()
-            let windowSize = 400
-            let strideSize = 50
-            var pointIndex = 0
-            let baseDate = Date()
-
-            for startIndex in stride(from: 0, to: repeatedPoints.count - windowSize + 1, by: strideSize) {
-                let windowData = Array(repeatedPoints[startIndex..<(startIndex + windowSize)])
-                let result = analyzer.analyze(data: windowData)
-                let isMotor = windowData.suffix(50).contains(where: { $0.motorEnabled == 1 })
-                let currentPointTime = baseDate.addingTimeInterval(Double(pointIndex) * 0.5)
-
-                newHistory.append(
-                    RMSTrendPoint(
-                        timestamp: currentPointTime,
-                        timeLabel: currentPointTime.toString(format: "HH:mm:ss"),
-                        rmsValue: result.tremorStrengthRmsDps,
-                        isMotorActive: isMotor,
-                        rawWindowData: windowData
-                    )
-                )
-
-                pointIndex += 1
-                if pointIndex >= 30 { break }
-            }
-
-            self.rmsTrendHistory = newHistory
-
-            let highTremors = newHistory.filter { $0.rmsValue >= 0.20 }
-            self.tremorEvents = highTremors.map { point in
-                TremorEvent(
-                    timestamp: point.timestamp,
-                    timeLabel: point.timeLabel,
-                    rmsValue: point.rmsValue,
-                    dominantFrequency: 5.0,
-                    rawWindowData: point.rawWindowData,
-                    userTag: "未標記",
-                    isSaved: true
-                )
-            }
-
-            if let latestEvent = self.tremorEvents.first {
-                self.updateLastVibrationTime(from: latestEvent.timestamp)
-            }
-
-            self.selectedPoint = nil
-            updateDashboard()
-            self.isCSVLoaded = true
-
-            for event in self.tremorEvents {
-                Task {
-                    try? await self.repository.syncEventAsAnalysisRecord(
-                        event: event,
-                        sessionId: self.currentSessionId
-                    )
-                }
-            }
-
-            let initial400Data = Array(repeatedPoints.prefix(400))
-            if !initial400Data.isEmpty {
-                Task {
-                    try? await self.repository.syncRawData(
-                        sessionId: self.currentSessionId,
-                        rawPoints: initial400Data,
-                        baseDate: Date()
-                    )
-                }
-            }
-        } catch {}
-    }
-
     /// 綁定藍牙數據管線之各項事件回呼閉包
     /// - Parameter pipeline: 藍牙資料串流管線實體
     func bindPipeline(_ pipeline: TremorPipeline) {
@@ -566,11 +446,15 @@ final class DataViewModel: ObservableObject {
                     }
 
                     Task {
-                        try? await self.repository.syncRawData(
-                            sessionId: self.currentSessionId,
-                            rawPoints: batchToUpload,
-                            baseDate: baseDate
-                        )
+                        do {
+                            try await self.repository.syncRawData(
+                                sessionId: self.currentSessionId,
+                                rawPoints: batchToUpload,
+                                baseDate: baseDate
+                            )
+                        } catch {
+                            AppLog.error("原始震顫數據批次上傳失敗: \(error.localizedDescription)")
+                        }
                     }
                 }
             }
@@ -585,7 +469,7 @@ final class DataViewModel: ObservableObject {
                 let timeStr = now.toString(format: "HH:mm:ss")
                 let isMotor = window400Data.suffix(50).contains(where: { $0.motorEnabled == 1 })
 
-                print("[BLE 管線] 收到分析點 - RMS: \(rms), Freq: \(result.dominantFrequencyHz ?? 0)")
+                AppLog.debug("收到分析點 - RMS: \(rms), Freq: \(result.dominantFrequencyHz ?? 0)")
 
                 if self.selectedPoint == nil {
                     if result.dataValid {
@@ -660,7 +544,7 @@ final class DataViewModel: ObservableObject {
                                     sessionId: currentSessionId
                                 )
                             } catch {
-                                print("[BLE 上傳失敗] \(error)")
+                                AppLog.error("BLE 上傳失敗: \(error.localizedDescription)")
                             }
                         }
                     }
@@ -691,7 +575,7 @@ final class DataViewModel: ObservableObject {
             tremorEvents[index].selectedImages = eventToSave.selectedImages
             return true
         } catch {
-            print("[DataVM] 儲存備註失敗: \(error.localizedDescription)")
+            AppLog.error("震顫事件標記失敗: \(error.localizedDescription)")
             return false
         }
     }

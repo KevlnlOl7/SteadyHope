@@ -37,7 +37,7 @@ class AuthManager {
         // 檢查是否超過 24 小時
         let currentTime = Date().timeIntervalSince1970
         if currentTime - saveTimestamp > expirationInterval {
-            print("Token 已過期，執行清除作業")
+            AppLog.debug("Token 已過期")
             clearToken()
             return nil
         }

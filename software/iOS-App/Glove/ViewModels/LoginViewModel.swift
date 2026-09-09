@@ -58,7 +58,7 @@ final class LoginViewModel: ObservableObject {
         ) { [weak self] notification in
             guard let strongSelf = self else { return }
 
-            print("[全域廣播] 收到 401 Unauthorized，自動執行登出機制...")
+            AppLog.debug("收到 401 Unauthorized，自動執行登出機制...")
             let message = notification.userInfo?["message"] as? String
                 ?? "您的帳號已在其他裝置登入，或登入已過期，請重新登入。"
 
@@ -84,7 +84,7 @@ final class LoginViewModel: ObservableObject {
                 self.isLinked = !caregivers.isEmpty
             }
         } catch {
-            print("抓取連動夥伴資料失敗: \(error.localizedDescription)")
+            AppLog.error("抓取連動夥伴資料失敗: \(error.localizedDescription)")
             self.boundPartner = nil
             self.boundCaregivers = []
             self.isLinked = false
@@ -109,7 +109,7 @@ final class LoginViewModel: ObservableObject {
                 canAddMedRecord: caregiver.canAddMedRecord ?? false
             )
         } catch {
-            print("[LoginVM] 更新照護者權限失敗: \(error.localizedDescription)")
+            AppLog.error("更新照護者權限失敗: \(error.localizedDescription)")
         }
     }
     
@@ -149,10 +149,10 @@ final class LoginViewModel: ObservableObject {
 
             // 重置 DataViewModel 的 session id，確保登入後即時數據關聯至最新階段
             DataViewModel.shared.currentSessionId = UUID().uuidString
-            print("[Auth] 登入成功，已就緒雲端資料庫通道 (User: \(userModel.userName))")
+            AppLog.debug("登入成功，已就緒雲端資料庫通道 (User: \(userModel.userName))")
 
         } catch {
-            print("登入失敗: \(error.localizedDescription)")
+            AppLog.error("登入失敗: \(error.localizedDescription)")
             self.loginError = "帳號或密碼錯誤"
             self.isLoading = false
         }

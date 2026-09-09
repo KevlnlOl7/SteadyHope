@@ -131,7 +131,7 @@ final class DailyNoteViewModel: ObservableObject {
 
         } catch {
             let errorMsg = error.localizedDescription
-            print("載入便利貼失敗: \(errorMsg)")
+            AppLog.error("載入便利貼失敗: \(errorMsg)")
 
             if errorMsg.contains("401") || errorMsg.contains("已在其他裝置登入") || errorMsg.contains("登入已失效") {
                 self.notes = []
@@ -189,7 +189,7 @@ final class DailyNoteViewModel: ObservableObject {
                 isCaregiverOnly: newDaily.isCaregiverOnly
             )
         } catch {
-            print("同步紀錄至伺服器失敗: \(error.localizedDescription)")
+            AppLog.error("同步紀錄至伺服器失敗: \(error.localizedDescription)")
         }
     }
 
@@ -237,7 +237,7 @@ final class DailyNoteViewModel: ObservableObject {
                 isCaregiverOnly: note.isCaregiverOnly
             )
         } catch {
-            print("更新紀錄至伺服器失敗: \(error.localizedDescription)")
+            AppLog.error("更新紀錄至伺服器失敗: \(error.localizedDescription)")
         }
     }
 
@@ -256,7 +256,7 @@ final class DailyNoteViewModel: ObservableObject {
         do {
             try await dailyRepo.removeDailyRecord(recordID: noteID)
         } catch {
-            print("從伺服器刪除便利貼失敗: \(error.localizedDescription)")
+            AppLog.error("從伺服器刪除便利貼失敗: \(error.localizedDescription)")
         }
     }
 

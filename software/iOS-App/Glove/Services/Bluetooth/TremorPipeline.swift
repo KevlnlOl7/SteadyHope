@@ -74,7 +74,7 @@ final class TremorPipeline {
     /// - Parameter rawValue: 原始硬體回傳之致動旗標（0 代表停止，1 代表致動）
     private func publishMotorStateIfNeeded(_ rawValue: UInt8) {
         guard rawValue == 0 || rawValue == 1 else {
-            print("[Pipeline] WARNING: motor_enabled 非 0/1：\(rawValue)")
+            AppLog.error("motor_enabled 非 0/1：\(rawValue)")
             return
         }
 
@@ -89,10 +89,10 @@ final class TremorPipeline {
     /// 轉發滑桿微調指令至底層藍牙管理器
     /// - Parameter offsetMm: 相對線長調整量（單位：公釐）
     public func sendLengthAdjustment(_ offsetMm: Int) {
-        print("[Pipeline] sendLengthAdjustment: \(offsetMm) mm")
+        AppLog.debug("sendLengthAdjustment: \(offsetMm) mm")
 
         guard let sender = onSendLengthAdjustment else {
-            print("[Pipeline] ERROR: onSendLengthAdjustment 尚未綁定到 BluetoothManager")
+            AppLog.error("onSendLengthAdjustment 尚未綁定到 BluetoothManager")
             return
         }
 
@@ -102,10 +102,10 @@ final class TremorPipeline {
     /// 轉發手動數值輸入微調指令至底層藍牙管理器
     /// - Parameter signedMm: 帶正負號之相對位移量（單位：公釐）
     public func sendManualLengthInput(_ signedMm: Int) {
-        print("[Pipeline] sendManualLengthInput: \(signedMm) mm")
+        AppLog.debug("sendManualLengthInput: \(signedMm) mm")
 
         guard let sender = onSendManualLengthInput else {
-            print("[Pipeline] ERROR: onSendManualLengthInput 尚未綁定到 BluetoothManager")
+            AppLog.error("onSendManualLengthInput 尚未綁定到 BluetoothManager")
             return
         }
 

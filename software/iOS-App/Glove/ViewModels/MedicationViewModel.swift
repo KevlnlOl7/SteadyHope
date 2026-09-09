@@ -45,7 +45,7 @@ final class MedicationViewModel: ObservableObject {
             let fetchedRecords = try await repository.getAllMedications(for: "")
             self.medicationList = fetchedRecords
         } catch {
-            print("讀取全部紀錄失敗: \(error)")
+            AppLog.error("讀取全部紀錄失敗: \(error)")
         }
     }
 
@@ -58,7 +58,7 @@ final class MedicationViewModel: ObservableObject {
                 first.date > second.date
             }
         } catch {
-            print("讀取紀錄失敗: \(error)")
+            AppLog.error("讀取紀錄失敗: \(error)")
             self.medicationList = []
         }
     }
@@ -87,7 +87,7 @@ final class MedicationViewModel: ObservableObject {
                     first.date > second.date
                 }
         } catch {
-            print("讀取區間用藥紀錄失敗: \(error)")
+            AppLog.error("讀取區間用藥紀錄失敗: \(error)")
             self.medicationList = []
         }
         self.isLoadingRange = false
@@ -118,7 +118,7 @@ final class MedicationViewModel: ObservableObject {
                             medicationList.remove(at: existingIndex)
                         }
                     } catch {
-                        print("取消打卡失敗: \(error)")
+                        AppLog.error("取消打卡失敗: \(error)")
                     }
                 }
             }
@@ -142,7 +142,7 @@ final class MedicationViewModel: ObservableObject {
                         await loadRecords(for: dateString)
                     }
                 } catch {
-                    print("口服打卡失敗: \(error)")
+                    AppLog.error("口服打卡失敗: \(error)")
                 }
             }
         }
@@ -191,7 +191,7 @@ final class MedicationViewModel: ObservableObject {
                     clearInputs()
                 }
             } catch {
-                print("新增單次紀錄失敗: \(error)")
+                AppLog.error("新增單次紀錄失敗: \(error)")
             }
         }
     }
@@ -221,7 +221,7 @@ final class MedicationViewModel: ObservableObject {
     /// - Returns: 伺服器更新成功回傳 true，發生錯誤或更新失敗回傳 false
     func saveEditedRecord(targetDateString: String = "") async -> Bool {
         guard let recordID = editingRecordID else {
-            print("編輯儲存失敗: editingRecordID 為 nil")
+            AppLog.error("編輯儲存失敗: editingRecordID 為 nil")
             return false
         }
 
@@ -251,11 +251,11 @@ final class MedicationViewModel: ObservableObject {
                 self.clearInputs()
                 return true
             } else {
-                print("後端回傳更新失敗")
+                AppLog.error("後端回傳更新失敗")
                 return false
             }
         } catch {
-            print("更新單次紀錄失敗: \(error)")
+            AppLog.error("更新單次紀錄失敗: \(error)")
             return false
         }
     }
@@ -339,7 +339,7 @@ final class MedicationViewModel: ObservableObject {
                     await loadRecords(for: dateString)
                 }
             } catch {
-                print("貼片打卡存檔失敗: \(error)")
+                AppLog.error("貼片打卡存檔失敗: \(error)")
             }
         }
     }
@@ -418,7 +418,7 @@ final class MedicationViewModel: ObservableObject {
                     self.editingRecord = nil
                 }
             } catch {
-                print("更新貼片紀錄失敗: \(error)")
+                AppLog.error("更新貼片紀錄失敗: \(error)")
             }
         }
     }
@@ -439,7 +439,7 @@ final class MedicationViewModel: ObservableObject {
                             medicationList.removeAll { $0.id == recordID }
                         }
                     } catch {
-                        print("刪除失敗: \(error)")
+                        AppLog.error("刪除失敗: \(error)")
                     }
                 }
             } else {

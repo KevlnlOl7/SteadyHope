@@ -24,7 +24,7 @@ class AIChatRepository {
             let response = try iso8601Decoder.decode(AIChatResponseDTO.self, from: data)
             return response
         } catch {
-            print("AI 聊天解析失敗: \(error)")
+            AppLog.error("AI 聊天解析失敗: \(error)")
             throw NetworkError.decodeError
         }
     }
@@ -38,7 +38,7 @@ class AIChatRepository {
             return historyItems.map { $0.toModel() }
         } catch {
             // 如果是因為找不到資料（例如 404）或空資料拋出的錯誤，直接回傳空陣列，不跳出警告
-            print("取得歷史紀錄為空或查無資料: \(error)")
+            AppLog.debug("取得歷史紀錄為空或查無資料: \(error)")
             return []
         }
     }
@@ -53,7 +53,7 @@ class AIChatRepository {
         do {
             return try iso8601Decoder.decode(ConsultationSummaryResponseDTO.self, from: data)
         } catch {
-            print("看診摘要解析失敗: \(error)")
+            AppLog.error("看診摘要解析失敗: \(error)")
             throw NetworkError.decodeError
         }
     }

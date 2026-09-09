@@ -120,7 +120,7 @@ struct ImagePreview: View {
         }
 
         saver.onError = { error in
-            print("照片儲存至相簿失敗：\(error.localizedDescription)")
+            AppLog.error("照片儲存至相簿失敗：\(error.localizedDescription)")
         }
 
         saver.writeToPhotoAlbum(image: image)

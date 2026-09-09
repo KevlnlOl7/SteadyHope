@@ -118,7 +118,7 @@ final class BluetoothViewModel: NSObject, ObservableObject {
             return
         }
 
-        print("[BluetoothVM] 啟動掃描...")
+        AppLog.debug("啟動掃描...")
         self.isBluetoothPoweredOn = true
         self.isBluetoothUnauthorized = false
         self.isScanning = true
@@ -132,7 +132,7 @@ final class BluetoothViewModel: NSObject, ObservableObject {
             guard let self = self, !Task.isCancelled else { return }
 
             if !self.isConnected {
-                print("[BluetoothVM] 掃描逾時未連線。")
+                AppLog.error("掃描逾時未連線。")
                 self.isScanning = false
                 self.statusMessage = "搜尋失敗，請確認手套已開機"
                 self.bluetoothManager.stopScanning()
@@ -162,7 +162,7 @@ final class BluetoothViewModel: NSObject, ObservableObject {
     /// 提交滑桿選定之相對長度調整量，將公分（cm）轉為公釐（mm）後透過藍牙發送
     func commitSliderLengthAdjustment() {
         guard isConnected else {
-            print("[BluetoothVM] 略過 Slider 指令：手套尚未連線完成。")
+            AppLog.error("略過 Slider 指令：手套尚未連線完成。")
             lengthOffsetMm = 0.0
             return
         }
@@ -185,7 +185,7 @@ final class BluetoothViewModel: NSObject, ObservableObject {
     /// - Parameter offsetCm: 使用者輸入之位移量（公分）
     func sendManualLengthInputCm(_ offsetCm: Double) {
         guard isConnected else {
-            print("[BluetoothVM] 略過手動指令：手套尚未連線完成。")
+            AppLog.error("略過手動指令：手套尚未連線完成。")
             return
         }
 

@@ -132,6 +132,7 @@ final class ExportSettingsViewModel: ObservableObject {
             }
             hasGeneratedSummary = true
         } catch {
+            AppLog.error("AI 摘要生成失敗: \(error.localizedDescription)")
             errorMessage = "AI 摘要生成失敗：\(error.localizedDescription)"
             showErrorAlert = true
         }
@@ -882,6 +883,7 @@ final class ExportSettingsViewModel: ObservableObject {
 
         guard let filepath = Bundle.main.path(forResource: "report_template", ofType: "html"),
               let templateString = try? String(contentsOfFile: filepath, encoding: .utf8) else {
+            AppLog.error("找不到報告 HTML 範本檔案 (report_template.html)")
             errorMessage = "找不到報告 HTML 範本檔案。"
             showErrorAlert = true
             isGeneratingPDF = false
@@ -925,6 +927,7 @@ final class ExportSettingsViewModel: ObservableObject {
                     self.generatedPDFData = pdfData
                     self.showPreviewSheet = true
                 } else {
+                    AppLog.error("PDF 產生失敗")
                     self.errorMessage = "PDF 產生失敗，請稍後再試。"
                     self.showErrorAlert = true
                 }

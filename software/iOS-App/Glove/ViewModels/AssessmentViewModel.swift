@@ -60,6 +60,7 @@ final class AssessmentViewModel: ObservableObject {
             let records = try await AssessmentRepository.shared.fetchAssessment(dateString: todayStr)
             self.hasFilledToday = !records.isEmpty
         } catch {
+            AppLog.debug("檢查今日評估狀態失敗: \(error.localizedDescription)")
             self.hasFilledToday = false
         }
     }
@@ -73,6 +74,7 @@ final class AssessmentViewModel: ObservableObject {
             let dates = records.map { formatter.string(from: $0.date) }
             self.availableDateStrings = Set(dates)
         } catch {
+            AppLog.error("取得可用評估日期失敗: \(error.localizedDescription)")
             self.availableDateStrings = []
         }
     }
@@ -117,6 +119,7 @@ final class AssessmentViewModel: ObservableObject {
             NotificationScheduler.shared.cancelTodayAssessmentReminderIfCompleted()
             await fetchAvailableRecordDates()
         } catch {
+            AppLog.error("提交每日評估失敗: \(error.localizedDescription)")
             self.errorMessage = error.localizedDescription
             self.showErrorAlert = true
         }
@@ -141,6 +144,7 @@ final class AssessmentViewModel: ObservableObject {
             let records = try await AssessmentRepository.shared.fetchAssessment(dateString: dateString)
             self.groupedHistoryRecords = self.groupRecords(records)
         } catch {
+            AppLog.error("載入歷史評估紀錄失敗: \(error.localizedDescription)")
             self.errorMessage = error.localizedDescription
             self.showErrorAlert = true
             self.groupedHistoryRecords = []
@@ -176,6 +180,7 @@ final class AssessmentViewModel: ObservableObject {
                 }
             self.groupedHistoryRecords = self.groupRecords(filteredRecords)
         } catch {
+            AppLog.error("載入歷史評估紀錄失敗: \(error.localizedDescription)")
             self.errorMessage = error.localizedDescription
             self.showErrorAlert = true
             self.groupedHistoryRecords = []

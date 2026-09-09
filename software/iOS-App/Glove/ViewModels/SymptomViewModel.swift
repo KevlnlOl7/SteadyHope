@@ -43,7 +43,7 @@ final class SymptomViewModel: ObservableObject {
             let uploadingItems = symptomList.filter { ($0.id ?? 0) < 0 }
             symptomList = uploadingItems + fetchedSymptoms
         } catch {
-            print("讀取症狀紀錄失敗: \(error.localizedDescription)")
+            AppLog.error("讀取症狀紀錄失敗: \(error.localizedDescription)")
         }
     }
 
@@ -109,7 +109,7 @@ final class SymptomViewModel: ObservableObject {
                     await loadSymptoms(for: date.toString(format: "yyyy-MM-dd"), isSilent: true)
                 }
             } catch {
-                print("新增症狀紀錄失敗: \(error.localizedDescription)")
+                AppLog.error("新增症狀紀錄失敗: \(error.localizedDescription)")
             }
 
             // 處理完成後移除暫存項目與標記
@@ -175,7 +175,7 @@ final class SymptomViewModel: ObservableObject {
                     )
                 }
             } catch {
-                print("更新症狀紀錄失敗: \(error)")
+                AppLog.error("更新症狀紀錄失敗: \(error)")
             }
 
             processingIDs.remove(recordID)
@@ -199,7 +199,7 @@ final class SymptomViewModel: ObservableObject {
                     symptomList.removeAll { $0.id == recordID }
                 }
             } catch {
-                print("刪除症狀紀錄失敗: \(error)")
+                AppLog.error("刪除症狀紀錄失敗: \(error)")
             }
 
             processingIDs.remove(recordID)

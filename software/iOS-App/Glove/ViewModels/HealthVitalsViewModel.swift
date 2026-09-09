@@ -31,7 +31,7 @@ final class HealthVitalsViewModel: ObservableObject {
         do {
             self.vitalsList = try await repository.fetchVitals(for: dateString)
         } catch {
-            print("載入生理數據失敗: \(error)")
+            AppLog.error("載入生理數據失敗: \(error)")
         }
     }
 
@@ -56,7 +56,7 @@ final class HealthVitalsViewModel: ObservableObject {
                 clearInputs()
                 editingVitals = nil
             } catch {
-                print("更新生理數據失敗: \(error)")
+                AppLog.error("更新生理數據失敗: \(error)")
             }
         } else {
             // 新增生理數據紀錄
@@ -76,7 +76,7 @@ final class HealthVitalsViewModel: ObservableObject {
                 clearInputs()
                 showAddVitalsSheet = false
             } catch {
-                print("新增生理數據失敗: \(error)")
+                AppLog.error("新增生理數據失敗: \(error)")
             }
         }
     }
@@ -92,7 +92,7 @@ final class HealthVitalsViewModel: ObservableObject {
                 vitalsList.removeAll { $0.id == id }
             }
         } catch {
-            print("刪除生理數據失敗: \(error)")
+            AppLog.error("刪除生理數據失敗: \(error)")
         }
     }
 

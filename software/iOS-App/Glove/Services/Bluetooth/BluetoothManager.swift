@@ -84,7 +84,7 @@ public final class BluetoothManager: NSObject {
     /// 依據指定之服務 UUID 啟動藍牙裝置掃描
     public func startScanning() {
         guard centralManager.state == .poweredOn else {
-            print("[Bluetooth] 無法掃描：藍牙尚未開啟")
+            AppLog.error("無法掃描：藍牙尚未開啟")
             return
         }
 
@@ -93,7 +93,7 @@ public final class BluetoothManager: NSObject {
             return
         }
 
-        print("[Bluetooth] 開始搜尋 Service: \(serviceUUID.uuidString)...")
+        AppLog.debug("開始搜尋 Service: \(serviceUUID.uuidString)...")
 
         centralManager.scanForPeripherals(
             withServices: [serviceUUID],
@@ -105,14 +105,14 @@ public final class BluetoothManager: NSObject {
     public func stopScanning() {
         if centralManager.isScanning {
             centralManager.stopScan()
-            print("[Bluetooth] 停止掃描")
+            AppLog.debug("停止掃描")
         }
     }
 
     /// 中斷當前周邊裝置之藍牙連線
     public func disconnect() {
         if let peripheral = connectedPeripheral {
-            print("[Bluetooth] 中斷連線: \(peripheral.name ?? targetDeviceName)")
+            AppLog.debug("中斷連線: \(peripheral.name ?? targetDeviceName)")
             centralManager.cancelPeripheralConnection(peripheral)
         }
     }
@@ -120,21 +120,19 @@ public final class BluetoothManager: NSObject {
     /// 發送滑桿相對線長調整量（負值對應 0x02，正值對應 0x03）
     /// - Parameter offsetMm: 帶正負號之調整位移量（公釐）
     public func sendLengthAdjustment(_ offsetMm: Int) {
-        print("[Bluetooth] sendLengthAdjustment called: \(offsetMm) mm")
-
         if offsetMm == 0 {
-            print("[Bluetooth] 長度調整為 0 mm，不需送出指令。")
+            AppLog.debug("長度調整為 0 mm，不需送出指令。")
             return
         }
 
         guard offsetMm != Int.min else {
-            print("[Bluetooth] 指令無法發送：調整量無效。")
+            AppLog.error("指令無法發送：調整量無效。")
             return
         }
 
         let magnitude = abs(offsetMm)
         guard magnitude <= controlMaxMagnitudeMm else {
-            print("[Bluetooth] 指令無法發送：單次調整量必須介於 -50...50 mm。")
+            AppLog.error("指令無法發送：單次調整量必須介於 -50...50 mm。")
             return
         }
 
@@ -145,21 +143,19 @@ public final class BluetoothManager: NSObject {
     /// 發送手動輸入之相對長度調整量（負值對應 0x04，正值對應 0x05）
     /// - Parameter signedMm: 帶正負號之調整位移量（公釐）
     public func sendManualLengthInput(_ signedMm: Int) {
-        print("[Bluetooth] sendManualLengthInput called: \(signedMm) mm")
-
         if signedMm == 0 {
-            print("[Bluetooth] 手動長度輸入為 0 mm，不需送出指令。")
+            AppLog.debug("手動長度輸入為 0 mm，不需送出指令。")
             return
         }
 
         guard signedMm != Int.min else {
-            print("[Bluetooth] 指令無法發送：手動調整量無效。")
+            AppLog.error("指令無法發送：手動調整量無效。")
             return
         }
 
         let magnitude = abs(signedMm)
         guard magnitude <= controlMaxMagnitudeMm else {
-            print("[Bluetooth] 指令無法發送：手動調整量必須介於 -50...50 mm。")
+            AppLog.error("指令無法發送：手動調整量必須介於 -50...50 mm。")
             return
         }
 
@@ -174,7 +170,7 @@ public final class BluetoothManager: NSObject {
     /// - Parameter magnitudeMm: 正整數之縮短量（公釐，範圍 1 至 50）
     public func sendManualNegativeLength(magnitudeMm: Int) {
         guard (1...controlMaxMagnitudeMm).contains(magnitudeMm) else {
-            print("[Bluetooth] 負值 magnitude 必須介於 1...50 mm。")
+            AppLog.error("負值 magnitude 必須介於 1...50 mm。")
             return
         }
         sendControlPacket(command: .manualLengthNegative, value: UInt16(magnitudeMm))
@@ -184,7 +180,7 @@ public final class BluetoothManager: NSObject {
     /// - Parameter magnitudeMm: 正整數之放長量（公釐，範圍 1 至 50）
     public func sendManualPositiveLength(magnitudeMm: Int) {
         guard (1...controlMaxMagnitudeMm).contains(magnitudeMm) else {
-            print("[Bluetooth] 正值 magnitude 必須介於 1...50 mm。")
+            AppLog.error("正值 magnitude 必須介於 1...50 mm。")
             return
         }
         sendControlPacket(command: .manualLengthPositive, value: UInt16(magnitudeMm))
@@ -196,22 +192,22 @@ public final class BluetoothManager: NSObject {
     ///   - value: 16 位元無號整數絕對量值（Big-Endian 排列）
     private func sendControlPacket(command: ControlCommand, value: UInt16) {
         guard let peripheral = connectedPeripheral else {
-            print("[Bluetooth] 指令無法發送：尚未抓取到周邊設備。")
+            AppLog.error("指令無法發送：尚未抓取到周邊設備。")
             return
         }
 
         guard peripheral.state == .connected else {
-            print("[Bluetooth] 指令無法發送：Peripheral 尚未完成 BLE 連線。")
+            AppLog.error("指令無法發送：Peripheral 尚未完成 BLE 連線。")
             return
         }
 
         guard let characteristic = ioCharacteristic else {
-            print("[Bluetooth] 指令無法發送：控制 Characteristic 尚未綁定。")
+            AppLog.error("指令無法發送：控制 Characteristic 尚未綁定。")
             return
         }
 
         guard characteristic.uuid == ioCharacteristicUUID else {
-            print("[Bluetooth] 指令無法發送：Characteristic UUID 不正確。")
+            AppLog.error("指令無法發送：Characteristic UUID 不正確。")
             return
         }
 
@@ -228,11 +224,11 @@ public final class BluetoothManager: NSObject {
         } else if characteristic.properties.contains(.writeWithoutResponse) {
             writeType = .withoutResponse
         } else {
-            print("[Bluetooth] 指令無法發送：Characteristic 不支援 Write。")
+            AppLog.error("指令無法發送：Characteristic 不支援 Write。")
             return
         }
 
-        print("[Bluetooth] TX -> ESP32: \(packetHex)")
+        AppLog.debug("TX -> ESP32: \(packetHex)")
 
         peripheral.writeValue(
             packet,
@@ -243,7 +239,7 @@ public final class BluetoothManager: NSObject {
         lastSentCommand = (command.rawValue, value)
 
         if writeType == .withoutResponse {
-            print("[Bluetooth] BLE Write Without Response 已送出: \(packetHex)")
+            AppLog.debug("BLE Write Without Response 已送出: \(packetHex)")
         }
     }
 
@@ -273,7 +269,7 @@ extension BluetoothManager: CBCentralManagerDelegate {
 
     /// 處理系統藍牙狀態更新回呼
     public func centralManagerDidUpdateState(_ central: CBCentralManager) {
-        print("[Bluetooth] 藍牙狀態變更: \(central.state.rawValue)")
+        AppLog.debug("藍牙狀態變更: \(central.state.rawValue)")
         delegate?.bluetoothManager(self, didUpdateState: central.state)
 
         if central.state != .poweredOn {
@@ -293,10 +289,7 @@ extension BluetoothManager: CBCentralManagerDelegate {
             ?? (advertisementData[CBAdvertisementDataLocalNameKey] as? String)
             ?? "未知名稱"
 
-        print(
-            "[Bluetooth] 發現設備: \(discoveredName), " +
-            "UUID: \(peripheral.identifier.uuidString)"
-        )
+        AppLog.debug("發現設備: \(discoveredName), UUID: \(peripheral.identifier.uuidString)")
 
         connectedPeripheral = peripheral
         peripheral.delegate = self
@@ -311,7 +304,7 @@ extension BluetoothManager: CBCentralManagerDelegate {
         didConnect peripheral: CBPeripheral
     ) {
         let deviceName = peripheral.name ?? targetDeviceName
-        print("[Bluetooth] BLE Link 建立成功: \(deviceName)")
+        AppLog.debug("BLE Link 建立成功: \(deviceName)")
 
         resetConnectionState()
         connectedPeripheral = peripheral
@@ -325,7 +318,7 @@ extension BluetoothManager: CBCentralManagerDelegate {
         didFailToConnect peripheral: CBPeripheral,
         error: Error?
     ) {
-        print("[Bluetooth] 連線失敗: \(error?.localizedDescription ?? "未知原因")")
+        AppLog.error("連線失敗: \(error?.localizedDescription ?? "未知原因")")
         connectedPeripheral = nil
         resetConnectionState()
         delegate?.bluetoothManager(self, didUpdateConnection: false)
@@ -337,7 +330,7 @@ extension BluetoothManager: CBCentralManagerDelegate {
         didDisconnectPeripheral peripheral: CBPeripheral,
         error: Error?
     ) {
-        print("[Bluetooth] 連線中斷: \(peripheral.name ?? targetDeviceName)")
+        AppLog.error("連線中斷: \(peripheral.name ?? targetDeviceName)")
 
         connectedPeripheral = nil
         resetConnectionState()
@@ -353,24 +346,24 @@ extension BluetoothManager: CBPeripheralDelegate {
         didDiscoverServices error: Error?
     ) {
         if let error = error {
-            print("[Bluetooth] Service 探索失敗: \(error.localizedDescription)")
+            AppLog.error("Service 探索失敗: \(error.localizedDescription)")
             delegate?.bluetoothManager(self, didUpdateConnection: false)
             return
         }
 
         guard let services = peripheral.services else {
-            print("[Bluetooth] 找不到 Service")
+            AppLog.error("找不到 Service")
             delegate?.bluetoothManager(self, didUpdateConnection: false)
             return
         }
 
         guard let service = services.first(where: { $0.uuid == serviceUUID }) else {
-            print("[Bluetooth] 找不到目標 Service: \(serviceUUID.uuidString)")
+            AppLog.error("找不到目標 Service: \(serviceUUID.uuidString)")
             delegate?.bluetoothManager(self, didUpdateConnection: false)
             return
         }
 
-        print("[Bluetooth] 找到目標 Service: \(service.uuid.uuidString)")
+        AppLog.debug("找到目標 Service: \(service.uuid.uuidString)")
         peripheral.discoverCharacteristics([ioCharacteristicUUID], for: service)
     }
 
@@ -381,13 +374,13 @@ extension BluetoothManager: CBPeripheralDelegate {
         error: Error?
     ) {
         if let error = error {
-            print("[Bluetooth] Characteristic 探索失敗: \(error.localizedDescription)")
+            AppLog.error("Characteristic 探索失敗: \(error.localizedDescription)")
             delegate?.bluetoothManager(self, didUpdateConnection: false)
             return
         }
 
         guard let characteristics = service.characteristics else {
-            print("[Bluetooth] 找不到 Characteristic")
+            AppLog.error("找不到 Characteristic")
             delegate?.bluetoothManager(self, didUpdateConnection: false)
             return
         }
@@ -395,32 +388,29 @@ extension BluetoothManager: CBPeripheralDelegate {
         guard let characteristic = characteristics.first(where: {
             $0.uuid == ioCharacteristicUUID
         }) else {
-            print("[Bluetooth] ERROR: 找不到 9001 Characteristic")
+            AppLog.error("找不到 9001 Characteristic")
             delegate?.bluetoothManager(self, didUpdateConnection: false)
             return
         }
 
-        print(
-            "[Bluetooth] 發現 Characteristic: " +
-            "\(characteristic.uuid.uuidString), properties=\(characteristic.properties)"
-        )
+        AppLog.debug("發現 Characteristic: \(characteristic.uuid.uuidString), properties=\(characteristic.properties)")
 
         ioCharacteristic = characteristic
         writeReady = characteristic.properties.contains(.write)
             || characteristic.properties.contains(.writeWithoutResponse)
 
         if !writeReady {
-            print("[Bluetooth] ERROR: 9001 不支援 Write")
+            AppLog.error("9001 不支援 Write")
         } else {
-            print("[Bluetooth] 9001 Write 已就緒")
+            AppLog.debug("9001 Write 已就緒")
         }
 
         if characteristic.properties.contains(.notify) {
-            print("[Bluetooth] 訂閱數據特徵值 Notify: \(characteristic.uuid.uuidString)")
+            AppLog.debug("訂閱數據特徵值 Notify: \(characteristic.uuid.uuidString)")
             peripheral.setNotifyValue(true, for: characteristic)
         } else {
             notifyReady = false
-            print("[Bluetooth] ERROR: 9001 不支援 Notify")
+            AppLog.error("9001 不支援 Notify")
             updateReadyState()
         }
     }
@@ -437,13 +427,13 @@ extension BluetoothManager: CBPeripheralDelegate {
 
         if let error = error {
             notifyReady = false
-            print("[Bluetooth] Notify 訂閱失敗: \(error.localizedDescription)")
+            AppLog.error("Notify 訂閱失敗: \(error.localizedDescription)")
             updateReadyState()
             return
         }
 
         notifyReady = characteristic.isNotifying
-        print("[Bluetooth] Notify 狀態: \(characteristic.isNotifying)")
+        AppLog.debug("Notify 狀態: \(characteristic.isNotifying)")
         updateReadyState()
     }
 
@@ -454,7 +444,7 @@ extension BluetoothManager: CBPeripheralDelegate {
         error: Error?
     ) {
         if let error = error {
-            print("[Bluetooth] BLE Notify 接收失敗: \(error.localizedDescription)")
+            AppLog.error("BLE Notify 接收失敗: \(error.localizedDescription)")
             return
         }
 
@@ -473,10 +463,7 @@ extension BluetoothManager: CBPeripheralDelegate {
             let points = TremorDataPoint.parseBatch(from: data)
 
             guard !points.isEmpty else {
-                print(
-                    "[Bluetooth] IMU 封包格式錯誤：收到 \(data.count) bytes，" +
-                    "預期 1 + N*16 bytes。"
-                )
+                AppLog.error("IMU 封包格式錯誤：收到 \(data.count) bytes，預期 1 + N*16 bytes。")
                 return
             }
 
@@ -484,17 +471,14 @@ extension BluetoothManager: CBPeripheralDelegate {
 
         case BatteryStatus.bleType:
             guard let battery = BatteryStatus.parse(from: data) else {
-                print(
-                    "[Bluetooth] Battery 封包格式錯誤：收到 \(data.count) bytes，" +
-                    "預期 5 bytes。"
-                )
+                AppLog.error("Battery 封包格式錯誤：收到 \(data.count) bytes，預期 5 bytes。")
                 return
             }
 
             delegate?.bluetoothManager(self, didUpdateBattery: battery)
 
         default:
-            print(String(format: "[Bluetooth] 未知的 BLE 封包類型: 0x%02X", type))
+            AppLog.error(String(format: "未知的 BLE 封包類型: 0x%02X", type))
         }
     }
 
@@ -509,16 +493,16 @@ extension BluetoothManager: CBPeripheralDelegate {
         }
 
         if let error = error {
-            print("[Bluetooth] BLE 寫入失敗: \(error.localizedDescription)")
+            AppLog.error("BLE 寫入失敗: \(error.localizedDescription)")
             return
         }
 
-        print("[Bluetooth] BLE 寫入成功: \(characteristic.uuid.uuidString)")
+        AppLog.debug("BLE 寫入成功: \(characteristic.uuid.uuidString)")
 
         if let command = lastSentCommand {
-            print(
+            AppLog.debug(
                 String(
-                    format: "[Bluetooth] Last command = %02X %02X %02X",
+                    format: "Last command = %02X %02X %02X",
                     command.commandId,
                     UInt8((command.value >> 8) & 0xFF),
                     UInt8(command.value & 0xFF)

@@ -30,7 +30,7 @@ final class MedicationPlanViewModel: ObservableObject {
             let fetchedPlans = try await planRepository.getAllPlans()
             self.planList = fetchedPlans
         } catch {
-            print("讀取排程失敗: \(error)")
+            AppLog.error("讀取排程失敗: \(error)")
         }
     }
 
@@ -92,7 +92,7 @@ final class MedicationPlanViewModel: ObservableObject {
                     resetPlanForm()
                 }
             } catch {
-                print("儲存排程失敗: \(error)")
+                AppLog.error("儲存排程失敗: \(error)")
             }
         }
     }
@@ -119,7 +119,7 @@ final class MedicationPlanViewModel: ObservableObject {
                     }
                 }
             } catch {
-                print("刪除排程失敗: \(error)")
+                AppLog.error("刪除排程失敗: \(error)")
             }
         }
     }

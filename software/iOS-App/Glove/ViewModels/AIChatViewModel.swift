@@ -170,6 +170,7 @@ final class AIChatViewModel: ObservableObject {
             } catch {
                 if Task.isCancelled { return }
                 isLoading = false
+                AppLog.error("AI 發送訊息失敗: \(error.localizedDescription)")
                 errorMessage = "網路好像有點小狀況，請稍後再試試看喔！"
             }
         }
@@ -192,6 +193,7 @@ final class AIChatViewModel: ObservableObject {
             } catch {
                 if Task.isCancelled { return }
                 self.isLoadingHistory = false
+                AppLog.error("載入 AI 歷史紀錄失敗: \(error.localizedDescription)")
                 self.errorMessage = "載入歷史紀錄失敗，請稍後再試"
             }
         }
