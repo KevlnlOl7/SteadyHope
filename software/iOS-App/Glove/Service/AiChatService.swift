@@ -98,6 +98,29 @@ class AiChatService {
         } catch {
             throw NetworkError.decodeError
         }
+    }
+
+    /// 向後端 AI 請求生成看診溝通卡片摘要原始 Data
+    func generateConsultationSummary(request: GenerateConsultationSummaryRequestDTO) async throws -> Data {
+        guard let url = URL(string: "\(baseURL)/api/ai/consultation-summary") else {
+            throw NetworkError.invalidURL
+        }
+
+        var urlRequest = URLRequest(url: url)
+        urlRequest.httpMethod = "POST"
+        urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        if let token = AuthManager.shared.getToken() {
+            urlRequest.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        do {
+            urlRequest.httpBody = try encoder.encode(request)
+        } catch {
+            throw NetworkError.encodingFailed
+        }
 
         let data: Data
         let response: URLResponse

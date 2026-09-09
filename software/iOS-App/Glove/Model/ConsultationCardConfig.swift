@@ -1,5 +1,16 @@
 import Foundation
 
+/// 使用者自訂的報告欄位項目
+struct ConsultationCustomField: Identifiable, Hashable {
+    let id = UUID()
+    
+    /// 自訂欄位的標題
+    var title: String = ""
+    
+    /// 該自訂欄位的具體描述內容或數值
+    var content: String = ""
+}
+
 /// 醫療報告匯出之預設配置與選單選項
 struct ReportConfig {
     /// 第一頁提供選擇的報告彙整種類選項

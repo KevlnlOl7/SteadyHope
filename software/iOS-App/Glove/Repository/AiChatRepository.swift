@@ -42,4 +42,19 @@ class AiChatRepository {
             return []
         }
     }
+
+    /// 請求 AI 生成看診溝通卡片摘要
+    /// - Parameter payload: 看診摘要請求物件
+    /// - Returns: 生成後之 ConsultationSummaryResponseDTO
+    /// - Throws: 網路傳輸或資料解析錯誤
+    func generateConsultationSummary(payload: GenerateConsultationSummaryRequestDTO) async throws -> ConsultationSummaryResponseDTO {
+        let data = try await aiChatService.generateConsultationSummary(request: payload)
+
+        do {
+            return try iso8601Decoder.decode(ConsultationSummaryResponseDTO.self, from: data)
+        } catch {
+            print("看診摘要解析失敗: \(error)")
+            throw NetworkError.decodeError
+        }
+    }
 }
