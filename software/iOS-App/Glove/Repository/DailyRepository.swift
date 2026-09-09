@@ -22,7 +22,7 @@ class DailyRepository {
         isCaregiverOnly: Bool?
     ) async throws {
         guard let token = AuthManager.shared.getToken() else {
-            throw DailyService.NetworkError.serverError(reason: "認證憑證過期，請重新登入")
+            throw NetworkError.serverError(reason: "認證憑證過期，請重新登入")
         }
 
         let dto = DailyRequestDTO(
@@ -32,7 +32,7 @@ class DailyRepository {
             colorHex: colorHex,
             sender: sender,
             moodName: moodName,
-            isCaregiverOnly:isCaregiverOnly
+            isCaregiverOnly: isCaregiverOnly
         )
 
         try await service.syncRecord(token: token, record: dto)
@@ -43,7 +43,7 @@ class DailyRepository {
     /// - Throws: Token 過期拋出認證錯誤，或網路請求失敗錯誤
     func fetchAllDailies() async throws -> [Daily] {
         guard let token = AuthManager.shared.getToken() else {
-            throw DailyService.NetworkError.serverError(reason: "認證憑證過期，請重新登入")
+            throw NetworkError.serverError(reason: "認證憑證過期，請重新登入")
         }
 
         let responseDTOs = try await service.getAllRecords(token: token)
@@ -55,7 +55,8 @@ class DailyRepository {
                 date: dto.date,
                 colorHex: dto.colorHex,
                 sender: dto.sender,
-                moodName: dto.moodName
+                moodName: dto.moodName,
+                isCaregiverOnly: dto.isCaregiverOnly
             )
         }
     }
@@ -65,7 +66,7 @@ class DailyRepository {
     /// - Throws: Token 過期拋出認證錯誤，或網路請求失敗錯誤
     func removeDailyRecord(recordID: String) async throws {
         guard let token = AuthManager.shared.getToken() else {
-            throw DailyService.NetworkError.serverError(reason: "認證憑證過期，請重新登入")
+            throw NetworkError.serverError(reason: "認證憑證過期，請重新登入")
         }
 
         try await service.deleteRecord(token: token, recordID: recordID)

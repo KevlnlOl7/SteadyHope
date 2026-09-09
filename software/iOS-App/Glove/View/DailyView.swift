@@ -1,6 +1,3 @@
-import AVFoundation
-import Combine
-import Speech
 import SwiftData
 import SwiftUI
 
@@ -9,60 +6,44 @@ struct DailyView: View {
     @ObservedObject var loginVM: LoginViewModel
     @Environment(\.modelContext) private var modelContext
 
+    /// 日期選取與彈窗狀態
     @State private var selectedDate: Date = Date()
     @State private var showFullDatePicker: Bool = false
-
-    /// 照護者專用：看板分類過濾（"ALL": 全部留言, "CAREGIVER_ONLY": 僅限家屬）
     @State private var caregiverBoardFilter: String = "ALL"
 
-    /// 初始化 DailyView
-    /// - Parameter loginVM: 外部傳入之 LoginViewModel 實例
     init(loginVM: LoginViewModel) {
         self.loginVM = loginVM
-        _viewModel = StateObject(
-            wrappedValue: DailyViewModel(loginVM: loginVM)
-        )
+        _viewModel = StateObject(wrappedValue: DailyViewModel(loginVM: loginVM))
     }
 
-    /// 留言板便利貼卡片之雙欄網格佈局
+    /// 留言板雙欄網格佈局
     let columns = [
         GridItem(.flexible(), spacing: 12),
         GridItem(.flexible(), spacing: 12),
     ]
 
-    /// 判斷當前使用者是否為照護者角色
-    private var isCaregiver: Bool {
-        loginVM.userData?.role == 1
-    }
+    /// 判斷當前使用者是否為照護者角色 (role == 1)
+    private var isCaregiver: Bool { loginVM.userData?.role == 1 }
 
-    /// 依據選取日期篩選之當日心情歷史紀錄
+    /// 依選取日期過濾之心情紀錄列表
     private var filteredMoods: [Daily] {
-        viewModel.todaysDailiesWithMood.filter { daily in
-            Calendar.current.isDate(daily.date, inSameDayAs: selectedDate)
+        viewModel.todaysDailiesWithMood.filter {
+            Calendar.current.isDate($0.date, inSameDayAs: selectedDate)
         }
     }
 
-    /// 便利貼留言看板清單（自動依據使用者權限、日期與選擇分類進行過濾）
+    /// 依選取日期與權限過濾之留言便籤列表
     private var filteredNotes: [Daily] {
         viewModel.notes.filter { note in
-            // 日期比對篩選
             let isSameDay = Calendar.current.isDate(
                 note.date,
                 inSameDayAs: selectedDate
             )
-
-            // 角色權限與可視分類過濾
-            let isAccessible: Bool
-            if isCaregiver {
-                if caregiverBoardFilter == "CAREGIVER_ONLY" {
-                    isAccessible = (note.isCaregiverOnly ?? false)
-                } else {
-                    isAccessible = true
-                }
-            } else {
-                isAccessible = !(note.isCaregiverOnly ?? false)
-            }
-
+            let isAccessible =
+                isCaregiver
+                ? (caregiverBoardFilter == "CAREGIVER_ONLY"
+                    ? (note.isCaregiverOnly ?? false) : true)
+                : !(note.isCaregiverOnly ?? false)
             return isSameDay && isAccessible
         }
     }
@@ -76,16 +57,11 @@ struct DailyView: View {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("心情留言板")
                         .font(.system(size: 28, weight: .bold))
-                        .padding(.horizontal, 12)
+                        .padding(.horizontal, 15)
                         .padding(.top, 5)
 
-                    // 週曆元件
                     compactWeekCalendarSection
-
-                    // 當日心情歷程顯示區塊
                     moodSection
-
-                    // 便利貼留言看板區塊
                     boardSection
                 }
                 .padding(.vertical, 12)
@@ -120,6 +96,13 @@ struct DailyView: View {
                 modelContext: modelContext
             )
         }
+        .sheet(item: $viewModel.editingNote) { _ in
+            EditDailyNoteSheet(
+                viewModel: viewModel,
+                loginVM: loginVM,
+                modelContext: modelContext
+            )
+        }
         .sheet(isPresented: $showFullDatePicker) {
             VStack {
                 HStack {
@@ -145,7 +128,6 @@ struct DailyView: View {
         }
         .task {
             await reloadData(isSilent: false)
-
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 15_000_000_000)
                 await reloadData(isSilent: true)
@@ -153,7 +135,7 @@ struct DailyView: View {
         }
     }
 
-    /// 週曆區塊（包含年月標題與重新整理按鈕）
+    /// 週日曆區塊
     private var compactWeekCalendarSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline) {
@@ -161,8 +143,12 @@ struct DailyView: View {
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundColor(.secondary)
                     .padding(.leading, 2)
+
                 Spacer()
-                Button(action: { Task { await reloadData(isSilent: true) } }) {
+
+                Button {
+                    Task { await reloadData(isSilent: true) }
+                } label: {
                     Image(systemName: "arrow.clockwise")
                         .font(.system(size: 15, weight: .semibold))
                         .foregroundColor(.gray)
@@ -171,21 +157,20 @@ struct DailyView: View {
                         .clipShape(Circle())
                 }
             }
-            HStack(spacing: 6) {
-                let days = currentWeekDays(for: selectedDate)
 
-                ForEach(days, id: \.self) { date in
+            HStack(spacing: 6) {
+                ForEach(currentWeekDays(for: selectedDate), id: \.self) { date in
                     let isSelected = Calendar.current.isDate(
                         date,
                         inSameDayAs: selectedDate
                     )
                     let isToday = Calendar.current.isDateInToday(date)
 
-                    Button(action: {
+                    Button {
                         withAnimation(.easeInOut(duration: 0.15)) {
                             selectedDate = date
                         }
-                    }) {
+                    } label: {
                         VStack(spacing: 4) {
                             Text(weekdayString(for: date))
                                 .font(.system(size: 11))
@@ -218,10 +203,12 @@ struct DailyView: View {
                         )
                         .cornerRadius(12)
                     }
-                    .buttonStyle(PlainButtonStyle())
+                    .buttonStyle(.plain)
                 }
 
-                Button(action: { showFullDatePicker = true }) {
+                Button {
+                    showFullDatePicker = true
+                } label: {
                     Image(systemName: "calendar")
                         .font(.system(size: 15, weight: .medium))
                         .foregroundColor(
@@ -229,9 +216,8 @@ struct DailyView: View {
                         )
                         .frame(width: 38, height: 50)
                         .background(
-                            Color(red: 0.25, green: 0.52, blue: 0.95).opacity(
-                                0.1
-                            )
+                            Color(red: 0.25, green: 0.52, blue: 0.95)
+                                .opacity(0.1)
                         )
                         .cornerRadius(12)
                 }
@@ -240,7 +226,7 @@ struct DailyView: View {
         .padding(.horizontal, 16)
     }
 
-    /// 今日心情紀錄展示區塊
+    /// 心情展示區塊
     private var moodSection: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text(
@@ -299,7 +285,7 @@ struct DailyView: View {
         .cornerRadius(12)
     }
 
-    /// 便利貼留言看板區塊
+    /// 留言看板區塊
     private var boardSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
@@ -309,7 +295,9 @@ struct DailyView: View {
 
                 Spacer()
 
-                Button(action: { viewModel.showAddNoteSheet = true }) {
+                Button {
+                    viewModel.showAddNoteSheet = true
+                } label: {
                     HStack(spacing: 4) {
                         Image(systemName: "square.and.pencil")
                         Text("寫便利貼")
@@ -344,6 +332,7 @@ struct DailyView: View {
                     Image(systemName: "doc.text.magnifyingglass")
                         .font(.system(size: 32))
                         .foregroundColor(.gray.opacity(0.5))
+
                     Text("該日期無留言紀錄")
                         .font(.system(size: 13))
                         .foregroundColor(.gray)
@@ -366,8 +355,7 @@ struct DailyView: View {
         .padding(.horizontal, 16)
     }
 
-    /// 非同步重新載入留言與心情資料
-    /// - Parameter isSilent: 是否採用靜默更新（不觸發全螢幕 Loading 圖示）
+    /// 重新載入心情與留言資料
     private func reloadData(isSilent: Bool = false) async {
         await viewModel.loadAllNotes(
             modelContext: modelContext,
@@ -375,7 +363,7 @@ struct DailyView: View {
         )
     }
 
-    /// 取得指定日期所在一週的所有 Date 陣列
+    /// 取得目標日期所在週的 7 天日期陣列
     private func currentWeekDays(for date: Date) -> [Date] {
         let calendar = Calendar.current
         guard
@@ -386,7 +374,7 @@ struct DailyView: View {
         }
     }
 
-    /// 轉換 Date 為星期簡寫字串 (例如："週一")
+    /// 格式化星期字串 (例：週一)
     private func weekdayString(for date: Date) -> String {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "zh_Hant_TW")
@@ -395,7 +383,7 @@ struct DailyView: View {
     }
 }
 
-/// 網格列表中單張便利貼小卡片元件
+/// 留言便籤卡片視圖
 struct DailyNoteCardView: View {
     let item: Daily
     @ObservedObject var viewModel: DailyViewModel
@@ -467,7 +455,7 @@ struct DailyNoteCardView: View {
     }
 }
 
-/// 放大的便利貼卡片詳細資訊彈窗元件
+/// 便籤詳細內容彈窗
 struct DailyNoteDetailPopup: View {
     let item: Daily
     @ObservedObject var viewModel: DailyViewModel
@@ -532,30 +520,43 @@ struct DailyNoteDetailPopup: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
 
-            // 僅允許發送者刪除屬於自己的便利貼
+            /// 操作按鈕 (僅限本人發送之便籤)
             if item.sender == viewModel.currentUserRole {
-                Button(role: .destructive) {
-                    Task {
-                        withAnimation {
-                            viewModel.selectedDetailNote = nil
+                HStack(spacing: 12) {
+                    Button {
+                        viewModel.startEditing(item)
+                    } label: {
+                        HStack {
+                            Image(systemName: "pencil")
+                            Text("編輯")
                         }
-                        await viewModel.deleteNote(
-                            note: item,
-                            modelContext: modelContext
-                        )
+                        .font(.system(size: 14, weight: .bold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
                     }
-                } label: {
-                    HStack {
-                        Image(systemName: "trash")
-                        Text("刪除便利貼")
+                    .buttonStyle(.bordered)
+                    .tint(.blue)
+
+                    Button(role: .destructive) {
+                        Task {
+                            withAnimation { viewModel.selectedDetailNote = nil }
+                            await viewModel.deleteNote(
+                                note: item,
+                                modelContext: modelContext
+                            )
+                        }
+                    } label: {
+                        HStack {
+                            Image(systemName: "trash")
+                            Text("刪除")
+                        }
+                        .font(.system(size: 14, weight: .bold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
                     }
-                    .font(.system(size: 14, weight: .bold))
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 8)
+                    .buttonStyle(.borderedProminent)
+                    .tint(.red)
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(.red)
-                .cornerRadius(12)
             }
         }
         .padding(24)
@@ -566,7 +567,7 @@ struct DailyNoteDetailPopup: View {
     }
 }
 
-/// 新增留言便利貼表單視圖
+/// 新增留言貼紙工作表
 struct AddDailyNoteSheet: View {
     @ObservedObject var viewModel: DailyViewModel
     @ObservedObject var loginVM: LoginViewModel
@@ -575,7 +576,8 @@ struct AddDailyNoteSheet: View {
     var body: some View {
         NavigationView {
             Form {
-                Section(header: Text("留言內容")) {
+                /// 輸入留言內文
+                Section {
                     ZStack(alignment: .bottomTrailing) {
                         TextEditor(text: $viewModel.newNoteText)
                             .frame(height: 200)
@@ -592,46 +594,22 @@ struct AddDailyNoteSheet: View {
                             .padding(.trailing, 8)
                             .padding(.bottom, 8)
                     }
-                }
-
-                HStack {
-                    Spacer()
-                    Button(action: {
-                        if viewModel.speechRecognizer.isRecording {
-                            viewModel.speechRecognizer.stopRecording()
-                        } else {
-                            viewModel.speechRecognizer.startRecording()
-                        }
-                    }) {
-                        HStack(spacing: 6) {
-                            Image(
-                                systemName: viewModel.speechRecognizer
-                                    .isRecording
-                                    ? "stop.circle.fill" : "mic.circle.fill"
+                } header: {
+                    Text(viewModel.isPatient ? "留言內容 (選填，可僅記錄心情)" : "留言內容 (必填)")
+                } footer: {
+                    SpeechTipBanner()
+                        .listRowInsets(
+                            EdgeInsets(
+                                top: 12,
+                                leading: 0,
+                                bottom: 20,
+                                trailing: 0
                             )
-                            .font(.system(size: 25))
-                            Text(
-                                viewModel.speechRecognizer.isRecording
-                                    ? "錄音中..." : "語音輸入"
-                            )
-                            .font(.system(size: 23, weight: .semibold))
-                        }
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .background(Color(red: 0, green: 0.53, blue: 1))
-                        .cornerRadius(20)
-                    }
-                    .buttonStyle(PlainButtonStyle())
+                        )
                 }
-                .listRowBackground(Color.clear)
-                .listRowInsets(
-                    EdgeInsets(top: -10, leading: 4, bottom: 0, trailing: 4)
-                )
 
                 if loginVM.userData?.role == 1 {
-                    Section(header: Text("是否要讓 \(loginVM.partnerName) 看到這則便利貼"))
-                    {
+                    Section(header: Text("是否要讓 \(loginVM.partnerName) 看到這則便利貼")) {
                         Toggle(isOn: $viewModel.isCaregiverOnly) {
                             HStack(spacing: 6) {
                                 Image(systemName: "lock.shield")
@@ -643,62 +621,13 @@ struct AddDailyNoteSheet: View {
                 }
 
                 if loginVM.userData?.role == 0 {
-                    Section(header: Text("記錄當下心情 (選填)")) {
-                        HStack(spacing: 12) {
-                            ForEach(viewModel.moods, id: \.self) { moodName in
-                                Button(action: {
-                                    if viewModel.sheetSelectedMoodName
-                                        == moodName
-                                    {
-                                        viewModel.sheetSelectedMoodName = nil
-                                    } else {
-                                        viewModel.sheetSelectedMoodName =
-                                            moodName
-                                    }
-                                }) {
-                                    VStack(spacing: 8) {
-                                        Image(
-                                            systemName: viewModel.getMoodIcon(
-                                                for: moodName
-                                            )
-                                        )
-                                        .font(.system(size: 26))
-                                        Text(moodName)
-                                            .font(
-                                                .system(
-                                                    size: 12,
-                                                    weight: .medium
-                                                )
-                                            )
-                                    }
-                                    .frame(maxWidth: .infinity)
-                                    .padding(.vertical, 12)
-                                    .background(
-                                        viewModel.sheetSelectedMoodName
-                                            == moodName
-                                            ? viewModel.getMoodColor(
-                                                for: moodName
-                                            ).opacity(0.2)
-                                            : Color(
-                                                red: 0.96,
-                                                green: 0.96,
-                                                blue: 0.96
-                                            )
-                                    )
-                                    .foregroundColor(
-                                        viewModel.sheetSelectedMoodName
-                                            == moodName
-                                            ? viewModel.getMoodColor(
-                                                for: moodName
-                                            )
-                                            : .gray
-                                    )
-                                    .cornerRadius(16)
-                                }
-                                .buttonStyle(PlainButtonStyle())
-                            }
-                        }
-                        .padding(.vertical, 6)
+                    Section(header: Text("記錄當下心情 (可單獨記錄)")) {
+                        MoodPickerView(
+                            moods: viewModel.moods,
+                            selectedMood: $viewModel.sheetSelectedMoodName,
+                            getMoodIcon: { viewModel.getMoodIcon(for: $0) },
+                            getMoodColor: { viewModel.getMoodColor(for: $0) }
+                        )
                     }
                 }
 
@@ -736,7 +665,183 @@ struct AddDailyNoteSheet: View {
                         await viewModel.sendNote(modelContext: modelContext)
                     }
                 }
+                .disabled(!viewModel.canSendNote)
             )
         }
+    }
+}
+
+/// 編輯留言貼紙工作表
+struct EditDailyNoteSheet: View {
+    @ObservedObject var viewModel: DailyViewModel
+    @ObservedObject var loginVM: LoginViewModel
+    let modelContext: ModelContext
+
+    var body: some View {
+        NavigationView {
+            Form {
+                /// 修改留言內文
+                Section {
+                    ZStack(alignment: .bottomTrailing) {
+                        TextEditor(text: $viewModel.editNoteText)
+                            .frame(height: 200)
+                            .onChange(of: viewModel.editNoteText) { _, newValue in
+                                viewModel.handleEditTextChange(newValue)
+                            }
+
+                        Text("\(viewModel.editNoteText.count) / 100")
+                            .font(.system(size: 12))
+                            .foregroundColor(
+                                viewModel.editNoteText.count >= 100
+                                    ? .red : .gray
+                            )
+                            .padding(.trailing, 8)
+                            .padding(.bottom, 8)
+                    }
+                } header: {
+                    Text(
+                        viewModel.isPatient
+                            ? "修改留言內容 (選填，可僅保留心情)" : "修改留言內容 (必填)"
+                    )
+                } footer: {
+                    SpeechTipBanner()
+                        .listRowInsets(
+                            EdgeInsets(
+                                top: 12,
+                                leading: 0,
+                                bottom: 20,
+                                trailing: 0
+                            )
+                        )
+                }
+
+                if loginVM.userData?.role == 1 {
+                    Section(header: Text("是否要讓 \(loginVM.partnerName) 看到這則便利貼")) {
+                        Toggle(isOn: $viewModel.editIsCaregiverOnly) {
+                            HStack(spacing: 6) {
+                                Image(systemName: "lock.shield")
+                                    .foregroundColor(.blue)
+                                Text("僅限照護者家屬查看")
+                            }
+                        }
+                    }
+                }
+
+                if loginVM.userData?.role == 0 {
+                    Section(header: Text("調整當下心情")) {
+                        MoodPickerView(
+                            moods: viewModel.moods,
+                            selectedMood: $viewModel.editSelectedMoodName,
+                            getMoodIcon: { viewModel.getMoodIcon(for: $0) },
+                            getMoodColor: { viewModel.getMoodColor(for: $0) }
+                        )
+                    }
+                }
+
+                Section(header: Text("修改貼紙顏色")) {
+                    HStack(spacing: 16) {
+                        ColorPickerButton(
+                            color: Color(red: 1.0, green: 0.94, blue: 0.8),
+                            selectedColor: $viewModel.editNoteColor
+                        )
+                        ColorPickerButton(
+                            color: Color(red: 0.9, green: 0.96, blue: 1.0),
+                            selectedColor: $viewModel.editNoteColor
+                        )
+                        ColorPickerButton(
+                            color: Color(red: 0.92, green: 0.98, blue: 0.93),
+                            selectedColor: $viewModel.editNoteColor
+                        )
+                        ColorPickerButton(
+                            color: Color(red: 0.98, green: 0.92, blue: 0.95),
+                            selectedColor: $viewModel.editNoteColor
+                        )
+                    }
+                    .padding(.vertical, 4)
+                }
+            }
+            .navigationTitle("編輯留言貼紙")
+            .navigationBarItems(
+                leading: Button("取消") {
+                    hideKeyboard()
+                    viewModel.editingNote = nil
+                },
+                trailing: Button("儲存") {
+                    hideKeyboard()
+                    Task {
+                        await viewModel.saveEditedNote(
+                            modelContext: modelContext
+                        )
+                    }
+                }
+                .disabled(!viewModel.canSaveEditedNote)
+            )
+        }
+    }
+}
+
+/// 語音輸入提示橫幅
+struct SpeechTipBanner: View {
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "mic.fill")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundColor(
+                    Color(red: 0.25, green: 0.52, blue: 0.95)
+                )
+
+            Text("點擊鍵盤右下角麥克風圖示，即可直接語音轉文字輸入")
+                .font(.system(size: 12.5))
+                .foregroundColor(.secondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+
+            Spacer()
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity)
+        .background(Color(red: 0.25, green: 0.52, blue: 0.95).opacity(0.08))
+        .cornerRadius(12)
+    }
+}
+
+/// 心情選取元件
+struct MoodPickerView: View {
+    let moods: [String]
+    @Binding var selectedMood: String?
+    let getMoodIcon: (String) -> String
+    let getMoodColor: (String) -> Color
+
+    var body: some View {
+        HStack(spacing: 12) {
+            ForEach(moods, id: \.self) { moodName in
+                Button {
+                    selectedMood = (selectedMood == moodName) ? nil : moodName
+                } label: {
+                    VStack(spacing: 8) {
+                        Image(systemName: getMoodIcon(moodName))
+                            .font(.system(size: 26))
+
+                        Text(moodName)
+                            .font(.system(size: 12, weight: .medium))
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .background(
+                        selectedMood == moodName
+                            ? getMoodColor(moodName).opacity(0.2)
+                            : Color(red: 0.96, green: 0.96, blue: 0.96)
+                    )
+                    .foregroundColor(
+                        selectedMood == moodName
+                            ? getMoodColor(moodName) : .gray
+                    )
+                    .cornerRadius(16)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.vertical, 6)
     }
 }

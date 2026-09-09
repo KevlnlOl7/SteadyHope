@@ -432,9 +432,7 @@
 				INFOPLIST_KEY_CFBundleDisplayName = SteadyHope;
 				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "需要使用藍芽連線至抑震手套裝置";
 				INFOPLIST_KEY_NSBluetoothPeripheralUsageDescription = "需要使用藍芽連線至抑震手套裝置";
-				INFOPLIST_KEY_NSMicrophoneUsageDescription = "我們需要使用您的麥克風來進行語音留言輸入。";
 				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "需要相簿存取權限以將照片儲存至您的手機。";
-				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "我們需要使用語音辨識功能將您的語音轉換為文字便利貼。";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
@@ -484,9 +482,7 @@
 				INFOPLIST_KEY_CFBundleDisplayName = SteadyHope;
 				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "需要使用藍芽連線至抑震手套裝置";
 				INFOPLIST_KEY_NSBluetoothPeripheralUsageDescription = "需要使用藍芽連線至抑震手套裝置";
-				INFOPLIST_KEY_NSMicrophoneUsageDescription = "我們需要使用您的麥克風來進行語音留言輸入。";
 				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "需要相簿存取權限以將照片儲存至您的手機。";
-				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "我們需要使用語音辨識功能將您的語音轉換為文字便利貼。";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;

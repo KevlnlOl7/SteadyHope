@@ -10,23 +10,6 @@ class DailyService {
     /// API 基礎路徑
     private let baseURL = "\(APIConfig.baseURL)/daily"
 
-    /// 網路連線與資料解析錯誤列舉
-    enum NetworkError: LocalizedError {
-        case invalidURL
-        case noData
-        case serverError(reason: String)
-        case decodeError
-
-        var errorDescription: String? {
-            switch self {
-            case .invalidURL: return "無效的連線網址"
-            case .noData: return "伺服器未回傳資料"
-            case .serverError(let reason): return reason
-            case .decodeError: return "資料解析失敗"
-            }
-        }
-    }
-
     /// 檢查 HTTP 回應狀態碼是否為 401，若為 401 則發送全域廣播通知並拋出錯誤
     /// - Parameters:
     ///   - httpResponse: HTTP URL 回應物件
