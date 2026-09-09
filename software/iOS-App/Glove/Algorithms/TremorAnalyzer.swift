@@ -126,16 +126,6 @@ public class TremorAnalyzer {
         let tremorBandFraction = totalPower > 0 ? (power3To7 / totalPower) : 0
         let peakConcentration = power3To7 > 0 ? ((maxPsd * df) / power3To7) : 0
 
-        #if DEBUG
-            print("主要頻率: \(candidateFrequencyHz) Hz (FFT bin \(candidateBin))")
-            print("頻率間距: \(df) Hz")
-            print("三軸 4-6 Hz Power: \(power4To6) (deg/s)^2")
-            print("三軸 4-6 Hz RMS: \(tremorStrengthRmsDps) deg/s (門檻: >= 0.20)")
-            print("X 軸 Power: \(psdX[16...24].reduce(0, +) * df) (deg/s)^2")
-            print("Y 軸 Power: \(psdY[16...24].reduce(0, +) * df) (deg/s)^2")
-            print("Z 軸 Power: \(psdZ[16...24].reduce(0, +) * df) (deg/s)^2")
-        #endif
-
         // 設定浮點數容差 (Epsilon) 吸收底層硬體與跨平台運算微小誤差
         let epsilon = 1e-4
         let frequencyReliable =
