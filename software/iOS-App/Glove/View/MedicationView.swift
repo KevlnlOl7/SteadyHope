@@ -2,13 +2,14 @@ import PhotosUI
 import SwiftUI
 
 struct MedicationView: View {
-
     @ObservedObject var loginVM: LoginViewModel
     @ObservedObject var dataVM: DataViewModel
 
     @StateObject private var medVM = MedicationViewModel()
     @StateObject private var planVM = MedicationPlanViewModel()
     @StateObject private var symptomVM = SymptomViewModel()
+    @StateObject private var vitalsVM = HealthVitalsViewModel()
+    @StateObject var bleVM: BluetoothViewModel
 
     @FocusState private var isInputFocused: Bool
     @State private var filterDate = Date()
@@ -99,14 +100,15 @@ struct MedicationView: View {
         VStack(spacing: 0) {
             Picker("功能分頁", selection: $selectedTab) {
                 Text("每日行程").tag(0)
-                Text("影音與表徵").tag(1)
-                Text("藥效波動").tag(2)
-                Text("單次與紀錄").tag(3)
+                Text("服藥紀錄").tag(1)
+                Text("生理健康").tag(2)
+                Text("表徵紀錄").tag(3)
+                Text("藥效波動").tag(4)
             }
             .pickerStyle(.segmented)
             .padding(.horizontal)
             .padding(.vertical, 8)
-            .background(Color.white)
+            .background(Color(red: 0.96, green: 0.97, blue: 0.98))
 
             selectedTabView
         }
@@ -119,11 +121,17 @@ struct MedicationView: View {
         case 0:
             timelineScheduleView
         case 1:
-            mediaGalleryTabView
-        case 2:
-            analyticsTabView
-        case 3:
             actualRecordsTabView
+        case 2:
+            HealthVitalsTabView(
+                vitalsVM: vitalsVM,
+                isCaregiver: loginVM.userData?.role == 1,
+                filterDate: filterDate
+            )
+        case 3:
+            mediaGalleryTabView
+        case 4:
+            analyticsTabView
         default:
             timelineScheduleView
         }
