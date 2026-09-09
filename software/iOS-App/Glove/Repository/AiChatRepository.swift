@@ -5,23 +5,41 @@ class AiChatRepository {
     /// 底層網路服務實例
     private let aiChatService = AiChatService()
 
+    /// 共用之 ISO 8601 JSONDecoder
+    private var iso8601Decoder: JSONDecoder {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return decoder
+    }
+
     /// 發送聊天訊息給 AI
     /// - Parameter message: 使用者輸入的訊息內容
-    /// - Returns: AI 回傳的回應內容字串
-    /// - Throws: Validation 類型的錯誤
-    func sendMessage(_ message: String) async throws -> String {
+    /// - Returns: 包含 AI 回應內容與時間戳記之 Response DTO
+    /// - Throws: 網路傳輸或資料解析錯誤 (NetworkError)
+    func sendMessage(_ message: String) async throws -> AiChatResponseDTO {
         let requestDTO = AiChatRequestDTO(message: message)
         let data = try await aiChatService.sendMessage(request: requestDTO)
 
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-
         do {
-            let response = try decoder.decode(AiChatResponseDTO.self, from: data)
-            return response.reply
+            let response = try iso8601Decoder.decode(AiChatResponseDTO.self, from: data)
+            return response
         } catch {
             print("AI 聊天解析失敗: \(error)")
-            throw Validation.server(message: "回傳資料格式異常")
+            throw NetworkError.decodeError
+        }
+    }
+
+    /// 取得歷史對話紀錄並解析為 ChatMessage 清單
+    /// - Returns: ChatMessage 陣列
+    /// - Throws: 網路傳輸或資料解析錯誤
+    func fetchHistory() async throws -> [ChatMessage] {
+        do {
+            let historyItems = try await aiChatService.fetchHistory()
+            return historyItems.map { $0.toModel() }
+        } catch {
+            // 如果是因為找不到資料（例如 404）或空資料拋出的錯誤，直接回傳空陣列，不跳出警告
+            print("取得歷史紀錄為空或查無資料: \(error)")
+            return []
         }
     }
 }

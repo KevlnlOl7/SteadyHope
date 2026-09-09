@@ -76,6 +76,10 @@ struct AIChatView: View {
             } message: {
                 Text(viewModel.errorMessage ?? "")
             }
+            // 初次進入畫面時非同步載入歷史對話紀錄
+            .task {
+                viewModel.loadHistory()
+            }
         }
     }
 }
@@ -202,28 +206,42 @@ extension AIChatView {
     fileprivate var chatMessageScrollView: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(spacing: 10) {
-                    ForEach(viewModel.groupedMessages) { group in
-                        Section(header: DateHeaderView(date: group.date)) {
-                            ForEach(group.messages) { message in
-                                let isCurrent =
-                                    message.id
-                                    == viewModel.currentMatchMessageId
-                                ChatBubble(
-                                    message: message,
-                                    highlightText: viewModel.searchText,
-                                    isCurrentMatch: isCurrent
-                                )
-                                .id("\(message.id)_\(isCurrent)")
+                if viewModel.isLoadingHistory {
+                    ProgressView()
+                        .padding(.top, 12)
+                        .padding(.bottom, 4)
+                        .scaleEffect(0.9)
+                }
+
+                if viewModel.filteredMessages.isEmpty && !viewModel.isLoading
+                    && !viewModel.isLoadingHistory
+                {
+                    emptyStatePlaceholder
+                } else {
+                    LazyVStack(spacing: 10) {
+                        // 依日期區塊分組渲染訊息
+                        ForEach(viewModel.groupedMessages) { group in
+                            Section(header: DateHeaderView(date: group.date)) {
+                                ForEach(group.messages) { message in
+                                    let isCurrent =
+                                        message.id
+                                        == viewModel.currentMatchMessageId
+                                    ChatBubble(
+                                        message: message,
+                                        highlightText: viewModel.searchText,
+                                        isCurrentMatch: isCurrent
+                                    )
+                                    .id("\(message.id)_\(isCurrent)")
+                                }
                             }
                         }
-                    }
 
-                    if viewModel.isLoading {
-                        loadingBubble
+                        if viewModel.isLoading {
+                            loadingBubble
+                        }
                     }
+                    .padding(.vertical, 8)
                 }
-                .padding(.vertical, 8)
             }
             .onAppear {
                 scrollToBottom(proxy: proxy)
@@ -248,10 +266,41 @@ extension AIChatView {
         }
     }
 
+    /// 無訊息時顯示的預設健康導引畫面
+    fileprivate var emptyStatePlaceholder: some View {
+        VStack(spacing: 16) {
+            ZStack {
+                Circle()
+                    .fill(AppTheme.primary(for: colorScheme).opacity(0.1))
+                    .frame(width: 80, height: 80)
+
+                Image(systemName: "face.smiling.fill")
+                    .font(.system(size: 42))
+                    .foregroundColor(AppTheme.primary(for: colorScheme))
+            }
+
+            Text("今天身體感覺怎麼樣呢？")
+                .font(.title3)
+                .fontWeight(.semibold)
+                .foregroundColor(AppTheme.textPrimary(for: colorScheme))
+
+            Text("不論是想聊聊或詢問健康問題，\n我都隨時在這裡陪您喔！")
+                .font(.subheadline)
+                .multilineTextAlignment(.center)
+                .foregroundColor(
+                    AppTheme.textPrimary(for: colorScheme).opacity(0.6)
+                )
+                .lineSpacing(4)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, 100)
+        .padding(.horizontal, 32)
+    }
+
     /// AI 思考與生成回答中之載入指示氣泡
     fileprivate var loadingBubble: some View {
         HStack(spacing: 8) {
-            Image(systemName: "heart.sparkles.fill")
+            Image(systemName: "heart.fill")
                 .foregroundColor(AppTheme.accent(for: colorScheme))
                 .font(.system(size: 18))
 
@@ -462,8 +511,35 @@ struct ChatBubble: View {
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        HStack(alignment: .bottom, spacing: 8) {
-            if !message.isUser {
+        HStack(alignment: .bottom, spacing: 6) {
+            // 使用者發送之訊息（靠右對齊，時間置於氣泡左側）
+            if message.isUser {
+                Spacer(minLength: 40)
+
+                // 訊息發送時間
+                Text(message.timestamp.toString(format: "HH:mm"))
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+
+                // 使用者對話氣泡
+                Text(message.text)
+                    .font(.body)
+                    .lineSpacing(4)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
+                    .foregroundColor(.white)
+                    .background(AppTheme.primary(for: colorScheme))
+                    .cornerRadius(20)
+                    .shadow(
+                        color: AppTheme.primary(for: colorScheme).opacity(0.2),
+                        radius: 5,
+                        x: 0,
+                        y: 2
+                    )
+
+            // AI 小安回覆之訊息（靠左對齊，包含頭像、名稱、時間置於氣泡右側）
+            } else {
+                // 小安大頭貼
                 ZStack {
                     Circle()
                         .fill(AppTheme.primary(for: colorScheme).opacity(0.12))
@@ -474,16 +550,8 @@ struct ChatBubble: View {
                         .foregroundColor(AppTheme.primary(for: colorScheme))
                 }
                 .alignmentGuide(.bottom) { d in d[.bottom] + 18 }
-            } else {
-                Spacer(minLength: 40)
-                Text(message.timestamp.toString(format: "HH:mm"))
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
-            }
 
-            VStack(alignment: message.isUser ? .trailing : .leading, spacing: 4)
-            {
-                if !message.isUser {
+                VStack(alignment: .leading, spacing: 4) {
                     Text("小安")
                         .font(.caption2)
                         .fontWeight(.bold)
@@ -491,95 +559,144 @@ struct ChatBubble: View {
                             AppTheme.textPrimary(for: colorScheme).opacity(0.6)
                         )
                         .padding(.leading, 4)
+
+                    // 支援 Markdown 與關鍵字高亮之回覆內文
+                    HighlightText(
+                        text: message.text,
+                        highlight: isCurrentMatch ? highlightText : "",
+                        highlightColor: .orange,
+                        isUser: false
+                    )
+                    .lineSpacing(4)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
+                    .foregroundColor(AppTheme.textPrimary(for: colorScheme))
+                    .background(AppTheme.cardBackground(for: colorScheme))
+                    .cornerRadius(20)
+                    .shadow(
+                        color: .black.opacity(0.04),
+                        radius: 5,
+                        x: 0,
+                        y: 2
+                    )
                 }
+                .frame(
+                    maxWidth: UIScreen.main.bounds.width * 0.78,
+                    alignment: .leading
+                )
 
-                HighlightText(
-                    text: message.text,
-                    highlight: isCurrentMatch ? highlightText : "",
-                    highlightColor: .orange,
-                    isUser: message.isUser
-                )
-                .font(.body)
-                .lineSpacing(4)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
-                .foregroundColor(
-                    message.isUser
-                        ? .white : AppTheme.textPrimary(for: colorScheme)
-                )
-                .background(
-                    message.isUser
-                        ? AppTheme.primary(for: colorScheme)
-                        : AppTheme.cardBackground(for: colorScheme)
-                )
-                .cornerRadius(20)
-                .shadow(
-                    color: message.isUser
-                        ? AppTheme.primary(for: colorScheme).opacity(0.2)
-                        : .black.opacity(0.04),
-                    radius: 5,
-                    x: 0,
-                    y: 2
-                )
-            }
-
-            if !message.isUser {
                 Text(message.timestamp.toString(format: "HH:mm"))
                     .font(.caption2)
                     .foregroundColor(.secondary)
-                Spacer(minLength: 40)
+
+                Spacer(minLength: 16)
             }
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, 12)
     }
 }
 
-/// 支援動態關鍵字高亮顯示之 Text 元件
+/// 支援動態關鍵字高亮與 Markdown（標題、清單符號、粗體）解析之 Text 元件
 struct HighlightText: View {
     
-    /// 原始對話內文字串
+    /// 原始文字內容
     let text: String
-
-    /// 欲高亮顯示之關鍵字
+    
+    /// 欲高亮之目標字串
     let highlight: String
-
-    /// 高亮背景色彩
+    
+    /// 高亮之背景顏色
     let highlightColor: Color
-
-    /// 是否為使用者發送之訊息（決定文字前景顏色）
+    
+    /// 是否為使用者所發送
     let isUser: Bool
 
     var body: some View {
-        if highlight.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            Text(text)
-        } else {
-            Text(attributedText)
+        // 將逸出換行字元還原並切分為逐行陣列
+        let rawText = text.replacingOccurrences(of: "\\n", with: "\n")
+        let lines = rawText.components(separatedBy: "\n")
+
+        VStack(alignment: .leading, spacing: 4) {
+            ForEach(0..<lines.count, id: \.self) { index in
+                let line = lines[index]
+                let trimmedLine = line.trimmingCharacters(in: .whitespaces)
+
+                if trimmedLine.isEmpty {
+                    // 空行佔位間距
+                    Color.clear.frame(height: 2)
+                } else if trimmedLine.hasPrefix("###") {
+                    // 三級標題解析
+                    let cleanLine = trimmedLine.replacingOccurrences(
+                        of: "###",
+                        with: ""
+                    ).trimmingCharacters(in: .whitespaces)
+
+                    Text(parseInlineAndHighlight(cleanLine))
+                        .font(.title3.bold())
+                        .padding(.top, 4)
+                        .padding(.bottom, 2)
+                } else if trimmedLine.hasPrefix("-") {
+                    // 無序清單項目解析（支援層級縮排與自定義圓點）
+                    if let dashRange = line.range(of: "-") {
+                        let leadingSpaceCount = line.distance(
+                            from: line.startIndex,
+                            to: dashRange.lowerBound
+                        )
+                        let cleanLine = String(line[dashRange.upperBound...])
+                            .trimmingCharacters(in: .whitespaces)
+
+                        HStack(alignment: .top, spacing: 6) {
+                            Text("•")
+                                .font(.title)
+                                .frame(height: 16)
+
+                            Text(parseInlineAndHighlight(cleanLine))
+                        }
+                        .padding(.leading, leadingSpaceCount > 0 ? 24 : 4)
+                    }
+                } else {
+                    // 一般文字行
+                    Text(parseInlineAndHighlight(trimmedLine))
+                }
+            }
         }
     }
 
-    /// 透過解析計算生成包含關鍵字高亮區段之 AttributedString
-    private var attributedText: AttributedString {
-        var attributed = AttributedString(text)
-        var searchRange: Range<AttributedString.Index>? =
-            attributed.startIndex..<attributed.endIndex
+    /// 負責處理 Markdown 行內語法（如粗體）與搜尋關鍵字背景高亮的解析器
+    /// - Parameter string: 欲解析的單行純文字字串
+    /// - Returns: 套用樣式與高亮後的 AttributedString
+    private func parseInlineAndHighlight(_ string: String) -> AttributedString {
+        var options = AttributedString.MarkdownParsingOptions()
+        options.interpretedSyntax = .inlineOnlyPreservingWhitespace
+        var attr =
+            (try? AttributedString(markdown: string, options: options))
+            ?? AttributedString(string)
 
-        while let currentRange = searchRange,
-            let matchRange = attributed[currentRange].range(
-                of: highlight,
-                options: .caseInsensitive
-            )
-        {
-            attributed[matchRange].backgroundColor = highlightColor.opacity(0.35)
-            attributed[matchRange].foregroundColor = isUser ? .white : .primary
+        let trimmedHighlight = highlight.trimmingCharacters(
+            in: .whitespacesAndNewlines
+        )
+        if !trimmedHighlight.isEmpty {
+            var searchRange: Range<AttributedString.Index>? =
+                attr.startIndex..<attr.endIndex
 
-            if matchRange.upperBound < attributed.endIndex {
-                searchRange = matchRange.upperBound..<attributed.endIndex
-            } else {
-                searchRange = nil
+            // 迴圈比對所有符合關鍵字的範圍並套用背景色
+            while let currentRange = searchRange,
+                let matchRange = attr[currentRange].range(
+                    of: trimmedHighlight,
+                    options: .caseInsensitive
+                )
+            {
+                attr[matchRange].backgroundColor = highlightColor.opacity(0.35)
+                attr[matchRange].foregroundColor = isUser ? .white : .primary
+
+                if matchRange.upperBound < attr.endIndex {
+                    searchRange = matchRange.upperBound..<attr.endIndex
+                } else {
+                    searchRange = nil
+                }
             }
         }
-
-        return attributed
+        return attr
     }
 }
 

@@ -2,25 +2,23 @@ import Combine
 import Foundation
 import SwiftUI
 
+@MainActor
 class AIChatViewModel: ObservableObject {
-    
+
     /// 全域單例存取點
     static let shared = AIChatViewModel()
 
-    /// 對話歷史紀錄清單
-    @Published var messages: [ChatMessage] = [
-        ChatMessage(
-            text: "您好呀！我是小安 \n今天身體感覺怎麼樣呢？不論是想聊聊、問問題，我都隨時在這裡陪您喔！",
-            isUser: false,
-            timestamp: Date()
-        )
-    ]
+    /// 對話歷史紀錄清單（預設為空）
+    @Published var messages: [ChatMessage] = []
 
     /// 輸入框文字內容
     @Published var inputText: String = ""
 
     /// 是否正在等待 AI 生成回答
     @Published var isLoading: Bool = false
+
+    /// 是否正在載入歷史對話紀錄
+    @Published var isLoadingHistory: Bool = false
 
     /// 錯誤訊息文字
     @Published var errorMessage: String? = nil
@@ -41,13 +39,16 @@ class AIChatViewModel: ObservableObject {
     /// 當前高亮導覽之搜尋結果索引 (0-based)
     @Published var currentSearchIndex: Int = 0
 
-    /// 當前非同步請求 Task 實例
+    /// 當前發送訊息 Task 實例
     private var currentTask: Task<Void, Never>? = nil
+
+    /// 當前載入歷史紀錄 Task 實例
+    private var loadHistoryTask: Task<Void, Never>? = nil
 
     /// 對話資料 Repository 實例
     private let chatRepo = AiChatRepository()
 
-    /// 所有擁有對話紀錄之日期集合
+    /// 所有擁有對話紀錄之日期集合（已轉換為該日起始時間）
     var availableDates: Set<Date> {
         let dates = messages.map {
             Calendar.current.startOfDay(for: $0.timestamp)
@@ -55,7 +56,7 @@ class AIChatViewModel: ObservableObject {
         return Set(dates)
     }
 
-    /// 可供月曆選擇之日期區間範圍
+    /// 可供月曆選擇之日期區間範圍（最舊對話日期至今日）
     var selectableDateRange: ClosedRange<Date> {
         let calendar = Calendar.current
         let today = calendar.startOfDay(for: Date())
@@ -63,14 +64,6 @@ class AIChatViewModel: ObservableObject {
             messages.map { calendar.startOfDay(for: $0.timestamp) }.min()
             ?? today
         return oldestDate...today
-    }
-
-    /// 檢查指定日期是否有對話紀錄
-    /// - Parameter date: 欲檢查之日期
-    /// - Returns: 布林值
-    func hasMessages(on date: Date) -> Bool {
-        let targetDay = Calendar.current.startOfDay(for: date)
-        return availableDates.contains(targetDay)
     }
 
     /// 符合搜尋關鍵字之訊息清單
@@ -90,30 +83,9 @@ class AIChatViewModel: ObservableObject {
         return matchedMessages[currentSearchIndex].id
     }
 
-    /// 切換至上一筆搜尋結果
-    func previousMatch() {
-        guard !matchedMessages.isEmpty else { return }
-        if currentSearchIndex > 0 {
-            currentSearchIndex -= 1
-        } else {
-            currentSearchIndex = matchedMessages.count - 1
-        }
-    }
-
-    /// 切換至下一筆搜尋結果
-    func nextMatch() {
-        guard !matchedMessages.isEmpty else { return }
-        if currentSearchIndex < matchedMessages.count - 1 {
-            currentSearchIndex += 1
-        } else {
-            currentSearchIndex = 0
-        }
-    }
-
     /// 經過日期篩選後之對話訊息清單
     var filteredMessages: [ChatMessage] {
         messages.filter { message in
-            // 只有選擇日期時才過濾訊息，搜尋關鍵字時不剔除任何對話
             if let targetDate = selectedDate {
                 return Calendar.current.isDate(
                     message.timestamp,
@@ -124,7 +96,7 @@ class AIChatViewModel: ObservableObject {
         }
     }
 
-    /// 依據日期分類分組後之訊息清單
+    /// 依據日期分類分組後之訊息清單，並依日期由舊至新排序
     var groupedMessages: [DateGroupedMessages] {
         let dictionary = Dictionary(grouping: filteredMessages) { message in
             Calendar.current.startOfDay(for: message.timestamp)
@@ -134,6 +106,34 @@ class AIChatViewModel: ObservableObject {
             DateGroupedMessages(date: $0.key, messages: $0.value)
         }
         .sorted { $0.date < $1.date }
+    }
+
+    /// 檢查指定日期是否有對話紀錄
+    /// - Parameter date: 欲檢查之日期
+    /// - Returns: 指定日期若存在對話紀錄則回傳 true，否則回傳 false
+    func hasMessages(on date: Date) -> Bool {
+        let targetDay = Calendar.current.startOfDay(for: date)
+        return availableDates.contains(targetDay)
+    }
+
+    /// 切換至上一筆搜尋結果（具備循環導覽機制）
+    func previousMatch() {
+        guard !matchedMessages.isEmpty else { return }
+        if currentSearchIndex > 0 {
+            currentSearchIndex -= 1
+        } else {
+            currentSearchIndex = matchedMessages.count - 1
+        }
+    }
+
+    /// 切換至下一筆搜尋結果（具備循環導覽機制）
+    func nextMatch() {
+        guard !matchedMessages.isEmpty else { return }
+        if currentSearchIndex < matchedMessages.count - 1 {
+            currentSearchIndex += 1
+        } else {
+            currentSearchIndex = 0
+        }
     }
 
     /// 發送使用者輸入之對話內容並發起非同步 AI 回答請求
@@ -152,27 +152,47 @@ class AIChatViewModel: ObservableObject {
 
         inputText = ""
         isLoading = true
+        errorMessage = nil
 
+        currentTask?.cancel()
         currentTask = Task {
             do {
-                let reply = try await chatRepo.sendMessage(trimmedText)
+                let response = try await chatRepo.sendMessage(trimmedText)
                 if Task.isCancelled { return }
 
-                await MainActor.run {
-                    let aiMessage = ChatMessage(
-                        text: reply,
-                        isUser: false,
-                        timestamp: Date()
-                    )
-                    messages.append(aiMessage)
-                    isLoading = false
-                }
+                let aiMessage = ChatMessage(
+                    text: response.reply,
+                    isUser: false,
+                    timestamp: response.createdAt
+                )
+                messages.append(aiMessage)
+                isLoading = false
             } catch {
                 if Task.isCancelled { return }
-                await MainActor.run {
-                    isLoading = false
-                    errorMessage = "網路好像有點小狀況，請稍後再試試看喔！"
-                }
+                isLoading = false
+                errorMessage = "網路好像有點小狀況，請稍後再試試看喔！"
+            }
+        }
+    }
+
+    /// 載入歷史對話紀錄清單，並依時間由舊至新排序
+    func loadHistory() {
+        loadHistoryTask?.cancel()
+        isLoadingHistory = true
+        errorMessage = nil
+
+        loadHistoryTask = Task {
+            do {
+                let historyMessages = try await chatRepo.fetchHistory()
+                if Task.isCancelled { return }
+
+                // 確保對話紀錄由舊至新排序，符合聊天室由上而下的閱讀順序
+                self.messages = historyMessages.sorted { $0.timestamp < $1.timestamp }
+                self.isLoadingHistory = false
+            } catch {
+                if Task.isCancelled { return }
+                self.isLoadingHistory = false
+                self.errorMessage = "載入歷史紀錄失敗，請稍後再試"
             }
         }
     }
