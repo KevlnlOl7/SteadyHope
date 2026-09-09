@@ -638,8 +638,9 @@ final class ExportSettingsViewModel: ObservableObject {
         async let loadSymptoms: () = symptomVM.loadSymptoms(for: "", isSilent: true)
         async let loadTremor: () = dataVM.loadTremorHistory()
         async let loadVitals: () = vitalsVM.loadVitals()
-
-        _ = await (loadMeds, loadSymptoms, loadTremor, loadVitals)
+        async let fetchAssessments = (try? AssessmentRepository.shared.fetchAssessment(dateString: nil)) ?? []
+        
+        let (_, _, _, _, allAssessments) = await (loadMeds, loadSymptoms, loadTremor, loadVitals, fetchAssessments)
 
         let formatter = makeDateFormatter("yyyy-MM-dd")
         let timeFormatter = makeDateFormatter("yyyy-MM-dd HH:mm")
@@ -781,6 +782,28 @@ final class ExportSettingsViewModel: ObservableObject {
                 """
             }
         }
+        
+        let filteredAssessments = allAssessments
+            .filter { $0.date >= filterStart && $0.date <= filterEnd }
+            .sorted { $0.date < $1.date }
+
+        var assessmentRowsHTML = ""
+        if filteredAssessments.isEmpty {
+            assessmentRowsHTML = "<tr><td colspan='3' style='text-align:center; color:#a0aec0;'>此期間內無自我評估量表紀錄</td></tr>"
+        } else {
+            for record in filteredAssessments {
+                let questionCount = record.parsedDetails.count
+                let maxPossibleScore = questionCount * 4
+                
+                assessmentRowsHTML += """
+                <tr>
+                    <td>\(htmlEscape(formatter.string(from: record.date)))</td>
+                    <td><strong>\(record.totalScore)</strong> / \(maxPossibleScore) <br><span style="font-size:10px; color:#718096;">(共 \(questionCount) 題)</span></td>
+                    <td>情緒: \(record.moodScore) | 日常: \(record.adlScore) | 動作: \(record.motorScore)</td>
+                </tr>
+                """
+            }
+        }
 
         var consultationBlocksHTML = ""
 
@@ -890,6 +913,7 @@ final class ExportSettingsViewModel: ObservableObject {
             .replacingOccurrences(of: "{{symptomRowsHTML}}", with: symptomRowsHTML)
             .replacingOccurrences(of: "{{medicationRowsHTML}}", with: medicationRowsHTML)
             .replacingOccurrences(of: "{{vitalsRowsHTML}}", with: vitalsRowsHTML)
+            .replacingOccurrences(of: "{{assessmentRowsHTML}}", with: assessmentRowsHTML)
             .replacingOccurrences(of: "{{consultationSectionHTML}}", with: consultationSectionHTML)
 
         PDFDataGenerator.shared.generatePDFData(from: htmlContent) { [weak self] data in

@@ -313,7 +313,7 @@
             </div>
         </div>
 
-        <!-- 區塊 1：手部震顫走勢與頻率圖表 -->
+        <!-- 手部震顫走勢與頻率圖表 -->
         <div class="content-block">
             <div class="section-title">手部震顫圖表</div>
 
@@ -353,7 +353,7 @@
             </div>
         </div>
 
-        <!-- 區塊 2：手部震顫事件紀錄清單 -->
+        <!-- 手部震顫事件紀錄清單 -->
         <div class="content-block">
             <div class="section-title">手部震顫事件紀錄</div>
             <table class="data-table">
@@ -372,7 +372,27 @@
             </table>
         </div>
 
-        <!-- 區塊 3：日常生活表徵與突發症狀紀錄 -->
+        <!-- 區塊：症狀評估量表紀錄 -->
+        <div class="content-block">
+            <div class="section-title">日常症狀自我評估</div>
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th style="width:25%;">評估日期</th>
+                        <th style="width:20%;">總分</th>
+                        <th style="width:55%;">各向度得分 (情緒/日常/動作)</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {{assessmentRowsHTML}}
+                </tbody>
+            </table>
+            <div class="chart-note">
+                量表題目參考自台灣動作障礙學會，單題 0-4 分。因系統提供快速檢測與完整評估等不同模式，總分欄位以「實際得分 / 該次填寫題數之最高滿分」呈現。本表單純客觀記錄病患自我評估分數與向度分布，供臨床醫師問診參考。
+            </div>
+        </div>
+        
+        <!-- 日常生活表徵與突發症狀紀錄 -->
         <div class="content-block">
             <div class="section-title">日常生活表徵與症狀紀錄</div>
             <div class="symptom-container">
@@ -380,7 +400,7 @@
             </div>
         </div>
 
-        <!-- 區塊 4：實際用藥與劑量紀錄清單 -->
+        <!-- 實際用藥與劑量紀錄清單 -->
         <div class="content-block">
             <div class="section-title">用藥與控制紀錄</div>
             <table class="data-table">
@@ -397,7 +417,7 @@
             </table>
         </div>
 
-        <!-- 區塊 5：血壓、血糖、體溫與體重等生理徵象監測紀錄 -->
+        <!-- 血壓、血糖、體溫與體重等生理徵象監測紀錄 -->
         <div class="content-block">
             <div class="section-title">生理徵象監測紀錄</div>
             <table class="data-table">
@@ -416,7 +436,7 @@
             </table>
         </div>
 
-        <!-- 區塊 6：醫師看診與診間溝通備忘錄 -->
+        <!-- 醫師看診與診間溝通備忘錄 -->
         {{consultationSectionHTML}}
     </div>
 </body>

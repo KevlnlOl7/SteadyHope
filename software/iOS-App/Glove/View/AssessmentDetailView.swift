@@ -11,11 +11,23 @@ struct AssessmentDetailView: View {
                         .font(.subheadline)
                         .foregroundColor(.secondary)
 
-                    Text("\(record.totalScore)")
-                        .font(.system(size: 48, weight: .bold))
-                        .foregroundColor(.accentColor)
+                    HStack(alignment: .bottom, spacing: 4) {
+                        Text("\(record.totalScore)")
+                            .font(.system(size: 48, weight: .bold))
+                            .foregroundColor(.accentColor)
+                        
+                        Text("/ \(record.parsedDetails.count * 4)")
+                            .font(.system(size: 24, weight: .semibold))
+                            .foregroundColor(.secondary)
+                            .padding(.bottom, 6)
+                    }
+                    
+                    Text("本次共填寫 \(record.parsedDetails.count) 題")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
 
                     Divider()
+                        .padding(.vertical, 4)
 
                     HStack(spacing: 20) {
                         scoreBadge(title: "情緒指標", score: record.moodScore)
@@ -69,6 +81,27 @@ struct AssessmentDetailView: View {
                         }
                     }
                 }
+                
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "info.circle.fill")
+                            .foregroundColor(.blue)
+                        Text("量表說明")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundColor(.primary)
+                    }
+                    Text("量表題目參考自台灣動作障礙學會。單一題目分數介於 0-4 分，分數越高代表該症狀對日常生活的影響越顯著。此總分紀錄為病患日常自我主觀評估，重點在於長期趨勢變化，供臨床醫師問診時參考。")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .lineSpacing(4)
+                }
+                .padding(16)
+                .background(Color.blue.opacity(0.05))
+                .cornerRadius(10)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10)
+                        .stroke(Color.blue.opacity(0.15), lineWidth: 1)
+                )
             }
             .padding(16)
         }

@@ -3,29 +3,47 @@ import SwiftUI
 
 struct AssessmentView: View {
     @Environment(\.dismiss) private var dismiss
-
+    @ObservedObject var loginVM: LoginViewModel
+    
     @StateObject private var viewModel = AssessmentViewModel()
 
+    /// 判斷當前使用者是否為照護者 (role == 1 或已綁定被照護者)
+    private var isCaregiver: Bool {
+        loginVM.userData?.role == 1 || loginVM.boundPartner != nil
+    }
+    
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    dailyQuickSection
-                    themeSelectionSection
-                    weeklyFullSection
+            Group {
+                if isCaregiver {
+                    AssessmentHistoryView()
+                } else {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 20) {
+                            dailyQuickSection
+                            themeSelectionSection
+                            weeklyFullSection
+                            
+                            aiNoticeCard
+                            
+                            Spacer()
+                        }
+                        .padding(16)
+                    }
+                    .background(Color(red: 0.96, green: 0.96, blue: 0.97))
                 }
-                .padding(16)
             }
-            .background(Color(red: 0.96, green: 0.96, blue: 0.97))
-            .navigationTitle("症狀評估量表")
+            .navigationTitle(isCaregiver ? "評估歷史紀錄" : "症狀評估量表")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    NavigationLink {
-                        AssessmentHistoryView()
-                    } label: {
-                        Image(systemName: "clock.arrow.circlepath")
-                            .imageScale(.medium)
+                if !isCaregiver {
+                    ToolbarItem(placement: .navigationBarTrailing) {
+                        NavigationLink {
+                            AssessmentHistoryView()
+                        } label: {
+                            Image(systemName: "clock.arrow.circlepath")
+                                .imageScale(.medium)
+                        }
                     }
                 }
             }
@@ -166,6 +184,53 @@ struct AssessmentView: View {
             }
         }
     }
+    
+    private var aiNoticeCard: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 8) {
+                Image(systemName: "info.circle.fill")
+                    .font(.system(size: 16))
+                    .foregroundColor(.blue)
+                
+                Text("關於症狀評估量表的說明")
+                    .font(.system(size: 15, weight: .bold))
+                    .foregroundColor(.primary)
+            }
+            
+            Divider()
+                .background(Color.blue.opacity(0.2))
+            
+            VStack(alignment: .leading, spacing: 8) {
+                Label {
+                    Text("智慧化數據分析：填寫的資料將由 AI 模型進行綜合彙整與趨勢追蹤，提供更精準的照護建議。")
+                } icon: {
+                    Image(systemName: "checkmark.circle")
+                        .foregroundColor(.blue)
+                }
+                
+                Label {
+                    Text("定期追蹤的價值：持續記錄有助於醫療團隊在您回診時，更全面地了解日常病況變化。")
+                } icon: {
+                    Image(systemName: "checkmark.circle")
+                        .foregroundColor(.blue)
+                }
+            }
+            .font(.system(size: 13))
+            .foregroundColor(.secondary)
+            .lineSpacing(3)
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 14)
+                .fill(Color(red: 0.94, green: 0.97, blue: 1.0))
+                .shadow(color: Color.blue.opacity(0.06), radius: 6, y: 2)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 14)
+                .stroke(Color.blue.opacity(0.15), lineWidth: 1)
+        )
+        .padding(.top, 12)
+    }
 }
 
 /// 評估問卷題目填寫子視圖，展示題目清單、單選選項與提交按鈕
@@ -261,14 +326,6 @@ private struct AssessmentFormView: View {
                 .cornerRadius(10)
                 .disabled(viewModel.isSubmitting)
                 .padding(.top, 10)
-
-                Text("本表單填寫之資料將用於協助 AI 模型彙整與分析您的每日狀態，以提供更精確的評估追蹤與建議。")
-                    .font(.footnote)
-                    .foregroundColor(.secondary)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 16)
-                    .padding(.top, 8)
-                    .padding(.bottom, 20)
             }
             .padding(16)
         }
