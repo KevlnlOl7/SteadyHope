@@ -16,6 +16,32 @@ struct ProfileSideMenuView: View {
         return isCaregiver && !loginVM.isLinked
     }
 
+    /// 計算下一個即將到來的服藥時段
+    private var nextDoseTimeText: String {
+        guard reminderManager.isMedicationReminderEnabled else {
+            return "已關閉提醒"
+        }
+
+        let now = Date()
+        let items = planVM.oralDoseItems(for: now)
+        guard !items.isEmpty else {
+            return "今日無排程"
+        }
+
+        let currentHM = now.toString(format: "HH:mm")
+        let allTimes = Array(Set(items.map { $0.timeString }))
+            .filter { $0 != "未設定時間" }
+            .sorted()
+
+        if let nextTime = allTimes.first(where: { $0 > currentHM }) {
+            return nextTime
+        } else if !allTimes.isEmpty {
+            return "今日已無待服藥物"
+        } else {
+            return "未設定時間"
+        }
+    }
+
     var body: some View {
         ZStack(alignment: .leading) {
             if isOpen {
@@ -81,6 +107,40 @@ struct ProfileSideMenuView: View {
         .padding(.bottom, 16)
     }
 
+    /// 提醒日程區塊
+    private var reminderSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("提醒日程")
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .padding(.horizontal, 20)
+                .padding(.top, 10)
+
+            VStack(spacing: 8) {
+                ReminderCard(
+                    icon: "pills.fill",
+                    iconColor: .orange,
+                    title: "下次用藥時間",
+                    timeText: nextDoseTimeText
+                )
+
+                ReminderCard(
+                    icon: "calendar.badge.clock",
+                    iconColor: .blue,
+                    title: "下次回診時間",
+                    timeText: reminderManager.clinicVisitDisplayText
+                )
+
+                ReminderCard(
+                    icon: "cross.case.fill",
+                    iconColor: .green,
+                    title: "下次領藥時間",
+                    timeText: reminderManager.refillDisplayText
+                )
+            }
+            .padding(.horizontal, 16)
+
+            Divider().padding(.vertical, 4)
         }
     }
 
@@ -95,6 +155,14 @@ struct ProfileSideMenuView: View {
 
             VStack(spacing: 4) {
                 if !isUnlinkedCaregiver {
+                    NavigationLink(
+                        destination: ReminderSettingsView(
+                            planVM: planVM,
+                            currentUserID: loginVM.userData?.userID ?? 0
+                        )
+                    ) {
+                        MenuRow(icon: "bell.badge", title: "提醒設定")
+                    }
 
                     NavigationLink(
                         destination: ExportSettingsView(
@@ -142,6 +210,59 @@ struct ProfileSideMenuView: View {
     }
 }
 
+// 提醒小卡組件
+struct ReminderCard: View {
+    let icon: String
+    let iconColor: Color
+    let title: String
+    let timeText: String
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: icon)
+                .foregroundColor(iconColor)
+                .font(.system(size: 18))
+                .frame(width: 24)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                Text(timeText)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(.primary)
+            }
+            Spacer()
+        }
+        .padding(10)
+        .background(Color(red: 0.96, green: 0.96, blue: 0.97))
+        .cornerRadius(10)
+    }
+}
+
+// 選單行組件
+struct MenuRow: View {
+    let icon: String
+    let title: String
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: icon)
+                .font(.system(size: 16))
+                .foregroundColor(.gray)
+                .frame(width: 24)
+            Text(title)
+                .font(.system(size: 15))
+                .foregroundColor(.primary)
+            Spacer()
+            Image(systemName: "chevron.right")
+                .font(.system(size: 12))
+                .foregroundColor(.gray.opacity(0.5))
+        }
+        .padding(.vertical, 10)
+        .padding(.horizontal, 8)
+    }
+}
 
 // 關於我們頁面
 struct AboutUsView: View {

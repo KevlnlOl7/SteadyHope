@@ -47,6 +47,10 @@ struct RootView: View {
         .id(loginVM.isAuthenticated)
         // 登入狀態切換時的淡入淡出轉場動畫
         .animation(.easeInOut(duration: 0.3), value: loginVM.isAuthenticated)
+        // App 啟動進入 RootView 時請求本地推播權限
+        .onAppear {
+            NotificationScheduler.shared.requestAuthorization()
+        }
         // 全域攔截 401 Unauthorized 通知並執行強制登出流程
         .onReceive(
             NotificationCenter.default.publisher(
