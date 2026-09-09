@@ -8,6 +8,10 @@ struct NavigationBarView: View {
     @ObservedObject var dataVM: DataViewModel
     @ObservedObject var medVM: MedicationViewModel
     @ObservedObject var bleVM: BluetoothViewModel
+    @ObservedObject var symptomVM: SymptomViewModel
+    @ObservedObject var vitalsVM: HealthVitalsViewModel
+
+    @StateObject private var planVM = MedicationPlanViewModel()
 
     /// 病患端的分頁標籤與圖示設定
     private let patientTabs = [
@@ -15,7 +19,7 @@ struct NavigationBarView: View {
         (title: "Setting", icon: "gearshape.fill"),
         (title: "Daily", icon: "heart.text.clipboard.fill"),
         (title: "Data", icon: "chart.bar.fill"),
-        (title: "Profile", icon: "person.fill"),
+        (title: "Medication", icon: "pills.fill"),
     ]
 
     /// 照護者端的分頁標籤與圖示設定
@@ -23,7 +27,7 @@ struct NavigationBarView: View {
         (title: "Daily", icon: "heart.text.clipboard.fill"),
         (title: "Setting", icon: "gearshape.fill"),
         (title: "Monitor", icon: "chart.xyaxis.line"),
-        (title: "Profile", icon: "person.crop.circle.badge.checkmark"),
+        (title: "Medication", icon: "pills.fill"),
     ]
 
     var body: some View {
@@ -60,7 +64,21 @@ struct NavigationBarView: View {
                     .padding(.bottom, 80)
                     .padding(.trailing, 20)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+                // 螢幕左側滑動感應區
+                if !showSideMenu {
+                    edgeSwipeDetector
+                }
 
+                // 側邊選單視圖
+                ProfileSideMenuView(
+                    isOpen: $showSideMenu,
+                    loginVM: loginVM,
+                    medVM: medVM,
+                    dataVM: dataVM,
+                    planVM: planVM,
+                    symptomVM: symptomVM,
+                    vitalsVM: vitalsVM
+                )
             }
             .navigationTitle("")
             .navigationBarHidden(true)
@@ -111,8 +129,45 @@ struct NavigationBarView: View {
                     radius: 6,
                     x: 0,
                     y: 3
+    /// 螢幕左側邊緣滑動手勢偵測區域
+    private var edgeSwipeDetector: some View {
+        GeometryReader { geometry in
+            Color.clear
+                .contentShape(Rectangle())
+                .frame(width: 30, height: geometry.size.height)
+                .gesture(
+                    DragGesture(minimumDistance: 15)
+                        .onEnded { value in
+                            if value.translation.width > 40 && abs(value.translation.width) > abs(value.translation.height) {
+                                hideKeyboard()
+                                withAnimation(.easeInOut(duration: 0.25)) {
+                                    showSideMenu = true
+                                }
+                            }
+                        }
                 )
+        }
+        .allowsHitTesting(true)
+    }
+
+    /// 頂部自訂選單按鈕列
+    private var topHeaderBar: some View {
+        HStack {
+            Button(action: {
+                hideKeyboard()
+                withAnimation(.easeInOut(duration: 0.25)) {
+                    showSideMenu.toggle()
+                }
+            }) {
+                Image(systemName: "line.3.horizontal")
+                    .font(.system(size: 20, weight: .bold))
+                    .foregroundColor(.primary)
+                    .padding(10)
+                    .background(Color.white)
+                    .clipShape(Circle())
+                    .shadow(color: Color.black.opacity(0.06), radius: 4, y: 2)
             }
+            Spacer()
         }
     
     /// 病患端專用的分頁視圖
@@ -131,7 +186,7 @@ struct NavigationBarView: View {
             DataView(loginVM: loginVM, dataVM: dataVM,bleVM:bleVM)
                 .tag(3)
 
-            ProfileView(loginVM: loginVM, medVM: medVM, dataVM: dataVM)
+            MedicationView(loginVM: loginVM, dataVM: dataVM, bleVM: bleVM)
                 .tag(4)
 
         }
@@ -154,55 +209,58 @@ struct NavigationBarView: View {
                 DataView(loginVM: loginVM, dataVM: dataVM,bleVM:bleVM)
                     .tag(2)
 
-                ProfileView(loginVM: loginVM, medVM: medVM, dataVM: dataVM)
+                MedicationView(loginVM: loginVM, dataVM: dataVM, bleVM: bleVM)
                     .tag(3)
             }
             .tabViewStyle(.page(indexDisplayMode: .never))
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
-            // 未綁定病患：僅顯示個人資料頁，並彈出連動提醒
-            NavigationStack {
-                ProfileView(loginVM: loginVM, medVM: medVM, dataVM: dataVM)
+            VStack(spacing: 20) {
+                Spacer()
+                Image(systemName: "person.badge.shield.exclamationmark")
+                    .font(.system(size: 60))
+                    .foregroundColor(.gray)
+                Text("尚未綁定被照護者")
+                    .font(.headline)
+                Text("請點擊左上角選單前往「帳號設定」進行配對。")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 30)
+                Spacer()
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .padding(.bottom, 10)
             .alert("家屬連動提醒", isPresented: $showBindReminderAlert) {
-                Button("確定") {
-                }
+                Button("確定") {}
             } message: {
-                Text("您目前尚未連接任何被照護者。\n請點選「帳號設定」進行家屬連動，\n以解鎖完整功能。")
+                Text("您目前尚未連接任何被照護者。\n請至「帳號設定」進行家屬連動，\n以解鎖完整功能。")
             }
         }
     }
 
-    /// 初始化時檢查照護者端目前的綁定連線狀態
+    /// 檢查照護者之初始連線與病患綁定狀態
     private func checkInitialConnectionStatus() async {
         guard loginVM.userData?.role == 1 else { return }
-
         let bondRepo = UserBondRepository()
         do {
-            let result = try await bondRepo.fetchMyBoundPartnerInfo()
-
+            let result = try await bondRepo.fetchBoundPatientInfo()
             await MainActor.run {
                 let newlyLinked = !result.partnerEmail.isEmpty
-
-                // 首度切換為已連線狀態時，自動將選取 Tab 重置至第一個分頁
                 if !loginVM.isLinked && newlyLinked {
                     selectedTab = 0
                 }
+                loginVM.boundPartner = result
                 loginVM.isLinked = newlyLinked
             }
         } catch {
             let errorMsg = error.localizedDescription
-
-            // 若為 401 授權失效等錯誤，不觸發綁定提醒，改由全域廣播處理登出
             if errorMsg.contains("401") || errorMsg.contains("已在其他裝置登入")
                 || errorMsg.contains("登入已失效")
             {
                 return
             }
-
             await MainActor.run {
+                loginVM.boundPartner = nil
                 loginVM.isLinked = false
                 showBindReminderAlert = true
             }
