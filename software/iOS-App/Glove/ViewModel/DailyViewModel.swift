@@ -1,6 +1,4 @@
-import AVFoundation
 import Combine
-import Speech
 import SwiftData
 import SwiftUI
 
@@ -10,97 +8,88 @@ class DailyViewModel: ObservableObject {
     /// 每日留言資料存取 Repository 層實例
     private let dailyRepo = DailyRepository()
 
-    /// 當前使用者角色與名稱（動態取得自 loginVM）
+    /// 使用者資訊與身分判斷
     var currentUserRole: String {
         loginVM.userData?.userName ?? "用戶"
     }
+    var isPatient: Bool {
+        loginVM.userData?.role == 0
+    }
 
-    /// 可供選擇的心情選項清單
+    /// 心情選項清單
     let moods = ["開心", "平靜", "疲憊", "不舒服"]
 
-    /// 留言板資料清單（同時同步本機 SwiftData 與伺服器資料）
+    /// 留言清單與查詢狀態
     @Published var notes: [Daily] = []
-
-    /// 資料載入狀態指示
     @Published var isLoadingData = false
-
-    /// 選擇查詢的目標日期
     @Published var selectedDate = Date()
-
-    /// 選擇查詢的心情識別碼
     @Published var selectedMood: UUID? = nil
-
-    /// 是否顯示新增留言 Sheet 視圖
-    @Published var showAddNoteSheet = false
-
-    /// 是否僅限照護者查看狀態
-    @Published var isCaregiverOnly: Bool = false
-
-    /// 當前所選取欲檢視詳細資訊或刪除的便利貼模型
     @Published var selectedDetailNote: Daily? = nil
 
-    /// 新增留言時輸入的內文暫存
+    /// 新增便利貼暫存狀態
+    @Published var showAddNoteSheet = false
     @Published var newNoteText = ""
-
-    /// 新增便利貼預設選取的背景顏色
+    @Published var sheetSelectedMoodName: String? = nil
+    @Published var isCaregiverOnly: Bool = false
     @Published var noteColor: Color = Color(
         red: 1.0,
         green: 0.94,
         blue: 0.8
     )
 
-    /// 新增便利貼時所選取的心情名稱
-    @Published var sheetSelectedMoodName: String? = nil
+    /// 編輯便利貼暫存狀態
+    @Published var editingNote: Daily? = nil
+    @Published var editNoteText: String = ""
+    @Published var editSelectedMoodName: String? = nil
+    @Published var editIsCaregiverOnly: Bool = false
+    @Published var editNoteColor: Color = Color(
+        red: 1.0,
+        green: 0.94,
+        blue: 0.8
+    )
 
-    /// 語音辨識管理員實例
-    @Published var speechRecognizer = SpeechRecognizer()
-
-    /// Combine 訂閱集合
-    private var cancellables = Set<AnyCancellable>()
-
-    /// 初始化 DailyViewModel 並訂閱語音轉譯事件
-    /// - Parameter loginVM: 使用者登入狀態與權限 ViewModel
+    /// 初始化 ViewModel 並注入登入狀態管理器
+    /// - Parameter loginVM: 登入狀態與使用者資料的 ViewModel
     init(loginVM: LoginViewModel) {
         self.loginVM = loginVM
+    }
 
-        // 訂閱語音辨識結果，即時更新輸入框內容
-        speechRecognizer.$transcript
-            .dropFirst()
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] newValue in
-                guard let self = self, !newValue.isEmpty else { return }
-                if self.speechRecognizer.isRecording {
-                    let cleaned = self.cleanExcessiveNewlines(newValue)
-                    self.newNoteText = self.limitLinesAndLength(
-                        text: cleaned,
-                        maxCharacters: 100,
-                        maxLines: 5
-                    )
-                }
-            }
-            .store(in: &cancellables)
+    /// 送出與儲存校驗：病患文字與心情二擇一，照護者留言文字必填
+    var canSendNote: Bool {
+        let trimmed = newNoteText.trimmingCharacters(in: .whitespacesAndNewlines)
+        return isPatient ? (!trimmed.isEmpty || sheetSelectedMoodName != nil) : !trimmed.isEmpty
+    }
+
+    var canSaveEditedNote: Bool {
+        let trimmed = editNoteText.trimmingCharacters(in: .whitespacesAndNewlines)
+        return isPatient ? (!trimmed.isEmpty || editSelectedMoodName != nil) : !trimmed.isEmpty
     }
 
     /// 今日所有填寫心情的便利貼紀錄，並依時間由舊至新排序
     var todaysDailiesWithMood: [Daily] {
-        notes.filter {
-            Calendar.current.isDateInToday($0.date) && $0.moodName != nil
+        let calendar = Calendar.current
+        return notes.filter {
+            calendar.isDateInToday($0.date) && $0.moodName != nil
         }.sorted(by: { $0.date < $1.date })
     }
 
-    /// 處理手動輸入留言時的字數與換行限制
+    /// 處理手動輸入新增留言時的字數與換行限制
     /// - Parameter newValue: 新輸入的文字內容
     func handleNoteTextChange(_ newValue: String) {
-        guard !speechRecognizer.isRecording else { return }
-
         let cleaned = cleanExcessiveNewlines(newValue)
-        let limited = limitLinesAndLength(
-            text: cleaned,
-            maxCharacters: 100,
-            maxLines: 5
-        )
+        let limited = limitLinesAndLength(text: cleaned, maxCharacters: 100, maxLines: 5)
         if limited != newValue {
             newNoteText = limited
+        }
+    }
+
+    /// 處理手動編輯既有留言時的字數與換行限制
+    /// - Parameter newValue: 新輸入的文字內容
+    func handleEditTextChange(_ newValue: String) {
+        let cleaned = cleanExcessiveNewlines(newValue)
+        let limited = limitLinesAndLength(text: cleaned, maxCharacters: 100, maxLines: 5)
+        if limited != newValue {
+            editNoteText = limited
         }
     }
 
@@ -125,10 +114,8 @@ class DailyViewModel: ObservableObject {
         }
 
         do {
-            // 從後端獲取最新資料
             let remoteNotes = try await dailyRepo.fetchAllDailies()
 
-            // 清除本機舊的 Daily 紀錄，避免資料庫重複混亂
             let descriptor = FetchDescriptor<Daily>()
             if let oldNotes = try? modelContext.fetch(descriptor) {
                 for note in oldNotes {
@@ -136,12 +123,10 @@ class DailyViewModel: ObservableObject {
                 }
             }
 
-            // 將最新遠端資料存入 SwiftData 本機資料庫
             for note in remoteNotes {
                 modelContext.insert(note)
             }
 
-            // 保存本機資料庫並更新畫面陣列
             try? modelContext.save()
             self.notes = remoteNotes
 
@@ -149,14 +134,12 @@ class DailyViewModel: ObservableObject {
             let errorMsg = error.localizedDescription
             print("載入便利貼失敗: \(errorMsg)")
 
-            // 若為 401 或登入失效，不載入快取，直接清空資料並返回
             if errorMsg.contains("401") || errorMsg.contains("已在其他裝置登入") || errorMsg.contains("登入已失效") {
                 self.notes = []
                 isLoadingData = false
                 return
             }
 
-            // 僅在非 401 錯誤（如網路斷線）時，降級讀取本機快取資料
             let descriptor = FetchDescriptor<Daily>(
                 sortBy: [SortDescriptor(\.date, order: .reverse)]
             )
@@ -171,16 +154,12 @@ class DailyViewModel: ObservableObject {
     /// - Parameter modelContext: SwiftData 資料庫操作上下文
     @MainActor
     func sendNote(modelContext: ModelContext) async {
-        speechRecognizer.stopRecording()
-        let finalContent = newNoteText.trimmingCharacters(
-            in: .whitespacesAndNewlines
-        )
+        guard canSendNote else { return }
 
-        guard !finalContent.isEmpty else { return }
+        let trimmedContent = newNoteText.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        // 建立新的本機 Daily 模型
-        let newNote = Daily(
-            content: finalContent,
+        let newDaily = Daily(
+            content: trimmedContent,
             date: Date(),
             colorHex: noteColor.toHex() ?? "#FFF0CC",
             sender: currentUserRole,
@@ -188,33 +167,82 @@ class DailyViewModel: ObservableObject {
             isCaregiverOnly: isCaregiverOnly
         )
 
-        // 同步寫入本機 SwiftData 資料庫
-        modelContext.insert(newNote)
+        modelContext.insert(newDaily)
         try? modelContext.save()
 
-        // 即時更新畫面列表
-        self.notes.insert(newNote, at: 0)
-        let noteID = newNote.id
+        if !trimmedContent.isEmpty {
+            self.notes.insert(newDaily, at: 0)
+        } else {
+            self.notes.append(newDaily)
+        }
 
+        let recordID = newDaily.id
         resetSheetState()
 
-        // 背景同步至伺服器
         do {
             try await dailyRepo.syncDailyRecord(
-                id: noteID,
-                content: newNote.content,
-                date: newNote.date,
-                colorHex: newNote.colorHex,
-                sender: newNote.sender,
-                moodName: newNote.moodName,
-                isCaregiverOnly: newNote.isCaregiverOnly
+                id: recordID,
+                content: newDaily.content,
+                date: newDaily.date,
+                colorHex: newDaily.colorHex,
+                sender: newDaily.sender,
+                moodName: newDaily.moodName,
+                isCaregiverOnly: newDaily.isCaregiverOnly
             )
         } catch {
-            print("同步便利貼至伺服器失敗: \(error.localizedDescription)")
+            print("同步紀錄至伺服器失敗: \(error.localizedDescription)")
         }
     }
 
-    /// 刪除便利貼（同步更新 UI、本機 SwiftData 與遠端伺服器）
+    /// 編輯便利貼：載入目標資料至表單
+    /// - Parameter note: 欲修改的 Daily 實體
+    func startEditing(_ note: Daily) {
+        self.editingNote = note
+        self.editNoteText = note.content
+        self.editNoteColor = Color(hex: note.colorHex)
+        self.editSelectedMoodName = note.moodName
+        self.editIsCaregiverOnly = note.isCaregiverOnly ?? false
+    }
+
+    /// 儲存編輯內容：更新本機實體與遠端資料庫（若文字清空則移出留言看板）
+    /// - Parameter modelContext: SwiftData 資料庫操作上下文
+    @MainActor
+    func saveEditedNote(modelContext: ModelContext) async {
+        guard let note = editingNote, canSaveEditedNote else { return }
+
+        let trimmedContent = editNoteText.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        note.content = trimmedContent
+        note.colorHex = editNoteColor.toHex() ?? "#FFF0CC"
+        note.moodName = editSelectedMoodName
+        note.isCaregiverOnly = editIsCaregiverOnly
+
+        try? modelContext.save()
+
+        if let index = notes.firstIndex(where: { $0.id == note.id }) {
+            notes[index] = note
+        }
+
+        let recordID = note.id
+        self.editingNote = nil
+        self.selectedDetailNote = nil
+
+        do {
+            try await dailyRepo.syncDailyRecord(
+                id: recordID,
+                content: note.content,
+                date: note.date,
+                colorHex: note.colorHex,
+                sender: note.sender,
+                moodName: note.moodName,
+                isCaregiverOnly: note.isCaregiverOnly
+            )
+        } catch {
+            print("更新紀錄至伺服器失敗: \(error.localizedDescription)")
+        }
+    }
+
+    /// 刪除便利貼：移除本機快取與遠端資料
     /// - Parameters:
     ///   - note: 欲刪除的 Daily 實體
     ///   - modelContext: SwiftData 資料庫操作上下文
@@ -222,14 +250,10 @@ class DailyViewModel: ObservableObject {
     func deleteNote(note: Daily, modelContext: ModelContext) async {
         let noteID = note.id
 
-        // 從畫面清單中移除
         notes.removeAll { $0.id == noteID }
-
-        // 從 SwiftData 本機資料庫刪除
         modelContext.delete(note)
         try? modelContext.save()
 
-        // 連動刪除伺服器端資料
         do {
             try await dailyRepo.removeDailyRecord(recordID: noteID)
         } catch {
@@ -237,21 +261,24 @@ class DailyViewModel: ObservableObject {
         }
     }
 
-    /// 取消新增便利貼並重置 Sheet 狀態
+    /// 重設新增表單狀態並關閉表單
     func cancelAddingNote() {
-        speechRecognizer.stopRecording()
         resetSheetState()
     }
 
-    /// 重置新增表單的輸入狀態與暫存變數
+    /// 清空新增便利貼表單的所有輸入暫存欄位
     private func resetSheetState() {
         newNoteText = ""
         sheetSelectedMoodName = nil
         showAddNoteSheet = false
-        speechRecognizer.transcript = ""
     }
 
-    /// 限制文字的最高行數與總字數
+    /// 字串格式限制處理（限制最大字數與最大行數）
+    /// - Parameters:
+    ///   - text: 原始輸入字串
+    ///   - maxCharacters: 允許輸入的最大字元數
+    ///   - maxLines: 允許輸入的最大行數
+    /// - Returns: 符合規範的安全裁剪字串
     private func limitLinesAndLength(
         text: String,
         maxCharacters: Int,
@@ -266,7 +293,9 @@ class DailyViewModel: ObservableObject {
         return String(text.prefix(maxCharacters))
     }
 
-    /// 清除過多連續換行符號
+    /// 移除過多連續換行符號（將 3 個以上換行壓縮為 2 個）
+    /// - Parameter text: 原始輸入字串
+    /// - Returns: 整理後的排版字串
     private func cleanExcessiveNewlines(_ text: String) -> String {
         return text.replacingOccurrences(
             of: "(\\n\\s*){3,}",
@@ -275,7 +304,9 @@ class DailyViewModel: ObservableObject {
         )
     }
 
-    /// 取得心情名稱對應之 SFSymbols 圖示名稱
+    /// 根據心情中文名稱取得對應的 SF Symbol 圖示名稱
+    /// - Parameter name: 心情名稱（開心、平靜、疲憊、不舒服）
+    /// - Returns: 對應的 SF Symbol 圖示識別碼字串
     func getMoodIcon(for name: String) -> String {
         switch name {
         case "開心": return "face.smiling"
@@ -286,7 +317,9 @@ class DailyViewModel: ObservableObject {
         }
     }
 
-    /// 取得心情名稱對應之代表色彩
+    /// 根據心情中文名稱取得對應的主題色
+    /// - Parameter name: 心情名稱（開心、平靜、疲憊、不舒服）
+    /// - Returns: 對應的心情標籤色彩
     func getMoodColor(for name: String) -> Color {
         switch name {
         case "開心": return .orange

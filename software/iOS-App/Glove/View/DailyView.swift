@@ -39,12 +39,13 @@ struct DailyView: View {
                 note.date,
                 inSameDayAs: selectedDate
             )
+            let hasContent = !note.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             let isAccessible =
                 isCaregiver
                 ? (caregiverBoardFilter == "CAREGIVER_ONLY"
                     ? (note.isCaregiverOnly ?? false) : true)
                 : !(note.isCaregiverOnly ?? false)
-            return isSameDay && isAccessible
+            return isSameDay && hasContent && isAccessible
         }
     }
 
