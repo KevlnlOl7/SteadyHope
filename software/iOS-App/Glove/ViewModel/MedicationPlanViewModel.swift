@@ -262,18 +262,16 @@ class MedicationPlanViewModel: ObservableObject {
         selectedMonthDays = plan.selectedMonthDays
 
         let timeStrings = plan.timeArray
-        let formatter = DateFormatter()
-        formatter.dateFormat = "HH:mm"
 
         if plan.medType == .patch {
-            if let firstStr = timeStrings.first,
-               let date = formatter.date(from: firstStr)
-            {
+            if let date = timeStrings.first?.toDate(format: "HH:mm") {
                 inputTime = date
             }
             selectedTimes = []
         } else {
-            selectedTimes = timeStrings.compactMap { formatter.date(from: $0) }
+            selectedTimes =
+                timeStrings
+                .compactMap { $0.toDate(format: "HH:mm") }
                 .sorted()
         }
     }

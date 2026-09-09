@@ -1,6 +1,6 @@
 import Foundation
 
-/// 專門負責與後端 API 對接的用藥紀錄數據傳輸物件
+/// 負責與後端 API 對接的用藥紀錄資料傳輸物件
 struct MedicationRecordDTO: Codable {
     var id: Int?
     var userID: Int?
@@ -12,7 +12,7 @@ struct MedicationRecordDTO: Codable {
     var skinCondition: String?
     var skinImageDataList: [String]
 
-    /// 將 DTO 轉換為本機 SwiftData 資料庫實體模型
+    /// 將 DTO 轉換為本機實體模型
     func toModel() -> MedicationRecord {
         let imageData = self.skinImageDataList.compactMap { Data(base64Encoded: $0) }
         let resolvedPatchRegion = self.patchRegion.flatMap { PatchRegion(rawValue: $0) }
@@ -29,4 +29,15 @@ struct MedicationRecordDTO: Codable {
             skinImageDataList: imageData
         )
     }
+}
+
+/// 更新用藥紀錄請求之資料傳輸物件
+struct UpdateMedicationRequestDTO: Codable {
+    var date: Date?
+    var name: String?
+    var dose: String?
+    var medType: String?
+    var patchRegion: String?
+    var skinCondition: String?
+    var skinImageDataList: [Data]?
 }

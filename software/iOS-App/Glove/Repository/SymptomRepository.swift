@@ -28,4 +28,14 @@ class SymptomRepository {
     func deleteSymptom(id: Int) async throws -> Bool {
         try await apiService.deleteSymptom(id: id)
     }
+    
+    /// 更新指定症狀紀錄並同步至遠端伺服器
+    /// - Parameters:
+    ///   - id: 欲更新之症狀紀錄 ID
+    ///   - record: 包含更新內容之 UpdateSymptomRequestDTO 實體
+    /// - Returns: 更新成功回傳 true，否則回傳 false
+    /// - Throws: 網路請求異常或驗證錯誤時拋出錯誤
+    func updateSymptom(id: Int, record: UpdateSymptomRequestDTO) async throws -> Bool {
+        try await apiService.updateSymptom(id: id, record: record)
+    }
 }

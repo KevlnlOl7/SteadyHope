@@ -40,66 +40,98 @@ struct MedicationView: View {
     }
 
     var body: some View {
-        NavigationStack {
-            mainContentView
-                .navigationTitle("健康與用藥管理")
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .topBarTrailing) {
-                        DatePicker(
-                            "",
-                            selection: $filterDate,
-                            in: ...Date(),
-                            displayedComponents: .date
-                        )
-                        .labelsHidden()
-                        .onChange(of: filterDate) { _, newValue in
-                            Task {
-                                let dateString = newValue.toString(
-                                    format: "yyyy-MM-dd"
-                                )
-                                await medVM.loadRecords(for: dateString)
-                                await symptomVM.loadSymptoms(for: dateString)
-                            }
-                        }
-                    }
-                }
-                .sheet(isPresented: $showPatchPicker) {
-                    PatchWorkflowSheet(
-                        medVM: medVM,
-                        planUserID: loginVM.userData?.userID ?? 0
-                    )
-                }
-                .sheet(isPresented: $showPlanManageSheet) {
-                    MedicationPlanManageView(
-                        planVM: planVM,
-                        currentUserID: loginVM.userData?.userID ?? 0
-                    )
-                }
-                .fullScreenCover(item: previewImageBinding) { item in
-                    ImagePreview(image: item.image) {
-                        previewImage = nil
-                    }
-                    .background(BackgroundClearView())
-                }
-                .onAppear {
-                    dataVM.load5HzCSVAndSimulate()
-                }
-                .task {
-                    let today = Date().toString(format: "yyyy-MM-dd")
+        ZStack {
+            Color(red: 0.96, green: 0.97, blue: 0.98)
+                .ignoresSafeArea()
 
-                    await medVM.loadRecords(for: today)
-                    await planVM.loadAllPlans()
-                    await symptomVM.loadSymptoms(for: today)
-                }
+            VStack(spacing: 0) {
+                medicationHeaderBar
+                mainContentView
+            }
         }
+        .sheet(isPresented: $showPatchPicker) {
+            PatchWorkflowSheet(
+                medVM: medVM,
+                planUserID: loginVM.userData?.userID ?? 0,
+                editingRecord: medVM.editingRecord
+            )
+        }
+        .sheet(isPresented: $showPlanManageSheet) {
+            MedicationPlanManageView(
+                planVM: planVM,
+                currentUserID: loginVM.userData?.userID ?? 0
+            )
+        }
+        .sheet(isPresented: $vitalsVM.showAddVitalsSheet) {
+            HealthVitalsFormSheet(
+                vitalsVM: vitalsVM,
+                title: "新增生理數據",
+                isEditing: false,
+                filterDate: filterDate
+            )
+        }
+        .sheet(item: $vitalsVM.editingVitals) { _ in
+            HealthVitalsFormSheet(
+                vitalsVM: vitalsVM,
+                title: "編輯生理數據",
+                isEditing: true,
+                filterDate: filterDate
+            )
+        }
+        .fullScreenCover(item: previewImageBinding) { item in
+            ImagePreview(image: item.image) {
+                previewImage = nil
+            }
+            .background(BackgroundClearView())
+        }
+        .onAppear {
+            dataVM.bindPipeline(bleVM.pipeline)
+        }
+        .task {
+            let today = Date().toString(format: "yyyy-MM-dd")
+            await medVM.loadRecords(for: today)
+            await planVM.loadAllPlans()
+            await symptomVM.loadSymptoms(for: today)
+            await vitalsVM.loadVitals(for: today)
+        }
+    }
+
+    /// 自訂頂部標題與日期選擇器工具列
+    private var medicationHeaderBar: some View {
+        HStack {
+            Text("健康與用藥管理")
+                .font(.system(size: 28, weight: .bold))
+                .padding(.horizontal, 12)
+                .padding(.top, 7)
+
+            Spacer()
+
+            DatePicker(
+                "",
+                selection: $filterDate,
+                in: ...Date(),
+                displayedComponents: .date
+            )
+            .labelsHidden()
+            .onChange(of: filterDate) { _, newValue in
+                Task {
+                    let dateString = newValue.toString(format: "yyyy-MM-dd")
+                    await medVM.loadRecords(for: dateString)
+                    await symptomVM.loadSymptoms(for: dateString)
+                    await vitalsVM.loadVitals(for: dateString)
+                }
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 4)
+        .background(Color.clear)
     }
 
     /// 主畫面分頁結構檢視
     private var mainContentView: some View {
         VStack(spacing: 0) {
             Picker("功能分頁", selection: $selectedTab) {
-                Text("每日行程").tag(0)
+                Text("用藥清單").tag(0)
                 Text("服藥紀錄").tag(1)
                 Text("生理健康").tag(2)
                 Text("表徵紀錄").tag(3)
@@ -176,10 +208,7 @@ struct MedicationView: View {
                                 showPlanManageSheet = true
                             } label: {
                                 HStack(spacing: 4) {
-                                    Image(
-                                        systemName:
-                                            "list.bullet.rectangle.portrait"
-                                    )
+                                    Image(systemName: "list.bullet.rectangle.portrait")
                                     Text("管理用藥清單")
                                 }
                                 .font(.caption.bold())
@@ -217,25 +246,37 @@ struct MedicationView: View {
         .background(Color(red: 0.96, green: 0.97, blue: 0.98))
     }
 
-    /// 新增單次口服用藥紀錄輸入卡片
+    /// 新增或編輯單次口服用藥紀錄卡片
     private var addRecordCard: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        let isEditing = medVM.editingRecordID != nil
+
+        return VStack(alignment: .leading, spacing: 14) {
             Button {
                 withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
                     isAddRecordExpanded.toggle()
                 }
             } label: {
                 HStack {
-                    Text("新增單次口服用藥紀錄")
+                    Text(isEditing ? "編輯單次口服用藥紀錄" : "新增單次口服用藥紀錄")
                         .font(.headline)
-                        .foregroundColor(.primary)
+                        .foregroundColor(isEditing ? .orange : .primary)
                     Spacer()
-                    Image(
-                        systemName: isAddRecordExpanded
-                            ? "chevron.up" : "chevron.down"
-                    )
-                    .foregroundColor(.gray)
-                    .font(.subheadline.bold())
+
+                    if isEditing {
+                        Button(action: {
+                            medVM.cancelEditing()
+                            isAddRecordExpanded = false
+                        }) {
+                            Text("取消")
+                                .font(.caption.bold())
+                                .foregroundColor(.red)
+                        }
+                        .buttonStyle(.plain)
+                    }
+
+                    Image(systemName: isAddRecordExpanded ? "chevron.up" : "chevron.down")
+                        .foregroundColor(.gray)
+                        .font(.subheadline.bold())
                 }
             }
             .buttonStyle(.plain)
@@ -243,7 +284,8 @@ struct MedicationView: View {
             if isAddRecordExpanded {
                 VStack(spacing: 0) {
                     HStack(spacing: 12) {
-                        Image(systemName: "pill.fill").foregroundColor(.blue)
+                        Image(systemName: "pill.fill")
+                            .foregroundColor(.blue)
                             .frame(width: 20)
                         TextField("藥品名稱", text: $medVM.inputName)
                             .focused($isInputFocused)
@@ -268,7 +310,8 @@ struct MedicationView: View {
                     Divider().padding(.leading, 44)
 
                     HStack(spacing: 12) {
-                        Image(systemName: "clock.fill").foregroundColor(.blue)
+                        Image(systemName: "clock.fill")
+                            .foregroundColor(.blue)
                             .frame(width: 20)
                         DatePicker("時間", selection: $medVM.inputDate)
                             .font(.subheadline)
@@ -283,14 +326,19 @@ struct MedicationView: View {
                 Button {
                     isInputFocused = false
                     if let uid = loginVM.userData?.userID,
-                        let token = AuthManager.shared.getToken()
-                    {
-                        medVM.addRecord(currentUserID: uid, token: token)
+                       let token = AuthManager.shared.getToken() {
+                        if medVM.editingRecordID != nil {
+                            let dateString = filterDate.toString(format: "yyyy-MM-dd")
+                            medVM.saveEditedRecord(targetDateString: dateString)
+                        } else {
+                            medVM.addRecord(currentUserID: uid, token: token)
+                        }
+                        isAddRecordExpanded = false
                     }
                 } label: {
                     HStack {
-                        Image(systemName: "plus.circle.fill")
-                        Text("新增單次紀錄")
+                        Image(systemName: isEditing ? "pencil.circle.fill" : "plus.circle.fill")
+                        Text(isEditing ? "修改紀錄" : "新增單次紀錄")
                     }
                     .font(.subheadline.bold())
                     .foregroundColor(.white)
@@ -298,7 +346,8 @@ struct MedicationView: View {
                     .padding(.vertical, 12)
                     .background(
                         medVM.isAddRecordValid
-                            ? Color.blue : Color.gray.opacity(0.4)
+                            ? (isEditing ? Color.orange : Color.blue)
+                            : Color.gray.opacity(0.4)
                     )
                     .cornerRadius(10)
                 }
@@ -317,8 +366,10 @@ struct MedicationView: View {
 
         return VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Image(systemName: "pill.fill").foregroundColor(.blue)
-                Text("口服用藥清單").font(.subheadline.bold())
+                Image(systemName: "pill.fill")
+                    .foregroundColor(.blue)
+                Text("口服用藥清單")
+                    .font(.subheadline.bold())
                 Spacer()
                 let completedCount = doseItems.filter { item in
                     medVM.isDoseTaken(for: item, on: filterDate)
@@ -336,9 +387,7 @@ struct MedicationView: View {
                     .padding(.vertical, 4)
             } else {
                 VStack(alignment: .leading, spacing: 0) {
-                    ForEach(Array(doseItems.enumerated()), id: \.element.id) {
-                        index,
-                        item in
+                    ForEach(Array(doseItems.enumerated()), id: \.element.id) { index, item in
                         let isTaken = medVM.isDoseTaken(
                             for: item,
                             on: filterDate
@@ -347,14 +396,9 @@ struct MedicationView: View {
                             Button {
                                 medVM.toggleDoseTaken(for: item, on: filterDate)
                             } label: {
-                                Image(
-                                    systemName: isTaken
-                                        ? "checkmark.circle.fill" : "circle"
-                                )
-                                .font(.title3)
-                                .foregroundColor(
-                                    isTaken ? .green : .gray.opacity(0.5)
-                                )
+                                Image(systemName: isTaken ? "checkmark.circle.fill" : "circle")
+                                    .font(.title3)
+                                    .foregroundColor(isTaken ? .green : .gray.opacity(0.5))
                             }
                             .buttonStyle(.plain)
 
@@ -363,9 +407,7 @@ struct MedicationView: View {
                                     Text(item.plan.name)
                                         .font(.body.bold())
                                         .strikethrough(isTaken, color: .gray)
-                                        .foregroundColor(
-                                            isTaken ? .gray : .primary
-                                        )
+                                        .foregroundColor(isTaken ? .gray : .primary)
                                     if !item.plan.dose.isEmpty {
                                         Text("(\(item.plan.dose))")
                                             .font(.subheadline)
@@ -386,7 +428,9 @@ struct MedicationView: View {
                                 .foregroundColor(.gray)
                         }
                         .padding(.vertical, 6)
-                        if index < doseItems.count - 1 { Divider() }
+                        if index < doseItems.count - 1 {
+                            Divider()
+                        }
                     }
                 }
             }
@@ -419,9 +463,8 @@ struct MedicationView: View {
                 }
             } label: {
                 HStack {
-                    Image(systemName: "square.grid.2x2.fill").foregroundColor(
-                        .orange
-                    )
+                    Image(systemName: "square.grid.2x2.fill")
+                        .foregroundColor(.orange)
                     Text("每日貼片用藥")
                         .font(.subheadline.bold())
                         .foregroundColor(.primary)
@@ -430,21 +473,18 @@ struct MedicationView: View {
                         .foregroundColor(hasPlan ? .blue : .gray)
                     Spacer()
                     if isCompleted {
-                        Text("已完成").font(.caption.bold()).foregroundColor(
-                            .green
-                        )
+                        Text("已完成")
+                            .font(.caption.bold())
+                            .foregroundColor(.green)
                     } else {
-                        Text("未完成").font(.caption.bold()).foregroundColor(
-                            .secondary
-                        )
+                        Text("未完成")
+                            .font(.caption.bold())
+                            .foregroundColor(.secondary)
                     }
-                    Image(
-                        systemName: isPatchScheduleExpanded
-                            ? "chevron.up" : "chevron.down"
-                    )
-                    .foregroundColor(.gray)
-                    .font(.subheadline.bold())
-                    .padding(.leading, 4)
+                    Image(systemName: isPatchScheduleExpanded ? "chevron.up" : "chevron.down")
+                        .foregroundColor(.gray)
+                        .font(.subheadline.bold())
+                        .padding(.leading, 4)
                 }
             }
             .buttonStyle(.plain)
@@ -456,15 +496,9 @@ struct MedicationView: View {
                     VStack(alignment: .leading, spacing: 8) {
                         HStack(spacing: 12) {
                             Button {
-                                if let index = medVM.medicationList.firstIndex(
-                                    where: { r in
-                                        r.medType == .patch
-                                            && Calendar.current.isDate(
-                                                r.date,
-                                                inSameDayAs: filterDate
-                                            )
-                                    })
-                                {
+                                if let index = medVM.medicationList.firstIndex(where: { r in
+                                    r.medType == .patch && Calendar.current.isDate(r.date, inSameDayAs: filterDate)
+                                }) {
                                     medVM.deleteRecord(
                                         records: medVM.medicationList,
                                         at: IndexSet(integer: index)
@@ -482,14 +516,13 @@ struct MedicationView: View {
                                     .font(.body.bold())
                                     .foregroundColor(.gray)
                                     .strikethrough(true, color: .gray)
-                                Text(
-                                    "\(record.date.toString(format: "HH:mm"))"
-                                )
-                                .font(.caption)
-                                .foregroundColor(.gray)
+                                Text("\(record.date.toString(format: "HH:mm"))")
+                                    .font(.caption)
+                                    .foregroundColor(.gray)
                             }
                             Spacer()
                             Button {
+                                medVM.editingRecord = record
                                 showPatchPicker = true
                             } label: {
                                 HStack(spacing: 2) {
@@ -544,9 +577,7 @@ struct MedicationView: View {
                         if !record.skinImageDataList.isEmpty {
                             TabView {
                                 ForEach(
-                                    Array(
-                                        record.skinImageDataList.enumerated()
-                                    ),
+                                    Array(record.skinImageDataList.enumerated()),
                                     id: \.offset
                                 ) { _, data in
                                     if let uiImage = UIImage(data: data) {
@@ -558,19 +589,10 @@ struct MedicationView: View {
                                                 .scaledToFill()
                                                 .frame(height: 160)
                                                 .frame(maxWidth: .infinity)
-                                                .clipShape(
-                                                    RoundedRectangle(
-                                                        cornerRadius: 8
-                                                    )
-                                                )
+                                                .clipShape(RoundedRectangle(cornerRadius: 8))
                                                 .overlay(
-                                                    RoundedRectangle(
-                                                        cornerRadius: 8
-                                                    )
-                                                    .stroke(
-                                                        Color.gray.opacity(0.2),
-                                                        lineWidth: 1
-                                                    )
+                                                    RoundedRectangle(cornerRadius: 8)
+                                                        .stroke(Color.gray.opacity(0.2), lineWidth: 1)
                                                 )
                                         }
                                         .buttonStyle(.plain)
@@ -586,15 +608,14 @@ struct MedicationView: View {
                     .padding(.vertical, 4)
                 } else {
                     Button {
+                        medVM.editingRecord = nil
                         showPatchPicker = true
                     } label: {
                         HStack(spacing: 10) {
                             Image(systemName: "figure.walk").font(.headline)
                             Text("開啟貼片紀錄與部位流程").font(.subheadline.bold())
                             Spacer()
-                            Image(systemName: "chevron.right").font(
-                                .caption.bold()
-                            )
+                            Image(systemName: "chevron.right").font(.caption.bold())
                         }
                         .padding(.horizontal, 14)
                         .padding(.vertical, 12)
@@ -615,78 +636,119 @@ struct MedicationView: View {
 
     /// 今日實際服藥紀錄清單檢視卡片
     private var todayRecordsSectionCard: some View {
+        let filterDateStr = filterDate.toString(format: "yyyy-MM-dd")
         let filteredRecords = medVM.medicationList.filter { record in
-            Calendar.current.isDate(record.date, inSameDayAs: filterDate)
+            record.date.toString(format: "yyyy-MM-dd") == filterDateStr
         }
-        return VStack(alignment: .leading, spacing: 12) {
+
+        return VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Image(systemName: "list.clipboard.fill").foregroundColor(.blue)
-                Text("今日實際服藥紀錄 (\(filteredRecords.count) 筆)").font(.headline)
+                Image(systemName: "list.clipboard.fill")
+                    .foregroundColor(.blue)
+                Text("今日實際服藥紀錄 (\(filteredRecords.count) 筆)")
+                    .font(.subheadline.bold())
+                Spacer()
             }
+            .padding(.horizontal, 16)
+            .padding(.top, 14)
+            .padding(.bottom, 10)
+
             Divider()
 
             if filteredRecords.isEmpty {
                 Text("目前尚無服藥打卡或單次紀錄")
                     .font(.caption)
                     .foregroundColor(.secondary)
-                    .padding(.vertical, 8)
+                    .padding(.vertical, 20)
+                    .frame(maxWidth: .infinity, alignment: .center)
             } else {
                 List {
-                    ForEach(filteredRecords) { record in
-                        HStack {
-                            VStack(alignment: .leading, spacing: 4) {
-                                HStack {
-                                    Text(record.name).font(.body.bold())
+                    ForEach(Array(filteredRecords.enumerated()), id: \.element.id) { index, record in
+                        HStack(alignment: .center) {
+                            VStack(alignment: .leading, spacing: 6) {
+                                HStack(spacing: 6) {
+                                    Text(record.name)
+                                        .font(.system(size: 16, weight: .bold))
+                                        .foregroundColor(.primary)
                                     if !record.dose.isEmpty {
                                         Text("(\(record.dose))")
                                             .font(.subheadline)
                                             .foregroundColor(.secondary)
                                     }
                                 }
+
                                 Text(record.medType.rawValue)
                                     .font(.caption2)
-                                    .padding(.horizontal, 6)
-                                    .padding(.vertical, 2)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 3)
                                     .background(
-                                        record.medType == .patch
+                                        (record.medType == .patch && record.name.contains("貼片"))
                                             ? Color.orange.opacity(0.15)
                                             : Color.blue.opacity(0.15)
                                     )
                                     .foregroundColor(
-                                        record.medType == .patch
+                                        (record.medType == .patch && record.name.contains("貼片"))
                                             ? .orange : .blue
                                     )
                                     .cornerRadius(4)
                             }
+
                             Spacer()
-                            Text("時間：\(record.date.toString(format: "HH:mm"))")
+
+                            Text("\(record.date.toString(format: "HH:mm"))")
                                 .font(.subheadline)
                                 .foregroundColor(.gray)
                         }
-                        .listRowInsets(
-                            EdgeInsets(
-                                top: 6,
-                                leading: 0,
-                                bottom: 6,
-                                trailing: 0
-                            )
-                        )
-                        .listRowBackground(Color.clear)
-                        .listRowSeparator(.hidden)
-                    }
-                    .onDelete { offsets in
-                        medVM.deleteRecord(
-                            records: filteredRecords,
-                            at: offsets
-                        )
+                        .padding(.horizontal, 16)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 68)
+                        .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
+                        .listRowBackground(Color.white)
+                        .listRowSeparator(index == filteredRecords.count - 1 ? .hidden : .visible, edges: .bottom)
+                        .listRowSeparator(.hidden, edges: .top)
+                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                            if loginVM.userData?.role == 0 {
+                                Button(role: .destructive) {
+                                    if let idx = filteredRecords.firstIndex(where: { $0.id == record.id }) {
+                                        medVM.deleteRecord(
+                                            records: filteredRecords,
+                                            at: IndexSet(integer: idx)
+                                        )
+                                    }
+                                } label: {
+                                    Label("刪除", systemImage: "trash")
+                                }
+
+                                Button {
+                                    let isPatch = record.medType == .patch && record.name.contains("貼片")
+                                    if isPatch {
+                                        medVM.editingRecord = record
+                                        showPatchPicker = true
+                                    } else {
+                                        medVM.startEditingRecord(record)
+                                        withAnimation {
+                                            isAddRecordExpanded = true
+                                        }
+                                    }
+                                } label: {
+                                    Label("編輯", systemImage: "pencil")
+                                }
+                                .tint(.blue)
+                            }
+                        }
                     }
                 }
                 .listStyle(.plain)
+                .scrollContentBackground(.hidden)
                 .scrollDisabled(true)
-                .frame(height: CGFloat(filteredRecords.count * 52))
+                .environment(\.defaultMinListRowHeight, 68)
+                .simultaneousGesture(DragGesture(minimumDistance: 10))
+                .frame(maxWidth: .infinity)
+                .frame(height: CGFloat(max(filteredRecords.count * 68, 1)))
             }
         }
-        .padding()
+        .padding(.bottom, 6)
+        .frame(maxWidth: .infinity)
         .background(Color.white)
         .cornerRadius(12)
         .shadow(color: Color.black.opacity(0.03), radius: 3)
@@ -723,9 +785,7 @@ struct MedicationView: View {
                         .padding()
                 } else {
                     LazyVGrid(
-                        columns: [
-                            GridItem(.flexible()), GridItem(.flexible()),
-                        ],
+                        columns: [GridItem(.flexible()), GridItem(.flexible())],
                         spacing: 12
                     ) {
                         ForEach(symptomVM.symptomList) { item in
@@ -751,16 +811,15 @@ struct MedicationView: View {
     }
 
     /// 單一症狀影音展示卡片檢視
+    /// - Parameter item: 症狀紀錄實體
     @ViewBuilder
     private func symptomCardView(for item: SymptomRecord) -> some View {
-        let isProcessing =
-            (item.id ?? 0) < 0 || symptomVM.processingIDs.contains(item.id ?? 0)
+        let isProcessing = (item.id ?? 0) < 0 || symptomVM.processingIDs.contains(item.id ?? 0)
 
         VStack(alignment: .leading, spacing: 6) {
             ZStack(alignment: .topTrailing) {
                 if let firstData = item.mediaData,
-                    let uiImage = UIImage(data: firstData)
-                {
+                   let uiImage = UIImage(data: firstData) {
                     Image(uiImage: uiImage)
                         .resizable()
                         .scaledToFill()
@@ -772,21 +831,18 @@ struct MedicationView: View {
                         .fill(Color.gray.opacity(0.2))
                         .frame(height: 120)
                         .overlay(
-                            Image(systemName: "video.fill").foregroundColor(
-                                .gray
-                            )
+                            Image(systemName: "video.fill")
+                                .foregroundColor(.gray)
                         )
                         .cornerRadius(8)
                 }
 
                 if item.mediaDataList.count > 1 {
                     HStack(spacing: 3) {
-                        Image(systemName: "square.fill.on.square.fill").font(
-                            .caption2
-                        )
-                        Text("\(item.mediaDataList.count)").font(
-                            .caption2.bold()
-                        )
+                        Image(systemName: "square.fill.on.square.fill")
+                            .font(.caption2)
+                        Text("\(item.mediaDataList.count)")
+                            .font(.caption2.bold())
                     }
                     .foregroundColor(.white)
                     .padding(.horizontal, 6)
@@ -798,12 +854,10 @@ struct MedicationView: View {
             }
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(
-                        item.symptomNote.isEmpty ? "（無文字描述）" : item.symptomNote
-                    )
-                    .font(.caption.bold())
-                    .foregroundColor(.primary)
-                    .lineLimit(2)
+                    Text(item.symptomNote.isEmpty ? "（無文字描述）" : item.symptomNote)
+                        .font(.caption.bold())
+                        .foregroundColor(.primary)
+                        .lineLimit(2)
 
                     Text(item.date.toString(format: "M/d HH:mm"))
                         .font(.caption2)
@@ -864,12 +918,9 @@ struct MedicationView: View {
                         .font(.headline)
                         .foregroundColor(.primary)
                     Spacer()
-                    Image(
-                        systemName: isAddSymptomExpanded
-                            ? "chevron.up" : "chevron.down"
-                    )
-                    .foregroundColor(.gray)
-                    .font(.subheadline.bold())
+                    Image(systemName: isAddSymptomExpanded ? "chevron.up" : "chevron.down")
+                        .foregroundColor(.gray)
+                        .font(.subheadline.bold())
                 }
             }
             .buttonStyle(.plain)
@@ -906,8 +957,7 @@ struct MedicationView: View {
                             .background(
                                 Color.gray.opacity(
                                     symptomVM.isAddSymptomValid(
-                                        tempImagesCount: tempSelectedImages
-                                            .count
+                                        tempImagesCount: tempSelectedImages.count
                                     ) ? 0.15 : 0.05
                                 )
                             )
@@ -972,6 +1022,7 @@ struct MedicationView: View {
     }
 
     /// 編輯症狀紀錄彈出檢視表單
+    /// - Parameter item: 欲編輯之症狀紀錄實體
     @ViewBuilder
     private func editSymptomSheet(for item: SymptomRecord) -> some View {
         NavigationStack {

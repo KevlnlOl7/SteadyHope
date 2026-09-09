@@ -97,6 +97,38 @@ class MedicationService {
         return httpResponse.statusCode == 204 || httpResponse.statusCode == 200
     }
 
+    /// 根據用藥紀錄 ID 更新遠端伺服器上的紀錄
+    /// - Parameters:
+    ///   - id: 欲更新之用藥紀錄 ID
+    ///   - record: 包含更新資訊之 UpdateMedicationRequestDTO 實例
+    /// - Returns: 更新成功回傳 true，否則回傳 false
+    /// - Throws: 網路請求異常或驗證錯誤時拋出 Validation 錯誤
+    func updateMedication(id: Int, record: UpdateMedicationRequestDTO) async throws -> Bool {
+        guard let url = URL(string: "\(baseURL)/medication/\(id)") else {
+            throw Validation.server(message: "URL 格式錯誤")
+        }
+        guard let token = AuthManager.shared.getToken() else {
+            throw Validation.server(message: "權限不足，請重新登入")
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "PUT"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        request.httpBody = try encoder.encode(record)
+
+        let (_, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw Validation.server(message: "伺服器回應異常")
+        }
+
+        return httpResponse.statusCode == 200
+    }
+
     /// 自訂日期解碼策略，支援 ISO8601 與標準 DateTime 日期格式解析
     /// - Returns: JSONDecoder 之 DateDecodingStrategy 策略
     private func customDateDecodingStrategy() -> JSONDecoder.DateDecodingStrategy {

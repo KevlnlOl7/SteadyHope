@@ -9,7 +9,7 @@ struct SymptomRecordDTO: Codable {
     var mediaDataList: [String]
     var isVideo: Bool
 
-    /// 將 DTO 轉換為本機 SwiftData 資料庫實體模型
+    /// 將 DTO 轉換為本機實體模型
     func toModel() -> SymptomRecord {
         let dataList = self.mediaDataList.compactMap { Data(base64Encoded: $0) }
         return SymptomRecord(
@@ -21,4 +21,12 @@ struct SymptomRecordDTO: Codable {
             isVideo: self.isVideo
         )
     }
+}
+
+/// 更新症狀紀錄請求之資料傳輸物件
+struct UpdateSymptomRequestDTO: Codable {
+    var date: Date?
+    var symptomNote: String?
+    var mediaDataList: [Data]?
+    var isVideo: Bool?
 }

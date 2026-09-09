@@ -30,23 +30,21 @@ class SymptomViewModel: ObservableObject {
     ///   - isSilent: 是否以靜默模式載入（為 true 時不觸發全螢幕載入指示器）
     func loadSymptoms(for date: String = "", isSilent: Bool = false) async {
         if !isSilent {
-            await MainActor.run { self.isFetchingData = true }
+            isFetchingData = true
+        }
+
+        defer {
+            if !isSilent {
+                isFetchingData = false
+            }
         }
 
         do {
             let fetchedSymptoms = try await symptomRepository.getAllSymptoms(for: date)
-
-            await MainActor.run {
-                // 防呆：重新載入時保留上傳中（ID 為負數）之暫存項目，避免畫面閃爍或被覆蓋
-                let uploadingItems = self.symptomList.filter { ($0.id ?? 0) < 0 }
-                self.symptomList = uploadingItems + fetchedSymptoms
-            }
+            let uploadingItems = symptomList.filter { ($0.id ?? 0) < 0 }
+            symptomList = uploadingItems + fetchedSymptoms
         } catch {
-            print("讀取症狀紀錄失敗: \(error)")
-        }
-
-        if !isSilent {
-            await MainActor.run { self.isFetchingData = false }
+            print("讀取症狀紀錄失敗: \(error.localizedDescription)")
         }
     }
 
@@ -71,7 +69,7 @@ class SymptomViewModel: ObservableObject {
 
         // 產生暫時的負數 ID 代表此項目為本機暫存
         let tempID = -Int.random(in: 1...999999)
-        self.processingIDs.insert(tempID)
+        processingIDs.insert(tempID)
 
         let noteToSave = symptomNote
         let isVideoToSave = isVideoMedia
@@ -94,9 +92,7 @@ class SymptomViewModel: ObservableObject {
             )
 
             // 樂觀更新：直接插入畫面首筆以提供即時反饋
-            await MainActor.run {
-                self.symptomList.insert(tempSymptom, at: 0)
-            }
+            symptomList.insert(tempSymptom, at: 0)
 
             // 建立發送至伺服器之正式資料實體（ID 設為 nil 交由伺服器生成）
             let symptomForAPI = SymptomRecord(
@@ -113,19 +109,13 @@ class SymptomViewModel: ObservableObject {
                 if success {
                     await loadSymptoms(for: date.toString(format: "yyyy-MM-dd"), isSilent: true)
                 }
-
-                // 處理完成後移除暫存項目與標記
-                await MainActor.run {
-                    self.symptomList.removeAll { $0.id == tempID }
-                    self.processingIDs.remove(tempID)
-                }
             } catch {
-                print("新增症狀紀錄失敗: \(error)")
-                await MainActor.run {
-                    self.symptomList.removeAll { $0.id == tempID }
-                    self.processingIDs.remove(tempID)
-                }
+                print("新增症狀紀錄失敗: \(error.localizedDescription)")
             }
+
+            // 處理完成後移除暫存項目與標記
+            symptomList.removeAll { $0.id == tempID }
+            processingIDs.remove(tempID)
         }
     }
 
@@ -137,13 +127,17 @@ class SymptomViewModel: ObservableObject {
         editingSymptomItem = item
     }
 
-    /// 儲存編輯後之症狀紀錄並同步至遠端伺服器
-    /// - Parameter originalItem: 原始症狀紀錄實體
+    /// 儲存編輯後之症狀紀錄並同步至遠端伺服器 (PUT /symptom/:recordID)
     func saveEditedSymptom(originalItem: SymptomRecord) {
         guard let recordID = originalItem.id else { return }
-        self.processingIDs.insert(recordID)
+        processingIDs.insert(recordID)
+
+        let noteToSave = editSymptomNote
+        let originalDate = originalItem.date
+        let isVideo = originalItem.isVideo
 
         Task {
+            // 背景執行圖片 JPEG 壓縮轉檔
             let updatedDatas = await Task.detached(priority: .userInitiated) { [editTempImages] in
                 editTempImages.compactMap { $0.jpegData(compressionQuality: 0.8) }
             }.value
@@ -151,30 +145,41 @@ class SymptomViewModel: ObservableObject {
             let updatedSymptom = SymptomRecord(
                 id: recordID,
                 userID: originalItem.userID,
-                date: originalItem.date,
-                symptomNote: editSymptomNote,
+                date: originalDate,
+                symptomNote: noteToSave,
                 mediaDataList: updatedDatas,
-                isVideo: originalItem.isVideo
+                isVideo: isVideo
             )
 
             // 樂觀更新：直接替換本機畫面資料
-            await MainActor.run {
-                if let index = self.symptomList.firstIndex(where: { $0.id == recordID }) {
-                    self.symptomList[index] = updatedSymptom
-                }
-                editingSymptomItem = nil
+            if let index = symptomList.firstIndex(where: { $0.id == recordID }) {
+                symptomList[index] = updatedSymptom
             }
+            editingSymptomItem = nil
+
+            let updateDTO = UpdateSymptomRequestDTO(
+                date: originalDate,
+                symptomNote: noteToSave,
+                mediaDataList: updatedDatas,
+                isVideo: isVideo
+            )
 
             do {
-                let success = try await symptomRepository.addSymptom(updatedSymptom)
+                let success = try await symptomRepository.updateSymptom(
+                    id: recordID,
+                    record: updateDTO
+                )
                 if success {
-                    await loadSymptoms(isSilent: true)
+                    await loadSymptoms(
+                        for: originalDate.toString(format: "yyyy-MM-dd"),
+                        isSilent: true
+                    )
                 }
             } catch {
                 print("更新症狀紀錄失敗: \(error)")
             }
 
-            self.processingIDs.remove(recordID)
+            processingIDs.remove(recordID)
         }
     }
 
@@ -186,19 +191,19 @@ class SymptomViewModel: ObservableObject {
             return
         }
 
-        self.processingIDs.insert(recordID)
+        processingIDs.insert(recordID)
 
         Task {
             do {
                 let success = try await symptomRepository.deleteSymptom(id: recordID)
                 if success {
-                    await MainActor.run { self.symptomList.removeAll { $0.id == recordID } }
+                    symptomList.removeAll { $0.id == recordID }
                 }
             } catch {
                 print("刪除症狀紀錄失敗: \(error)")
             }
 
-            self.processingIDs.remove(recordID)
+            processingIDs.remove(recordID)
         }
     }
 

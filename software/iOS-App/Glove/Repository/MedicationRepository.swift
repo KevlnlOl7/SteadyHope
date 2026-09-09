@@ -35,4 +35,14 @@ class MedicationRepository {
     func deleteMedication(id: Int) async throws -> Bool {
         return try await apiService.deleteMedication(id: id)
     }
+    
+    /// 更新指定用藥紀錄並同步至遠端伺服器
+    /// - Parameters:
+    ///   - id: 欲更新之用藥紀錄 ID
+    ///   - record: 包含更新內容之 UpdateMedicationRequestDTO 實體
+    /// - Returns: 更新成功回傳 true，否則回傳 false
+    /// - Throws: 網路請求異常或驗證錯誤時拋出錯誤
+    func updateMedication(id: Int, record: UpdateMedicationRequestDTO) async throws -> Bool {
+        try await apiService.updateMedication(id: id, record: record)
+    }
 }

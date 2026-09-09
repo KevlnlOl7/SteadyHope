@@ -9,6 +9,9 @@ struct PatchWorkflowSheet: View {
     /// 使用者 ID
     var planUserID: Int
 
+    /// 接收欲編輯的紀錄（若為 nil 代表為全新打卡）
+    var editingRecord: MedicationRecord? = nil
+
     /// 是否已撕除舊貼片之安全確認狀態
     @State private var hasRemovedOldPatch: Bool = false
 
@@ -65,11 +68,12 @@ struct PatchWorkflowSheet: View {
                 .padding()
             }
             .background(Color(red: 0.96, green: 0.97, blue: 0.98))
-            .navigationTitle("貼片打卡與紀錄")
+            .navigationTitle(editingRecord != nil ? "編輯貼片紀錄" : "貼片打卡與紀錄")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("取消") {
+                        medVM.editingRecord = nil
                         dismiss()
                     }
                 }
@@ -79,23 +83,14 @@ struct PatchWorkflowSheet: View {
                     selectedRegion = nil
                 }
                 Button("仍要使用此部位", role: .destructive) {
-                    showCountdownModal = true
+                    executeSaveOrCountdown()
                 }
             } message: {
                 Text("貼片黏貼部位應輪流替換以減少對皮膚的刺激。系統偵測到您在 14 天內曾於此部位貼過，建議換到其他潔淨乾燥的皮膚表面。")
             }
             .fullScreenCover(isPresented: $showCountdownModal) {
                 PatchCountdownView {
-                    if let region = selectedRegion {
-                        medVM.savePatchRecord(
-                            region: region,
-                            skinCondition: selectedSkinCondition,
-                            isCustomCondition: isCustomCondition,
-                            customCondition: customSkinCondition,
-                            images: tempImages,
-                            planUserID: planUserID
-                        )
-                    }
+                    saveRecordAction()
                     dismiss()
                 }
                 .background(BackgroundClearView())
@@ -106,6 +101,73 @@ struct PatchWorkflowSheet: View {
                 }
                 .background(BackgroundClearView())
             }
+            .onAppear {
+                loadExistingDataIfNeeded()
+            }
+        }
+    }
+
+    /// 帶入既有貼片舊資料邏輯
+    private func loadExistingDataIfNeeded() {
+        guard let record = editingRecord else { return }
+
+        // 確認撕除直接勾選
+        hasRemovedOldPatch = true
+
+        // 帶入既有部位
+        selectedRegion = record.patchRegion
+
+        // 帶入皮膚狀況
+        if let skin = record.skinCondition, !skin.isEmpty {
+            if skinOptions.contains(skin) {
+                selectedSkinCondition = skin
+                isCustomCondition = false
+            } else {
+                isCustomCondition = true
+                customSkinCondition = skin
+            }
+        }
+
+        // 帶入既有照片
+        let decodedImages = record.skinImageDataList.compactMap {
+            UIImage(data: $0)
+        }
+        tempImages = decodedImages
+    }
+
+    /// 執行儲存或倒數流程
+    private func executeSaveOrCountdown() {
+        if editingRecord != nil {
+            saveRecordAction()
+            dismiss()
+        } else {
+            showCountdownModal = true
+        }
+    }
+
+    /// 儲存更新或新增邏輯
+    private func saveRecordAction() {
+        guard let region = selectedRegion else { return }
+
+        if let record = editingRecord, let recordID = record.id {
+            medVM.updatePatchRecord(
+                recordID: recordID,
+                originalDate: record.date,
+                region: region,
+                skinCondition: selectedSkinCondition,
+                isCustomCondition: isCustomCondition,
+                customCondition: customSkinCondition,
+                images: tempImages
+            )
+        } else {
+            medVM.savePatchRecord(
+                region: region,
+                skinCondition: selectedSkinCondition,
+                isCustomCondition: isCustomCondition,
+                customCondition: customSkinCondition,
+                images: tempImages,
+                planUserID: planUserID
+            )
         }
     }
 
@@ -177,7 +239,7 @@ struct PatchWorkflowSheet: View {
 
                             Spacer()
 
-                            if isRecentlyUsed {
+                            if isRecentlyUsed && selectedRegion != region {
                                 Text("14天內用過")
                                     .font(.caption2)
                                     .padding(.horizontal, 4)
@@ -294,19 +356,24 @@ struct PatchWorkflowSheet: View {
     /// 開始貼片與倒數流程確認按鈕
     private var startPatchButton: some View {
         let isReady = hasRemovedOldPatch && selectedRegion != nil
+        let isEditing = editingRecord != nil
 
         return Button {
             if let region = selectedRegion,
-               medVM.isRegionUsedInLast14Days(region)
+                medVM.isRegionUsedInLast14Days(region)
+                    && region != editingRecord?.patchRegion
             {
                 show14DayWarning = true
             } else {
-                showCountdownModal = true
+                executeSaveOrCountdown()
             }
         } label: {
             HStack {
-                Image(systemName: "hand.tap.fill")
-                Text("確認部位並開始 30 秒按壓")
+                Image(
+                    systemName: isEditing
+                        ? "checkmark.circle.fill" : "hand.tap.fill"
+                )
+                Text(isEditing ? "儲存修改貼片紀錄" : "確認部位並開始 30 秒按壓")
             }
             .font(.headline)
             .foregroundColor(.white)

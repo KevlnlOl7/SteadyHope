@@ -16,6 +16,16 @@ class MedicationViewModel: ObservableObject {
     @Published var selectedMedType: MedicationType = .oral
     @Published var selectedPatchRegion: PatchRegion?
 
+    // 編輯既有紀錄狀態
+    @Published var editingRecord: MedicationRecord?
+    @Published var editName: String = ""
+    @Published var editDose: String = ""
+    @Published var editDate: Date = Date()
+    @Published var editMedType: MedicationType = .oral
+    @Published var editPatchRegion: PatchRegion?
+    /// 目前正在編輯的紀錄 ID（若為 nil 代表是新增模式）
+    @Published var editingRecordID: Int? = nil
+
     private let repository = MedicationRepository()
 
     /// 新增單次用藥紀錄表單輸入內容是否有效
@@ -143,16 +153,88 @@ class MedicationViewModel: ObservableObject {
                 if success {
                     let dateString = inputDate.toString(format: "yyyy-MM-dd")
                     await loadRecords(for: dateString)
-
-                    await MainActor.run {
-                        scheduleNotification(for: newRecord)
-                        clearInputs()
-                    }
+                    scheduleNotification(for: newRecord)
+                    clearInputs()
                 }
             } catch {
                 print("新增單次紀錄失敗: \(error)")
             }
         }
+    }
+
+    /// 載入既有用藥紀錄至編輯表單
+    /// - Parameter record: 欲編輯之 MedicationRecord 實體
+    func startEditingRecord(_ record: MedicationRecord) {
+        self.editingRecordID = record.id
+        self.inputName = record.name
+        self.inputDate = record.date
+        self.selectedMedType = record.medType
+        self.selectedPatchRegion = record.patchRegion
+
+        // 自動拆解「數值」與「文字單位」（例如 "1.5顆" -> dose: "1.5", unit: "顆"）
+        let rawDose = record.dose.trimmingCharacters(in: .whitespaces)
+        if let numberMatch = rawDose.range(
+            of: #"^[0-9]+(\.[0-9]+)?"#,
+            options: .regularExpression
+        ) {
+            self.inputDose = String(rawDose[numberMatch])
+            self.inputUnit = String(rawDose[numberMatch.upperBound...])
+                .trimmingCharacters(in: .whitespaces)
+        } else {
+            self.inputDose = rawDose
+            self.inputUnit = ""
+        }
+    }
+
+    /// 儲存編輯後之用藥紀錄 (PUT /medication/:recordID)
+    /// - Parameter targetDateString: 重新載入之目標日期字串（格式：yyyy-MM-dd）
+    func saveEditedRecord(targetDateString: String = "") {
+        guard let recordID = editingRecordID else {
+            print("編輯儲存失敗: editingRecordID 為 nil")
+            return
+        }
+
+        let trimmedDose = inputDose.trimmingCharacters(in: .whitespaces)
+        let trimmedUnit = inputUnit.trimmingCharacters(in: .whitespaces)
+        let finalDose = trimmedUnit.isEmpty ? trimmedDose : "\(trimmedDose)\(trimmedUnit)"
+
+        let updateDTO = UpdateMedicationRequestDTO(
+            date: inputDate,
+            name: inputName.trimmingCharacters(in: .whitespaces),
+            dose: finalDose,
+            medType: selectedMedType.rawValue,
+            patchRegion: selectedPatchRegion?.rawValue,
+            skinCondition: nil,
+            skinImageDataList: []
+        )
+
+        Task {
+            do {
+                let success = try await repository.updateMedication(
+                    id: recordID,
+                    record: updateDTO
+                )
+                if success {
+                    if !targetDateString.isEmpty {
+                        await loadRecords(for: targetDateString)
+                    } else {
+                        await loadAllRecords()
+                    }
+                    self.editingRecordID = nil
+                    self.clearInputs()
+                } else {
+                    print("後端回傳更新失敗")
+                }
+            } catch {
+                print("新增單次紀錄失敗: \(error)")
+            }
+        }
+    }
+
+    /// 取消編輯，清空輸入框與選取狀態
+    func cancelEditing() {
+        self.editingRecordID = nil
+        clearInputs()
     }
 
     /// 儲存貼片用藥紀錄（包含背景圖片壓縮與後端同步）
@@ -214,7 +296,6 @@ class MedicationViewModel: ObservableObject {
                 }
             }.value
 
-            // 建立用藥紀錄實體模型
             let apiRecord = MedicationRecord(
                 id: nil,
                 userID: planUserID,
@@ -227,7 +308,6 @@ class MedicationViewModel: ObservableObject {
                 skinImageDataList: imageDatas
             )
 
-            // 發送請求並重新拉取最新紀錄清單
             do {
                 let success = try await repository.addMedication(apiRecord)
                 if success {
@@ -236,6 +316,83 @@ class MedicationViewModel: ObservableObject {
                 }
             } catch {
                 print("貼片打卡存檔失敗: \(error)")
+            }
+        }
+    }
+
+    /// 更新貼片用藥紀錄 (PUT /medication/:id)
+    /// - Parameters:
+    ///   - recordID: 欲更新之紀錄 ID
+    ///   - originalDate: 原用藥記錄日期時間
+    ///   - region: 貼片部位
+    ///   - skinCondition: 皮膚狀況描述
+    ///   - isCustomCondition: 是否為自訂皮膚狀況
+    ///   - customCondition: 自訂皮膚狀況描述文字
+    ///   - images: 患部照片圖片清單
+    ///   - targetDateString: 重新載入之目標日期字串（格式：yyyy-MM-dd）
+    func updatePatchRecord(
+        recordID: Int,
+        originalDate: Date,
+        region: PatchRegion,
+        skinCondition: String,
+        isCustomCondition: Bool,
+        customCondition: String,
+        images: [UIImage],
+        targetDateString: String = ""
+    ) {
+        let finalCondition: String = {
+            if isCustomCondition {
+                let trimmed = customCondition.trimmingCharacters(in: .whitespaces)
+                return trimmed.isEmpty ? "其他" : trimmed
+            } else {
+                return skinCondition
+            }
+        }()
+
+        Task {
+            let imageDatas = await Task.detached(priority: .userInitiated) {
+                images.compactMap { image -> Data? in
+                    let targetWidth: CGFloat = 800
+                    let finalSize: CGSize
+                    if image.size.width <= targetWidth {
+                        finalSize = image.size
+                    } else {
+                        let scale = targetWidth / image.size.width
+                        finalSize = CGSize(width: targetWidth, height: image.size.height * scale)
+                    }
+
+                    let format = UIGraphicsImageRendererFormat()
+                    format.scale = 1.0
+                    let renderer = UIGraphicsImageRenderer(size: finalSize, format: format)
+                    let resizedImage = renderer.image { _ in
+                        image.draw(in: CGRect(origin: .zero, size: finalSize))
+                    }
+                    return resizedImage.jpegData(compressionQuality: 0.6)
+                }
+            }.value
+
+            let updateDTO = UpdateMedicationRequestDTO(
+                date: originalDate,
+                name: "貼片",
+                dose: "",
+                medType: MedicationType.patch.rawValue,
+                patchRegion: region.rawValue,
+                skinCondition: finalCondition,
+                skinImageDataList: imageDatas
+            )
+
+            do {
+                let success = try await repository.updateMedication(id: recordID, record: updateDTO)
+                if success {
+                    if !targetDateString.isEmpty {
+                        await loadRecords(for: targetDateString)
+                    } else {
+                        await loadAllRecords()
+                    }
+                    self.editingRecord = nil
+                }
+            } catch {
+                print("更新貼片紀錄失敗: \(error)")
             }
         }
     }
@@ -253,9 +410,7 @@ class MedicationViewModel: ObservableObject {
                     do {
                         let success = try await repository.deleteMedication(id: recordID)
                         if success {
-                            await MainActor.run {
-                                medicationList.removeAll { $0.id == recordID }
-                            }
+                            medicationList.removeAll { $0.id == recordID }
                         }
                     } catch {
                         print("刪除失敗: \(error)")
@@ -348,9 +503,7 @@ class MedicationViewModel: ObservableObject {
     ///   - timeString: 時間字串（格式：HH:mm）
     /// - Returns: 合併後之 Date 實例
     private func combine(date: Date, withTimeString timeString: String) -> Date {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "HH:mm"
-        if let timeDate = formatter.date(from: timeString) {
+        if let timeDate = timeString.toDate(format: "HH:mm") {
             let calendar = Calendar.current
             let hour = calendar.component(.hour, from: timeDate)
             let minute = calendar.component(.minute, from: timeDate)
