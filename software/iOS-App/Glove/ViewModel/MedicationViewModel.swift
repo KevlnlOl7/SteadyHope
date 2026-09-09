@@ -9,6 +9,8 @@ final class MedicationViewModel: ObservableObject {
 
     /// 用藥紀錄清單資料來源
     @Published var medicationList: [MedicationRecord] = []
+    /// 區間查詢載入狀態旗標
+    @Published var isLoadingRange: Bool = false
 
     /// 單次紀錄表單輸入狀態（名稱、劑量數值、劑量單位、用藥時間、給藥型態與貼片部位）
     @Published var inputName: String = ""
@@ -48,21 +50,54 @@ final class MedicationViewModel: ObservableObject {
         }
     }
 
-    /// 依指定日期從遠端伺服器載入用藥紀錄清單
-    /// - Parameter date: 查詢日期字串（格式：yyyy-MM-dd）
+    /// 依指定日期從遠端伺服器載入當日用藥紀錄清單，並依時間由新至舊降冪排序
+    /// - Parameter date: 查詢目標日期字串（格式：yyyy-MM-dd）
     func loadRecords(for date: String) async {
         do {
             let fetchedRecords = try await repository.getAllMedications(for: date)
-            self.medicationList = fetchedRecords
+            self.medicationList = fetchedRecords.sorted { first, second in
+                first.date > second.date
+            }
         } catch {
             print("讀取紀錄失敗: \(error)")
+            self.medicationList = []
         }
     }
 
-    /// 切換口服藥物排程項目的打卡狀態（已打卡則刪除紀錄，未打卡則新增紀錄）
+    /// 依指定日期起訖範圍從遠端伺服器載入用藥紀錄，並於本機篩選符合期間之項目
     /// - Parameters:
-    ///   - item: 欲打卡或取消打卡之 ScheduledDoseItem 排程項目
-    ///   - date: 打卡執行日期
+    ///   - startDate: 區間起始日期
+    ///   - endDate: 區間結束日期
+    func loadRecords(from startDate: Date, to endDate: Date) async {
+        self.isLoadingRange = true
+        let calendar = Calendar.current
+        let startOfDay = calendar.startOfDay(for: startDate)
+
+        guard let endExclusive = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: endDate)) else {
+            self.isLoadingRange = false
+            return
+        }
+
+        do {
+            let fetchedRecords = try await repository.getAllMedications(for: "")
+            self.medicationList = fetchedRecords
+                .filter { record in
+                    record.date >= startOfDay && record.date < endExclusive
+                }
+                .sorted { first, second in
+                    first.date > second.date
+                }
+        } catch {
+            print("讀取區間用藥紀錄失敗: \(error)")
+            self.medicationList = []
+        }
+        self.isLoadingRange = false
+    }
+
+    /// 切換常規口服排程項目於指定日期的打卡狀態（已打卡則遠端刪除，未打卡則新增打卡紀錄）
+    /// - Parameters:
+    ///   - item: 欲切換狀態之 ScheduledDoseItem 常規排程項目
+    ///   - date: 目標比對與打卡日期
     func toggleDoseTaken(for item: ScheduledDoseItem, on date: Date) {
         let cleanPlanName = item.plan.name.trimmingCharacters(in: .whitespaces)
 
@@ -172,10 +207,7 @@ final class MedicationViewModel: ObservableObject {
         self.selectedPatchRegion = record.patchRegion
 
         let rawDose = record.dose.trimmingCharacters(in: .whitespaces)
-        if let numberMatch = rawDose.range(
-            of: #"^[0-9]+(\.[0-9]+)?"#,
-            options: .regularExpression
-        ) {
+        if let numberMatch = rawDose.range(of: #"^[0-9]+(\.[0-9]+)?"#, options: .regularExpression) {
             self.inputDose = String(rawDose[numberMatch])
             self.inputUnit = String(rawDose[numberMatch.upperBound...])
                 .trimmingCharacters(in: .whitespaces)
@@ -185,12 +217,13 @@ final class MedicationViewModel: ObservableObject {
         }
     }
 
-    /// 儲存編輯後之用藥紀錄 (PUT /medication/:recordID)
-    /// - Parameter targetDateString: 重新載入之目標日期字串（格式：yyyy-MM-dd）
-    func saveEditedRecord(targetDateString: String = "") {
+    /// 將編輯完成的單次用藥資料傳輸至伺服器儲存，並同步更新畫面顯示清單
+    /// - Parameter targetDateString: 更新完成後重新整理之目標日期字串（格式：yyyy-MM-dd）
+    /// - Returns: 伺服器更新成功回傳 true，發生錯誤或更新失敗回傳 false
+    func saveEditedRecord(targetDateString: String = "") async -> Bool {
         guard let recordID = editingRecordID else {
             print("編輯儲存失敗: editingRecordID 為 nil")
-            return
+            return false
         }
 
         let trimmedDose = inputDose.trimmingCharacters(in: .whitespaces)
@@ -207,26 +240,24 @@ final class MedicationViewModel: ObservableObject {
             skinImageDataList: []
         )
 
-        Task {
-            do {
-                let success = try await repository.updateMedication(
-                    id: recordID,
-                    record: updateDTO
-                )
-                if success {
-                    if !targetDateString.isEmpty {
-                        await loadRecords(for: targetDateString)
-                    } else {
-                        await loadAllRecords()
-                    }
-                    self.editingRecordID = nil
-                    self.clearInputs()
+        do {
+            let success = try await repository.updateMedication(id: recordID, record: updateDTO)
+            if success {
+                if !targetDateString.isEmpty {
+                    await loadRecords(for: targetDateString)
                 } else {
-                    print("後端回傳更新失敗")
+                    await loadAllRecords()
                 }
-            } catch {
-                print("新增單次紀錄失敗: \(error)")
+                self.editingRecordID = nil
+                self.clearInputs()
+                return true
+            } else {
+                print("後端回傳更新失敗")
+                return false
             }
+        } catch {
+            print("更新單次紀錄失敗: \(error)")
+            return false
         }
     }
 
@@ -236,15 +267,15 @@ final class MedicationViewModel: ObservableObject {
         clearInputs()
     }
 
-    /// 儲存貼片用藥紀錄（包含背景圖片壓縮與後端同步）
+    /// 處理貼片打卡流程，於背景執行照片尺寸縮放與壓縮後上傳至伺服器保存
     /// - Parameters:
-    ///   - dose: 貼片劑量規格
-    ///   - region: 貼片部位
-    ///   - skinCondition: 貼片處皮膚狀況描述
-    ///   - isCustomCondition: 是否為自訂皮膚狀況
-    ///   - customCondition: 自訂皮膚狀況描述文字
-    ///   - images: 患部照片圖片清單
-    ///   - planUserID: 使用者 ID
+    ///   - dose: 貼片規格劑量
+    ///   - region: 貼片黏貼之人體部位
+    ///   - skinCondition: 貼片處之皮膚狀況描述
+    ///   - isCustomCondition: 是否為使用者自訂的非預設膚況
+    ///   - customCondition: 使用者自訂膚況之補充描述文字
+    ///   - images: 拍攝或選取之患部照片陣列
+    ///   - planUserID: 擁有此用藥紀錄之使用者 ID
     func savePatchRecord(
         dose: String,
         region: PatchRegion,
@@ -276,18 +307,12 @@ final class MedicationViewModel: ObservableObject {
                         finalSize = image.size
                     } else {
                         let scale = targetWidth / image.size.width
-                        finalSize = CGSize(
-                            width: targetWidth,
-                            height: image.size.height * scale
-                        )
+                        finalSize = CGSize(width: targetWidth, height: image.size.height * scale)
                     }
 
                     let format = UIGraphicsImageRendererFormat()
                     format.scale = 1.0
-                    let renderer = UIGraphicsImageRenderer(
-                        size: finalSize,
-                        format: format
-                    )
+                    let renderer = UIGraphicsImageRenderer(size: finalSize, format: format)
                     let resizedImage = renderer.image { _ in
                         image.draw(in: CGRect(origin: .zero, size: finalSize))
                     }
@@ -320,17 +345,17 @@ final class MedicationViewModel: ObservableObject {
         }
     }
 
-    /// 更新貼片用藥紀錄 (PUT /medication/:id)
+    /// 更新既有之穿皮貼片打卡紀錄，包含背景影像再處理與伺服器資料同步
     /// - Parameters:
-    ///   - recordID: 欲更新之紀錄 ID
-    ///   - dose: 貼片劑量規格
-    ///   - originalDate: 原用藥記錄日期時間
-    ///   - region: 貼片部位
-    ///   - skinCondition: 皮膚狀況描述
-    ///   - isCustomCondition: 是否為自訂皮膚狀況
-    ///   - customCondition: 自訂皮膚狀況描述文字
-    ///   - images: 患部照片圖片清單
-    ///   - targetDateString: 重新載入之目標日期字串（格式：yyyy-MM-dd）
+    ///   - recordID: 欲修改之貼片紀錄主鍵 ID
+    ///   - dose: 貼片規格劑量
+    ///   - originalDate: 原打卡時間戳記
+    ///   - region: 貼片黏貼部位
+    ///   - skinCondition: 貼片處皮膚狀態描述
+    ///   - isCustomCondition: 是否為自訂膚況
+    ///   - customCondition: 自訂膚況文字
+    ///   - images: 重新上傳之照片清單
+    ///   - targetDateString: 更新完成後重新整理之目標日期字串
     func updatePatchRecord(
         recordID: Int,
         dose: String,
@@ -399,10 +424,10 @@ final class MedicationViewModel: ObservableObject {
         }
     }
 
-    /// 刪除指定索引集合之用藥紀錄並同步至遠端伺服器
+    /// 刪除指定索引集合之用藥紀錄，同步取消本地推播並發送遠端刪除請求
     /// - Parameters:
-    ///   - records: 當前顯示之用藥紀錄清單
-    ///   - offsets: 欲刪除項目的 IndexSet 集合
+    ///   - records: 當前顯示清單中來源資料陣列
+    ///   - offsets: 欲執行刪除操作之項目 IndexSet 集合
     func deleteRecord(records: [MedicationRecord], at offsets: IndexSet) {
         for index in offsets {
             let recordToDelete = records[index]
@@ -430,9 +455,9 @@ final class MedicationViewModel: ObservableObject {
         }
     }
 
-    /// 檢查指定貼片部位在過去 14 天內是否曾被使用過
-    /// - Parameter region: 欲檢查之貼片部位
-    /// - Returns: 若過去 14 天內曾使用過則回傳 true，否則回傳 false
+    /// 檢查特定人體部位在過去 14 天內是否曾有黏貼穿皮貼片之紀錄
+    /// - Parameter region: 欲檢核之貼片部位
+    /// - Returns: 若 14 天內曾使用過該部位回傳 true，否則回傳 false
     func isRegionUsedInLast14Days(_ region: PatchRegion) -> Bool {
         let calendar = Calendar.current
         guard let fourteenDaysAgo = calendar.date(byAdding: .day, value: -14, to: Date()) else {
@@ -449,7 +474,7 @@ final class MedicationViewModel: ObservableObject {
         }
     }
 
-    /// 排程本機用藥推播通知
+    /// 為指定的用藥紀錄建立並註冊系統本機推播提醒通知
     /// - Parameter record: 目標用藥紀錄實體
     private func scheduleNotification(for record: MedicationRecord) {
         let content = UNMutableNotificationContent()
@@ -457,38 +482,21 @@ final class MedicationViewModel: ObservableObject {
         content.body = "該服用/更換藥物：\(record.name) (\(record.dose))"
         content.sound = .default
 
-        let components = Calendar.current.dateComponents(
-            [.year, .month, .day, .hour, .minute],
-            from: record.date
-        )
-        let trigger = UNCalendarNotificationTrigger(
-            dateMatching: components,
-            repeats: false
-        )
-        let identifier: String
-        if let recordID = record.id {
-            identifier = "med_\(recordID)"
-        } else {
-            identifier = UUID().uuidString
-        }
+        let components = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute], from: record.date)
+        let trigger = UNCalendarNotificationTrigger(dateMatching: components, repeats: false)
+        let identifier = record.id != nil ? "med_\(record.id!)" : UUID().uuidString
 
-        let request = UNNotificationRequest(
-            identifier: identifier,
-            content: content,
-            trigger: trigger
-        )
+        let request = UNNotificationRequest(identifier: identifier, content: content, trigger: trigger)
         UNUserNotificationCenter.current().add(request)
     }
 
-    /// 取消已排程之本機用藥推播通知
-    /// - Parameter notificationID: 欲取消通知之識別字串
+    /// 依通知識別字串移除尚未觸發之本機推播通知請求
+    /// - Parameter notificationID: 欲註銷之推播識別字串
     private func cancelNotification(notificationID: String) {
-        UNUserNotificationCenter.current().removePendingNotificationRequests(
-            withIdentifiers: [notificationID]
-        )
+        UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: [notificationID])
     }
 
-    /// 清空單次用藥紀錄輸入表單欄位
+    /// 清空單次自訂用藥紀錄表單中的各項暫存變數
     func clearInputs() {
         inputName = ""
         inputDose = ""
@@ -498,22 +506,17 @@ final class MedicationViewModel: ObservableObject {
         selectedPatchRegion = nil
     }
 
-    /// 將目標日期與時間字串合併為完整的 Date 物件
+    /// 將特定日期與「時:分」字串結合成具有精確時間戳記的 Date 物件
     /// - Parameters:
-    ///   - date: 目標日期
-    ///   - timeString: 時間字串（格式：HH:mm）
-    /// - Returns: 合併後之 Date 實例
+    ///   - date: 基準日期
+    ///   - timeString: 時間文字（格式如 "HH:mm"）
+    /// - Returns: 結合後之完整 Date 實體
     private func combine(date: Date, withTimeString timeString: String) -> Date {
         if let timeDate = timeString.toDate(format: "HH:mm") {
             let calendar = Calendar.current
             let hour = calendar.component(.hour, from: timeDate)
             let minute = calendar.component(.minute, from: timeDate)
-            return calendar.date(
-                bySettingHour: hour,
-                minute: minute,
-                second: 0,
-                of: date
-            ) ?? date
+            return calendar.date(bySettingHour: hour, minute: minute, second: 0, of: date) ?? date
         }
         return date
     }

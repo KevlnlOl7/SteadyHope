@@ -4,7 +4,7 @@ import SwiftData
 import SwiftUI
 
 @MainActor
-class SymptomViewModel: ObservableObject {
+final class SymptomViewModel: ObservableObject {
     @Published var symptomList: [SymptomRecord] = []
 
     // 新增症狀紀錄狀態

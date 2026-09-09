@@ -247,8 +247,15 @@ final class MedicationPlanViewModel: ObservableObject {
         let plan = planList[index]
         editingPlanIndex = index
         planName = plan.name
-        planDose = plan.dose
-        planUnit = ""
+        let rawDose = plan.dose.trimmingCharacters(in: .whitespaces)
+        if let numberMatch = rawDose.range(of: #"^[0-9]+(\.[0-9]+)?"#, options: .regularExpression) {
+            self.planDose = String(rawDose[numberMatch])
+            self.planUnit = String(rawDose[numberMatch.upperBound...]).trimmingCharacters(in: .whitespaces)
+        } else {
+            self.planDose = rawDose
+            self.planUnit = ""
+        }
+        
         planMedType = plan.medType
         planPatchRegion = plan.defaultPatchRegion
         repeatFrequency = plan.repeatFrequency
