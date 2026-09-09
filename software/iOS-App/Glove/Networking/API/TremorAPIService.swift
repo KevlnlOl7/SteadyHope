@@ -44,39 +44,6 @@ final class TremorAPIService: TremorAPIServiceProtocol {
         return decoder
     }
 
-    /// 檢查 HTTP 回應狀態碼，特別攔截 401 權限失效並發送系統通知
-    /// - Parameters:
-    ///   - httpResponse: HTTP 伺服器回應實體
-    ///   - data: 伺服器回傳之二進位內容
-    private func checkStatusCode(_ httpResponse: HTTPURLResponse, data: Data) throws {
-        if httpResponse.statusCode == 401 {
-            let reason = parseServerError(data: data, code: 401)
-            DispatchQueue.main.async {
-                NotificationCenter.default.post(
-                    name: .didReceive401Unauthorized,
-                    object: nil,
-                    userInfo: ["message": reason]
-                )
-            }
-            throw NetworkError.serverError(reason: reason)
-        }
-    }
-
-    /// 解析後端 Vapor 伺服器回傳之錯誤訊息 JSON
-    /// - Parameters:
-    ///   - data: 伺服器回傳之錯誤訊息二進位內容
-    ///   - code: HTTP 狀態碼
-    /// - Returns: 格式化後之錯誤原因描述文字
-    private func parseServerError(data: Data, code: Int) -> String {
-        struct VaporError: Decodable {
-            let reason: String
-        }
-        if let serverError = try? JSONDecoder().decode(VaporError.self, from: data) {
-            return serverError.reason
-        }
-        return "連線失敗，錯誤碼：\(code)"
-    }
-
     /// 上傳壓縮之原始震顫取樣數據至伺服器
     /// - Parameters:
     ///   - payload: 封裝壓縮數據之請求 DTO
@@ -92,20 +59,13 @@ final class TremorAPIService: TremorAPIServiceProtocol {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
         let encoder = JSONEncoder()
-        request.httpBody = try encoder.encode(payload)
-
-        let (data, response) = try await URLSession.shared.data(for: request)
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw NetworkError.noData
+        do {
+            request.httpBody = try encoder.encode(payload)
+        } catch {
+            throw NetworkError.encodingFailed
         }
 
-        try checkStatusCode(httpResponse, data: data)
-
-        guard (200...299).contains(httpResponse.statusCode) else {
-            throw NetworkError.serverError(
-                reason: parseServerError(data: data, code: httpResponse.statusCode)
-            )
-        }
+        try await NetworkManager.shared.requestData(request)
     }
 
     /// 上傳單筆震顫特徵分析紀錄至伺服器
@@ -124,20 +84,13 @@ final class TremorAPIService: TremorAPIServiceProtocol {
 
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
-        request.httpBody = try encoder.encode(record)
-
-        let (data, response) = try await URLSession.shared.data(for: request)
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw NetworkError.noData
+        do {
+            request.httpBody = try encoder.encode(record)
+        } catch {
+            throw NetworkError.encodingFailed
         }
 
-        try checkStatusCode(httpResponse, data: data)
-
-        guard (200...299).contains(httpResponse.statusCode) else {
-            throw NetworkError.serverError(
-                reason: parseServerError(data: data, code: httpResponse.statusCode)
-            )
-        }
+        try await NetworkManager.shared.requestData(request)
     }
 
     /// 向伺服器拉取所有歷史原始震顫數據封包
@@ -152,20 +105,7 @@ final class TremorAPIService: TremorAPIServiceProtocol {
         request.httpMethod = "GET"
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
 
-        let (data, response) = try await URLSession.shared.data(for: request)
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw NetworkError.noData
-        }
-
-        try checkStatusCode(httpResponse, data: data)
-
-        guard (200...299).contains(httpResponse.statusCode) else {
-            throw NetworkError.serverError(
-                reason: parseServerError(data: data, code: httpResponse.statusCode)
-            )
-        }
-
-        return try makeDecoder().decode([RawTremorDataDTO].self, from: data)
+        return try await NetworkManager.shared.request(request, decoder: makeDecoder())
     }
 
     /// 向伺服器拉取所有歷史震顫分析特徵紀錄
@@ -180,19 +120,6 @@ final class TremorAPIService: TremorAPIServiceProtocol {
         request.httpMethod = "GET"
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
 
-        let (data, response) = try await URLSession.shared.data(for: request)
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw NetworkError.noData
-        }
-
-        try checkStatusCode(httpResponse, data: data)
-
-        guard (200...299).contains(httpResponse.statusCode) else {
-            throw NetworkError.serverError(
-                reason: parseServerError(data: data, code: httpResponse.statusCode)
-            )
-        }
-
-        return try makeDecoder().decode([TremorAnalysisRecordDTO].self, from: data)
+        return try await NetworkManager.shared.request(request, decoder: makeDecoder())
     }
 }

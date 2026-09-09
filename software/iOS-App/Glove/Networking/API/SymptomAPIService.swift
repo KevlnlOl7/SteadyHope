@@ -5,14 +5,13 @@ class SymptomAPIService {
 
     /// 新增症狀紀錄至遠端伺服器
     /// - Parameter record: 包含症狀詳細資訊之 SymptomRecordDTO 實例
-    /// - Returns: 新增成功回傳 true，否則回傳 false
-    /// - Throws: 網路請求異常或驗證錯誤時拋出 Validation 錯誤
+    /// - Returns: 新增成功回傳 true，否則拋出錯誤
     func addSymptom(record: SymptomRecordDTO) async throws -> Bool {
         guard let url = URL(string: "\(baseURL)/symptom/add") else {
-            throw Validation.server(message: "URL 格式錯誤")
+            throw NetworkError.invalidURL
         }
         guard let token = AuthManager.shared.getToken() else {
-            throw Validation.server(message: "權限不足，請重新登入")
+            throw NetworkError.unauthorized
         }
 
         var request = URLRequest(url: url)
@@ -22,22 +21,19 @@ class SymptomAPIService {
 
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
-
-        request.httpBody = try encoder.encode(record)
-
-        let (_, response) = try await URLSession.shared.data(for: request)
-
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw Validation.server(message: "伺服器回應異常")
+        do {
+            request.httpBody = try encoder.encode(record)
+        } catch {
+            throw NetworkError.encodingFailed
         }
 
-        return httpResponse.statusCode == 200 || httpResponse.statusCode == 201
+        try await NetworkManager.shared.requestData(request)
+        return true
     }
 
     /// 依指定日期查詢或獲取全部遠端症狀紀錄清單
     /// - Parameter date: 查詢日期字串（格式：yyyy-MM-dd），若為 nil 則查詢全部紀錄
     /// - Returns: 解碼完成之 SymptomRecordDTO 陣列
-    /// - Throws: 網路請求失敗、伺服器異常或資料解碼錯誤時拋出錯誤
     func fetchSymptoms(for date: String? = nil) async throws -> [SymptomRecordDTO] {
         let urlString: String
         if let targetDate = date {
@@ -47,68 +43,49 @@ class SymptomAPIService {
         }
 
         guard let url = URL(string: urlString) else {
-            throw Validation.server(message: "URL 格式錯誤")
+            throw NetworkError.invalidURL
         }
-
         guard let token = AuthManager.shared.getToken() else {
-            throw Validation.server(message: "權限不足，請重新登入")
+            throw NetworkError.unauthorized
         }
 
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
 
-        let (data, response) = try await URLSession.shared.data(for: request)
-
-        guard let httpResponse = response as? HTTPURLResponse,
-              httpResponse.statusCode == 200
-        else {
-            throw Validation.server(message: "獲取資料失敗")
-        }
-
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = customDateDecodingStrategy()
-
-        return try decoder.decode([SymptomRecordDTO].self, from: data)
+        return try await NetworkManager.shared.request(request, decoder: makeDecoder())
     }
 
     /// 根據症狀紀錄 ID 刪除遠端伺服器上的紀錄
     /// - Parameter id: 欲刪除之症狀紀錄 ID
-    /// - Returns: 刪除成功回傳 true，否則回傳 false
-    /// - Throws: 網路請求異常或驗證錯誤時拋出 Validation 錯誤
+    /// - Returns: 刪除成功回傳 true，否則拋出錯誤
     func deleteSymptom(id: Int) async throws -> Bool {
         guard let url = URL(string: "\(baseURL)/symptom/\(id)") else {
-            throw Validation.server(message: "URL 格式錯誤")
+            throw NetworkError.invalidURL
         }
         guard let token = AuthManager.shared.getToken() else {
-            throw Validation.server(message: "權限不足，請重新登入")
+            throw NetworkError.unauthorized
         }
 
         var request = URLRequest(url: url)
         request.httpMethod = "DELETE"
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
 
-        let (_, response) = try await URLSession.shared.data(for: request)
-
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw Validation.server(message: "伺服器回應異常")
-        }
-
-        return httpResponse.statusCode == 204 || httpResponse.statusCode == 200
+        try await NetworkManager.shared.requestData(request)
+        return true
     }
 
     /// 根據症狀紀錄 ID 更新遠端伺服器上的紀錄
     /// - Parameters:
     ///   - id: 欲更新之症狀紀錄 ID
     ///   - record: 包含更新資訊之 UpdateSymptomRequestDTO 實例
-    /// - Returns: 更新成功回傳 true，否則回傳 false
-    /// - Throws: 網路請求異常或驗證錯誤時拋出 Validation 錯誤
+    /// - Returns: 更新成功回傳 true，否則拋出錯誤
     func updateSymptom(id: Int, record: UpdateSymptomRequestDTO) async throws -> Bool {
         guard let url = URL(string: "\(baseURL)/symptom/\(id)") else {
-            throw Validation.server(message: "URL 格式錯誤")
+            throw NetworkError.invalidURL
         }
         guard let token = AuthManager.shared.getToken() else {
-            throw Validation.server(message: "權限不足，請重新登入")
+            throw NetworkError.unauthorized
         }
 
         var request = URLRequest(url: url)
@@ -118,17 +95,24 @@ class SymptomAPIService {
 
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
-        request.httpBody = try encoder.encode(record)
-
-        let (_, response) = try await URLSession.shared.data(for: request)
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw Validation.server(message: "伺服器回應異常")
+        do {
+            request.httpBody = try encoder.encode(record)
+        } catch {
+            throw NetworkError.encodingFailed
         }
-        return httpResponse.statusCode == 200
+
+        try await NetworkManager.shared.requestData(request)
+        return true
+    }
+
+    /// 建立帶有自訂日期解碼策略的 JSONDecoder
+    private func makeDecoder() -> JSONDecoder {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = customDateDecodingStrategy()
+        return decoder
     }
 
     /// 自訂日期解碼策略，支援 ISO8601 與標準 DateTime 日期格式解析
-    /// - Returns: JSONDecoder 之 DateDecodingStrategy 策略
     private func customDateDecodingStrategy() -> JSONDecoder.DateDecodingStrategy {
         .custom { decoder in
             let container = try decoder.singleValueContainer()

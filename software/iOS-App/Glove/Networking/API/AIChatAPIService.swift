@@ -35,31 +35,11 @@ class AIChatAPIService {
             throw NetworkError.encodingFailed
         }
 
-        let data: Data
-        let response: URLResponse
-        do {
-            (data, response) = try await URLSession.shared.data(for: urlRequest)
-        } catch {
-            throw NetworkError.serverError(reason: "無法連線至伺服器，請檢查網路狀態")
-        }
-
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw NetworkError.serverError(reason: "伺服器回應異常")
-        }
-
-        if httpResponse.statusCode == 401 {
-            throw NetworkError.unauthorized
-        } else if ![200, 201].contains(httpResponse.statusCode) {
-            throw NetworkError.serverError(
-                reason: "AI 服務暫時無法使用 (\(httpResponse.statusCode))"
-            )
-        }
-
-        return data
+        return try await NetworkManager.shared.requestData(urlRequest)
     }
-
+    
     /// 取得歷史對話紀錄並直接解碼
-    /// - Returns: 解碼後的聊天歷史列表 [AiChatHistoryItemDTO]
+    /// - Returns: 解碼後的聊天歷史列表 [AIChatHistoryItemDTO]
     /// - Throws: NetworkError 類型的錯誤
     func fetchHistory() async throws -> [AIChatHistoryItemDTO] {
         guard let url = URL(string: "\(baseURL)/api/ai/history") else {
@@ -73,31 +53,7 @@ class AIChatAPIService {
             urlRequest.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
 
-        let data: Data
-        let response: URLResponse
-        do {
-            (data, response) = try await URLSession.shared.data(for: urlRequest)
-        } catch {
-            throw NetworkError.serverError(reason: "無法連線至伺服器，請檢查網路狀態")
-        }
-
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw NetworkError.serverError(reason: "伺服器回應異常")
-        }
-
-        if httpResponse.statusCode == 401 {
-            throw NetworkError.unauthorized
-        } else if httpResponse.statusCode != 200 {
-            throw NetworkError.serverError(
-                reason: "取得歷史紀錄失敗 (\(httpResponse.statusCode))"
-            )
-        }
-
-        do {
-            return try iso8601Decoder.decode([AIChatHistoryItemDTO].self, from: data)
-        } catch {
-            throw NetworkError.decodeError
-        }
+        return try await NetworkManager.shared.request(urlRequest, decoder: iso8601Decoder)
     }
 
     /// 向後端 AI 請求生成看診溝通卡片摘要原始 Data
@@ -122,24 +78,6 @@ class AIChatAPIService {
             throw NetworkError.encodingFailed
         }
 
-        let data: Data
-        let response: URLResponse
-        do {
-            (data, response) = try await URLSession.shared.data(for: urlRequest)
-        } catch {
-            throw NetworkError.serverError(reason: "無法連線至伺服器，請檢查網路狀態")
-        }
-
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw NetworkError.serverError(reason: "伺服器回應異常")
-        }
-
-        if httpResponse.statusCode == 401 {
-            throw NetworkError.unauthorized
-        } else if ![200, 201].contains(httpResponse.statusCode) {
-            throw NetworkError.serverError(reason: "產生看診摘要失敗 (\(httpResponse.statusCode))")
-        }
-
-        return data
+        return try await NetworkManager.shared.requestData(urlRequest)
     }
 }

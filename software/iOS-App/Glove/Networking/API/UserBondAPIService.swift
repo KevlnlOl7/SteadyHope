@@ -19,20 +19,7 @@ class UserBondAPIService {
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
-        let (data, response) = try await URLSession.shared.data(for: request)
-
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw NetworkError.noData
-        }
-
-        if httpResponse.statusCode == 200 {
-            let decoder = JSONDecoder()
-            decoder.dateDecodingStrategy = .iso8601
-            return try decoder.decode(PairingCodeResponseDTO.self, from: data)
-        } else {
-            let reason = parseServerError(data: data, code: httpResponse.statusCode)
-            throw NetworkError.serverError(reason: reason)
-        }
+        return try await NetworkManager.shared.request(request)
     }
 
     /// 病患端獲取已連動的照護者列表
@@ -48,20 +35,7 @@ class UserBondAPIService {
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
-        let (data, response) = try await URLSession.shared.data(for: request)
-
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw NetworkError.noData
-        }
-
-        if httpResponse.statusCode == 200 {
-            let decoder = JSONDecoder()
-            decoder.dateDecodingStrategy = .iso8601
-            return try decoder.decode([LinkedPartnerResponseDTO].self, from: data)
-        } else {
-            let reason = parseServerError(data: data, code: httpResponse.statusCode)
-            throw NetworkError.serverError(reason: reason)
-        }
+        return try await NetworkManager.shared.request(request)
     }
 
     /// 照護者端獲取單一病患資訊
@@ -76,23 +50,8 @@ class UserBondAPIService {
         request.httpMethod = "GET"
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-
-        let (data, response) = try await URLSession.shared.data(for: request)
-
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw NetworkError.noData
-        }
-
-        if httpResponse.statusCode == 200 {
-            let decoder = JSONDecoder()
-            decoder.dateDecodingStrategy = .iso8601
-            return try decoder.decode(LinkedPartnerResponseDTO.self, from: data)
-        } else if httpResponse.statusCode == 404 {
-            throw NetworkError.serverError(reason: "目前尚未綁定任何病患")
-        } else {
-            let reason = parseServerError(data: data, code: httpResponse.statusCode)
-            throw NetworkError.serverError(reason: reason)
-        }
+        
+        return try await NetworkManager.shared.request(request)
     }
 
     /// 發起雙向驗證綁定請求（限照護者端呼叫）
@@ -115,22 +74,13 @@ class UserBondAPIService {
             patientEmail: patientEmail,
             pairingCode: pairingCode
         )
-        request.httpBody = try JSONEncoder().encode(bodyObj)
-
-        let (data, response) = try await URLSession.shared.data(for: request)
-
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw NetworkError.noData
+        do {
+            request.httpBody = try JSONEncoder().encode(bodyObj)
+        } catch {
+            throw NetworkError.encodingFailed
         }
 
-        if httpResponse.statusCode == 200 {
-            let decoder = JSONDecoder()
-            decoder.dateDecodingStrategy = .iso8601
-            return try decoder.decode(LinkedPartnerResponseDTO.self, from: data)
-        } else {
-            let reason = parseServerError(data: data, code: httpResponse.statusCode)
-            throw NetworkError.serverError(reason: reason)
-        }
+        return try await NetworkManager.shared.request(request)
     }
 
     /// 解除照護者與被照護者綁定關係
@@ -148,19 +98,14 @@ class UserBondAPIService {
         urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
         if let request = request {
-            urlRequest.httpBody = try JSONEncoder().encode(request)
+            do {
+                urlRequest.httpBody = try JSONEncoder().encode(request)
+            } catch {
+                throw NetworkError.encodingFailed
+            }
         }
 
-        let (data, response) = try await URLSession.shared.data(for: urlRequest)
-
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw NetworkError.noData
-        }
-
-        guard [200, 204].contains(httpResponse.statusCode) else {
-            let reason = parseServerError(data: data, code: httpResponse.statusCode)
-            throw NetworkError.serverError(reason: reason)
-        }
+        try await NetworkManager.shared.requestData(urlRequest)
     }
     
     /// 更新照護者權限（限病患端呼叫）
@@ -189,33 +134,12 @@ class UserBondAPIService {
             canManageMedPlan: canManageMedPlan,
             canAddMedRecord: canAddMedRecord
         )
-        request.httpBody = try JSONEncoder().encode(bodyObj)
-
-        let (data, response) = try await URLSession.shared.data(for: request)
-
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw NetworkError.noData
+        do {
+            request.httpBody = try JSONEncoder().encode(bodyObj)
+        } catch {
+            throw NetworkError.encodingFailed
         }
 
-        // 成功回傳 200 OK
-        guard [200, 204].contains(httpResponse.statusCode) else {
-            let reason = parseServerError(data: data, code: httpResponse.statusCode)
-            throw NetworkError.serverError(reason: reason)
-        }
-    }
-
-    /// 解析後端錯誤原因的輔助函式
-    /// - Parameters:
-    ///   - data: 伺服器回傳的 Data
-    ///   - code: HTTP 狀態碼
-    /// - Returns: 解析後的錯誤字串說明
-    private func parseServerError(data: Data, code: Int) -> String {
-        struct VaporError: Decodable {
-            let reason: String
-        }
-        if let serverError = try? JSONDecoder().decode(VaporError.self, from: data) {
-            return serverError.reason
-        }
-        return "連動失敗，錯誤碼：\(code)"
+        try await NetworkManager.shared.requestData(request)
     }
 }
