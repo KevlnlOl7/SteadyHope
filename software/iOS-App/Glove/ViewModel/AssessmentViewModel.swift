@@ -22,6 +22,12 @@ final class AssessmentViewModel: ObservableObject {
     @Published var groupedHistoryRecords: [DailyAssessmentGroup] = []
     @Published var isLoadingHistory: Bool = false
 
+    /// 今日評估是否已填寫狀態
+    @Published var hasFilledToday: Bool = false
+
+    /// 存在評估紀錄的所有日期字串集合 (yyyy-MM-dd)
+    @Published var availableDateStrings: Set<String> = []
+
     /// 情緒心理層面指標之加總總分
     var moodScore: Int {
         AssessmentBank.questions
@@ -49,6 +55,33 @@ final class AssessmentViewModel: ObservableObject {
     /// 整份問卷之綜合累計總分（包含情緒、日常生活與動作功能）
     var totalScore: Int {
         moodScore + adlScore + motorScore
+    }
+
+    /// 檢查今日是否已存在評估紀錄
+    func checkTodayAssessmentStatus() async {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        let todayStr = formatter.string(from: Date())
+
+        do {
+            let records = try await AssessmentRepository.shared.fetchAssessment(dateString: todayStr)
+            self.hasFilledToday = !records.isEmpty
+        } catch {
+            self.hasFilledToday = false
+        }
+    }
+
+    /// 載入所有存在紀錄的日期集合，供日曆篩選禁用非紀錄日期
+    func fetchAvailableRecordDates() async {
+        do {
+            let records = try await AssessmentRepository.shared.fetchAssessment(dateString: nil)
+            let formatter = DateFormatter()
+            formatter.dateFormat = "yyyy-MM-dd"
+            let dates = records.map { formatter.string(from: $0.date) }
+            self.availableDateStrings = Set(dates)
+        } catch {
+            self.availableDateStrings = []
+        }
     }
 
     /// 彙整已填寫之各項指標答案並向伺服器非同步提交每日健康評估資料
@@ -87,6 +120,9 @@ final class AssessmentViewModel: ObservableObject {
         do {
             _ = try await AssessmentRepository.shared.submitAssessment(payload: payload)
             self.showSuccessAlert = true
+            self.hasFilledToday = true
+            NotificationScheduler.shared.cancelTodayAssessmentReminderIfCompleted()
+            await fetchAvailableRecordDates()
         } catch {
             self.errorMessage = error.localizedDescription
             self.showErrorAlert = true
@@ -160,14 +196,8 @@ final class AssessmentViewModel: ObservableObject {
         self.groupedHistoryRecords = []
     }
 
-    /// 將回傳的紀錄陣列依照日期（yyyy/MM/dd）進行分組
+    /// 將回傳的紀錄陣列依照日期進行分組
     private func groupRecords(_ records: [DailyAssessmentResponseDTO]) -> [DailyAssessmentGroup] {
-        let formatter = DateFormatter()
-        formatter.calendar = Calendar.current
-        formatter.locale = Locale(identifier: "zh_TW")
-        formatter.timeZone = TimeZone.current
-        
-        // 建立分組 Key (yyyy-MM-dd) 與 顯示字串 (yyyy/MM/dd)
         var dictionary: [String: (dateText: String, records: [DailyAssessmentResponseDTO])] = [:]
         
         let keyFormatter = DateFormatter()
@@ -187,10 +217,8 @@ final class AssessmentViewModel: ObservableObject {
             }
         }
 
-        // 依照日期由新到舊排序分組
         return dictionary.keys.sorted(by: >).compactMap { key in
             guard let group = dictionary[key] else { return nil }
-            // 讓同一天內的紀錄也照時間降冪排序
             let sortedRecords = group.records.sorted { $0.date > $1.date }
             return DailyAssessmentGroup(
                 id: key,

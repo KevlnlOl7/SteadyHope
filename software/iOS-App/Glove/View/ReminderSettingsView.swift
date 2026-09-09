@@ -15,6 +15,24 @@ struct ReminderSettingsView: View {
     @State private var tempRefillReminder: Bool = false
     @State private var tempRefillDate: Date = Date()
 
+    // 震顫待補填提醒暫存
+    @State private var tempUnlabeledReminder: Bool = true
+    @State private var tempUnlabeledReminderTime: Date = {
+        var comps = DateComponents()
+        comps.hour = 21
+        comps.minute = 0
+        return Calendar.current.date(from: comps) ?? Date()
+    }()
+
+    // 每日量表評估未填寫提醒暫存
+    @State private var tempAssessmentReminder: Bool = true
+    @State private var tempAssessmentReminderTime: Date = {
+        var comps = DateComponents()
+        comps.hour = 20
+        comps.minute = 30
+        return Calendar.current.date(from: comps) ?? Date()
+    }()
+
     @State private var showSavedAlert: Bool = false
     @State private var showPlanManageSheet: Bool = false
 
@@ -45,7 +63,7 @@ struct ReminderSettingsView: View {
                 }
             }
 
-            // 回診提醒設定（精簡版）
+            // 回診提醒設定
             Section(
                 header: Text("回診提醒"),
                 footer: tempClinicReminder ? Text("系統將於看診前一天晚上 8 點發送第一次提醒。") : nil
@@ -79,6 +97,38 @@ struct ReminderSettingsView: View {
                         "預計領藥日期",
                         selection: $tempRefillDate,
                         displayedComponents: [.date]
+                    )
+                }
+            }
+
+            // 每日症狀評估量表填寫提醒
+            Section(
+                header: Text("症狀評估每日提醒"),
+                footer: tempAssessmentReminder ? Text("若當日尚未填寫評估量表，系統將於設定時間推播提醒。") : nil
+            ) {
+                Toggle("啟用量表未填寫提醒", isOn: $tempAssessmentReminder)
+
+                if tempAssessmentReminder {
+                    DatePicker(
+                        "提醒時間",
+                        selection: $tempAssessmentReminderTime,
+                        displayedComponents: [.hourAndMinute]
+                    )
+                }
+            }
+
+            // 震顫發作生活情境未標記提醒
+            Section(
+                header: Text("震顫事件紀錄提醒"),
+                footer: tempUnlabeledReminder ? Text("若當日或過往有顯著震顫事件尚未標記情境，系統將於設定時間推播提醒補填。") : nil
+            ) {
+                Toggle("啟用未標記事件每日提醒", isOn: $tempUnlabeledReminder)
+
+                if tempUnlabeledReminder {
+                    DatePicker(
+                        "提醒時間",
+                        selection: $tempUnlabeledReminderTime,
+                        displayedComponents: [.hourAndMinute]
                     )
                 }
             }
@@ -120,6 +170,12 @@ struct ReminderSettingsView: View {
         tempAdvanceHours = reminderManager.clinicReminderAdvanceHours
         tempRefillReminder = reminderManager.isRefillReminderEnabled
         tempRefillDate = reminderManager.refillDate
+
+        tempUnlabeledReminder = reminderManager.isUnlabeledReminderEnabled
+        tempUnlabeledReminderTime = reminderManager.unlabeledReminderTime
+
+        tempAssessmentReminder = reminderManager.isDailyAssessmentReminderEnabled
+        tempAssessmentReminderTime = reminderManager.dailyAssessmentReminderTime
     }
 
     private func saveSettings() {
@@ -129,7 +185,11 @@ struct ReminderSettingsView: View {
             clinicDate: tempClinicDate,
             advanceHours: tempAdvanceHours,
             refillReminder: tempRefillReminder,
-            rDate: tempRefillDate
+            rDate: tempRefillDate,
+            unlabeledReminder: tempUnlabeledReminder,
+            unlabeledTime: tempUnlabeledReminderTime,
+            assessmentReminder: tempAssessmentReminder,
+            assessmentTime: tempAssessmentReminderTime
         )
 
         NotificationScheduler.shared.syncAllReminders(

@@ -38,6 +38,10 @@ class NotificationScheduler {
         if reminderManager.isRefillReminderEnabled {
             scheduleRefillNotifications(refillDate: reminderManager.refillDate)
         }
+
+        if reminderManager.isDailyAssessmentReminderEnabled {
+            scheduleDailyAssessmentReminder(time: reminderManager.dailyAssessmentReminderTime)
+        }
     }
     
     /// 排程每日固定用藥通知
@@ -119,5 +123,34 @@ class NotificationScheduler {
         let trigger = UNCalendarNotificationTrigger(dateMatching: comps, repeats: false)
         let req = UNNotificationRequest(identifier: "refill_day", content: content, trigger: trigger)
         UNUserNotificationCenter.current().add(req)
+    }
+
+    /// 排程每日症狀評估量表填寫提醒
+    private func scheduleDailyAssessmentReminder(time: Date) {
+        let calendar = Calendar.current
+        let hour = calendar.component(.hour, from: time)
+        let minute = calendar.component(.minute, from: time)
+
+        let content = UNMutableNotificationContent()
+        content.title = "症狀評估提醒"
+        content.body = "今天還沒填寫健康快篩喔！花 1 分鐘記錄今天的身體狀態，協助追蹤病情變化。"
+        content.sound = .default
+
+        var dateComponents = DateComponents()
+        dateComponents.hour = hour
+        dateComponents.minute = minute
+
+        let trigger = UNCalendarNotificationTrigger(dateMatching: dateComponents, repeats: true)
+        let request = UNNotificationRequest(
+            identifier: "daily_assessment_reminder",
+            content: content,
+            trigger: trigger
+        )
+        UNUserNotificationCenter.current().add(request)
+    }
+
+    /// 當日完成填寫評估後，取消當天提醒避免重複打擾
+    func cancelTodayAssessmentReminderIfCompleted() {
+        UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: ["daily_assessment_reminder"])
     }
 }
