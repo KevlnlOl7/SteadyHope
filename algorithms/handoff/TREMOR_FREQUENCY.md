@@ -2,6 +2,11 @@
 
 日期：2026-07-28
 
+修訂：2026-09-12。保留 V1 的 `0.20／0.30／0.45` 工程門檻，補充頻率回報與事件
+區分、最近 50 筆馬達比例、資料中斷及 App 公式對齊要求。本次只修訂文件，未修改 App。
+
+給軟體組的說明與修改清單：[APP_EVENT_REVIEW_20260912.md](APP_EVENT_REVIEW_20260912.md)。
+
 主責：張傢寧（演算法規格與 Python 參考程式）
 
 協作：李冠廷（STM32／BLE 資料格式）、樊柔妤（App 接收與圖表）
@@ -20,6 +25,24 @@
 這項功能是「App 顯示與後續分析」，不是馬達開關方法，也不是醫療診斷。
 馬達 gating 繼續使用 `tremor_gate.c`；App 不可使用 eHWFLC-KF 的
 `freqEstimate` 當作震顫頻率。
+
+本規格的輸出首先是**分析紀錄**。`data_valid` 表示資料品質，`frequency_reliable`
+表示主頻是否符合回報條件；兩者皆不直接定義一次震顫事件。定期保存一筆資料不能
+算成一次發作，也不能更新「最後震顫時間」。事件規則的缺項與分工見
+[`APP_PSD_IMPLEMENTATION.md` §12](APP_PSD_IMPLEMENTATION.md#12-分析紀錄與事件功能2026-09-12-補充)。
+
+### 頻帶名詞不可混用
+
+| 範圍 | 本專題固定語意 |
+|---|---|
+| 4–6 Hz | 第一版保守核心馬達目標，不是 PD 的完整臨床頻率範圍 |
+| 4–7 Hz | MDS 描述的典型 parkinsonian rest tremor 可及範圍 |
+| 3–7 Hz | 穿戴式資料的候選主頻搜尋範圍 |
+| 7.25／8 Hz 純 tone | engineering out-of-target controls，不是健康者或臨床陰性樣本 |
+
+頻率單獨不能區分 Parkinson's disease、其他震顫或節律性自主動作，因此不得用上述
+任何一個頻帶作診斷，也不得把合成 tone 的 gate 結果稱為臨床 sensitivity、specificity
+或 false positive。
 
 ## 2. 為什麼採用這個方法
 
@@ -54,7 +77,7 @@ SteadyHope V1 依照上述資料流，採用：
 | `gyro_y_raw` | `int16` | 1/16 deg/s | BNO055 Y軸Gyro原始值 |
 | `gyro_z_raw` | `int16` | 1/16 deg/s | BNO055 Z軸Gyro原始值 |
 | `sensor_valid` | `uint8` | 0/1 | 這筆 IMU 資料是否讀取成功 |
-| `motor_enabled` | `uint8` | 0/1 | wire 相容名稱；實際語意是 `motor_output_active`（完整安全鏈套用非零 command），不是 gate，也不證明馬達有移動 |
+| `motor_enabled` | `uint8` | 0/1 | wire 相容名稱；實際語意是 `motor_output_active`（完整控制鏈套用非零命令），不是 Gate，也不證明馬達有移動 |
 
 每筆固定16 bytes，採little-endian：
 
@@ -79,8 +102,8 @@ gyro_z_dps = gyro_z_raw / 16.0
 - 每一筆是16 bytes邏輯紀錄；BLE一包放幾筆由實際MTU決定，不可拆壞單筆欄位順序。
 - 若要批次傳送，目標傳輸延遲不超過50 ms；無論如何都必須保持100 Hz取樣。
 - 即使分批傳送，每一筆仍要保留自己的`sequence`與`sample_tick_ms`。
-- `motor_enabled` 是歷史 wire field 名稱；目前只能解讀成 command-active 狀態，不可稱為
-  gate permission、實際馬達轉動或抑震成功，也不可拿來修改 PSD 計算結果。
+- `motor_enabled` 是歷史 wire field 名稱，目前解讀為命令作用狀態；不可稱為
+  Gate permission、實際馬達轉動或抑震成功，也不可拿來修改 PSD 計算結果。
 - `sensor_valid`與`motor_enabled`在STM32內可用Boolean語意；BLE封包固定用`uint8`的0或1。
 
 ### 3.1 真實日期時間與使用情境
@@ -105,6 +128,12 @@ recorded_at_utc_ms = session_start_utc_ms
 
 BLE斷線重連或STM32重新開機時必須建立新session。不要把每個BLE封包到達App的時間
 直接當作每一筆IMU時間，因為批次傳輸會讓多筆資料同時到達。
+
+名目取樣間隔為 10 ms；不得使用 50 Hz 的 20 ms 常數推算此版時間軸。session 與
+anchor 要在原始資料／分析回呼分派之前確立，同一批資料共用其 session 與樣本時間。
+分析紀錄的時間取該視窗最後一筆量測時間，處理時間與上傳時間另存，不互相覆蓋。
+斷線、重新連線或 MCU 重開機時重建分析窗口與 session；未上傳資料仍保留原 session。
+初始 anchor 若由手機接收時間估計，仍有傳輸延遲的不確定性。
 
 只有日期時間仍不能知道「當時在做什麼」。若要讓醫生或照護者分析情境，App還要讓
 使用者選擇或補記`activity_tag`，第一版建議：`rest`、`eating`、`drinking`、
@@ -143,6 +172,7 @@ App開發人員請直接依照[APP_PSD_IMPLEMENTATION.md](APP_PSD_IMPLEMENTATION
 - `sequence`沒有每筆加1，代表BLE掉包或資料重複。
 - 相鄰`sample_tick_ms`不是8–12 ms，代表取樣時序不穩定。
 - 任一筆`sensor_valid=0`。
+- 任一軸數值為 NaN／Inf。
 
 無效結果在App上畫成缺口，頻率與強度顯示`--`，不能把上一個數字繼續顯示成
 目前結果。
@@ -163,7 +193,7 @@ tremor_strength_rms_dps = sqrt(P_4_6)
 | X軸 | 實際日期時間，使用每個視窗的`recorded_at_utc_ms`轉為當地時間 |
 | Y軸 | `tremor_strength_rms_dps`，單位`deg/s`，從0開始 |
 | 更新頻率 | 每0.5秒新增一點，60秒共最多120點 |
-| command 區段 | 依原始 `motor_enabled`（=`motor_output_active`）時間區段加背景色，不改變曲線數值 |
+| 命令作用區段 | 依原始 `motor_enabled`（=`motor_output_active`）時間區段加背景色，不改變曲線數值 |
 | 無效資料 | 曲線中斷並顯示資料不足，不連線、不補值 |
 | 主要頻率 | 另外以數字顯示`dominant_frequency_hz`，不當作主圖Y軸 |
 
@@ -171,11 +201,17 @@ Y軸不得標成輕度／中度／重度；目前沒有患者資料可以建立�
 相同活動情境下，RMS降低表示4–6 Hz角速度成分降低，但不能單獨解讀為病情改善。
 
 App可以把最近4秒的三軸raw Gyro與PSD放在「工程／詳細資料」頁面；使用者首頁以
-目前主要頻率、目前震顫強度、60秒強度趨勢、馬達開啟區段及資料品質為主。
+目前主要頻率、目前震顫強度、60秒強度趨勢、馬達命令作用區段及資料品質為主。
 
 每0.5秒的歷史結果至少儲存：`recorded_at_utc_ms`、`dominant_frequency_hz`、
 `tremor_strength_rms_dps`、`motor_command_active_fraction`、`data_valid`、`frequency_reliable`、
 `activity_tag`與`note`。歷史頁才可以依時段或活動比較震顫，而不是只看即時60秒。
+
+`motor_command_active_fraction` 沿用遠端規範欄位名，App 現有 `motorOnFraction`
+若保留為 API 舊名，須與後端明訂映射／版本。它採**最近 50 筆／名目 0.5 秒**窗口，計算合法且連續的
+0／1 旗標平均。它與 PSD／RMS 的 400 筆／4 秒窗口不同；不能用任一筆為 1 的布林值
+代替比例，也不能改用 400 筆平均覆蓋此欄位。資料不足／旗標無效時保留未知狀態，
+不可補成 0；既有 DTO 若無法表達未知，需與後端同步修訂欄位或品質狀態。
 
 ## 6. 輸出定義
 
@@ -206,6 +242,24 @@ App 顯示規則：
 Python V1的明確保護條件為：三軸合計RMS至少0.20 deg/s、3–7 Hz power至少占
 0.5–15 Hz power的30%，且主要peak前後0.5 Hz至少占3–7 Hz power的45%。
 這些只是避免App在靜置或雜訊下亂顯示頻率，不能稱為疾病判斷門檻。
+
+2026-09-12 核對的 App 分支最新提交 `56805c93c46af81fb922af7780a8841a07258b39`
+雖使用相同三個數字，卻將 vector RMS 取成 4–6 Hz band RMS、占比分母取全頻譜、
+集中度只取單一最高 bin。應依
+[`APP_PSD_IMPLEMENTATION.md` §7](APP_PSD_IMPLEMENTATION.md#7-何時可以顯示主要頻率)
+對齊公式與比較策略，不能僅對照常數。
+目前 Python V1 的 peak ±0.5 Hz 分子未裁到 3–7 Hz，邊界值可能大於 1；這是已知
+定義限制，不能當作 0–1 信心分數，也不能只在 App 單端悄悄更改。
+
+上傳必須保留實際 `frequency_reliable`，不能固定寫成 true。有效但頻率不可靠的
+紀錄可保留 RMS，頻率為 null；無效紀錄的頻率與強度為 null，另保留品質缺口。
+分析紀錄筆數及其重疊的 4 秒窗口不能直接換算震顫次數或持續時間。
+
+本次沒有為患者震顫事件新增最短秒數或幅度門檻。若另統計 Gate 升降沿，須有
+獨立 Gate 資料；目前 `motor_enabled` 是命令作用狀態，不能作 Gate 替代。
+`TremorGate_DefaultConfig` 的預設 Gate 啟動條件為 4–6 Hz 包絡 ≥6 deg/s，且包絡
+比例 ≥0.55，連續 20 筆（名目 200 ms）。實際韌體若覆寫配置，應記錄所用版本
+及參數；此為獨立控制邏輯。
 
 ## 7. Python 參考程式與測試資料
 
@@ -301,3 +355,9 @@ python -m unittest discover -s algorithms/validation `
 3. PADS 公開 smartwatch 資料集論文；資料包含 100 Hz 三軸 acceleration
    與 rotation，可作為後續外部資料驗證方向：
    https://doi.org/10.1038/s41531-023-00625-7
+
+4. Bhatia KP, et al. *Consensus Statement on the classification of tremors,
+   from the task force on tremor of the International Parkinson and Movement
+   Disorder Society*. Movement Disorders, 2018. 文中說明合併 parkinsonism 的
+   rest tremor 通常落在 4–7 Hz：
+   https://doi.org/10.1002/mds.27121
