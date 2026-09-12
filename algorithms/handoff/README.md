@@ -188,6 +188,7 @@ handoff/
 ├── ACTUATOR_CONTROL.md        ← PWM/P control、N20 頻寬驗證、actuator/第二顆 IMU 選型門檻
 ├── TREMOR_FREQUENCY.md        ← STM32/BLE欄位、FFT/PSD與App主振幅圖定案規格
 ├── APP_PSD_IMPLEMENTATION.md  ← App從BLE解析到FFT/PSD、RMS及圖表的逐步實作
+├── APP_EVENT_REVIEW_20260912.md ← 給App組的事件判定核對、修改順序與程式證據
 ├── REAL_DATA_PROTOCOL.md      ← 實機100 Hz錄製情境、欄位與gating門檻校調
 ├── STM32_ROBUSTNESS_TEST_PLAN.md ← 7 Hz、混合、timer、jitter與dropout板上交接
 ├── SUPPRESSION_VALIDATION.md  ← PWM request與第二顆IMU Motor OFF/ON成效驗證
