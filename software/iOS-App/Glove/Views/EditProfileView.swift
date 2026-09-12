@@ -61,13 +61,13 @@ struct EditProfileView: View {
                             Text(isLoading ? "正在儲存..." : "儲存修改")
                                 .font(.system(size: 16, weight: .bold))
                         }
-                        .foregroundColor(colorScheme == .dark ? Color(hex: "18191B") : .white)
+                        .foregroundColor(colorScheme == .dark ? AppTheme.background(for: colorScheme) : .white)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 15)
                         .background(
                             isFormValid && !isLoading
                             ? AppTheme.primary(for: colorScheme)
-                            : Color.gray.opacity(0.35)
+                            : AppTheme.textSecondary(for: colorScheme).opacity(0.35)
                         )
                         .cornerRadius(14)
                         .shadow(
@@ -123,7 +123,7 @@ struct EditProfileView: View {
                 
                 Text(loginVM.userData?.email ?? "")
                     .font(.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                 
                 HStack(spacing: 6) {
                     Text(loginVM.userData?.role == 1 ? "照護者家屬" : "病患本人")
@@ -151,7 +151,7 @@ struct EditProfileView: View {
         .padding(18)
         .background(AppTheme.cardBackground(for: colorScheme))
         .cornerRadius(18)
-        .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.3 : 0.04), radius: 8, y: 3)
+        .softCardShadow()
     }
     
     /// 基本資料編輯卡片
@@ -169,7 +169,7 @@ struct EditProfileView: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text("姓名")
                     .font(.caption.bold())
-                    .foregroundColor(.secondary)
+                    .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                 TextField("請輸入姓名", text: $name)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 12)
@@ -182,7 +182,7 @@ struct EditProfileView: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text("性別")
                     .font(.caption.bold())
-                    .foregroundColor(.secondary)
+                    .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                 HStack(spacing: 10) {
                     genderOptionButton(title: "男", tag: 1, icon: "figure.stand")
                     genderOptionButton(title: "女", tag: 0, icon: "figure.stand.dress")
@@ -195,7 +195,7 @@ struct EditProfileView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("疾病階段")
                         .font(.caption.bold())
-                        .foregroundColor(.secondary)
+                        .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                     
                     HStack(spacing: 8) {
                         ForEach(diseaseStages, id: \.self) { stage in
@@ -214,7 +214,7 @@ struct EditProfileView: View {
                                     .foregroundColor(
                                         diseaseStage == stage
                                         ? AppTheme.primary(for: colorScheme)
-                                        : .secondary
+                                        : AppTheme.textSecondary(for: colorScheme)
                                     )
                                     .overlay(
                                         RoundedRectangle(cornerRadius: 10)
@@ -237,7 +237,7 @@ struct EditProfileView: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text("出生日期")
                     .font(.caption.bold())
-                    .foregroundColor(.secondary)
+                    .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                 
                 Button {
                     showDatePickerSheet = true
@@ -255,7 +255,7 @@ struct EditProfileView: View {
                         
                         Image(systemName: "chevron.down")
                             .font(.system(size: 12, weight: .semibold))
-                            .foregroundColor(.gray.opacity(0.6))
+                            .foregroundColor(AppTheme.textSecondary(for: colorScheme).opacity(0.6))
                     }
                     .padding(.horizontal, 14)
                     .padding(.vertical, 12)
@@ -269,7 +269,7 @@ struct EditProfileView: View {
         .padding(18)
         .background(AppTheme.cardBackground(for: colorScheme))
         .cornerRadius(18)
-        .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.3 : 0.04), radius: 8, y: 3)
+        .softCardShadow()
     }
     
     /// 修改密碼卡片
@@ -286,7 +286,7 @@ struct EditProfileView: View {
                 
                 Text("若不變更請留空")
                     .font(.caption2)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(AppTheme.textSecondary(for: colorScheme))
             }
             
             VStack(spacing: 12) {
@@ -304,7 +304,7 @@ struct EditProfileView: View {
                 if isAttemptingPasswordChange {
                     Text("密碼變更成功後系統將自動登出其他裝置，需重新登入。")
                         .font(.caption2)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.top, 2)
                 }
@@ -313,7 +313,7 @@ struct EditProfileView: View {
         .padding(18)
         .background(AppTheme.cardBackground(for: colorScheme))
         .cornerRadius(18)
-        .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.3 : 0.04), radius: 8, y: 3)
+        .softCardShadow()
     }
     
     /// 日曆選取彈窗視圖
@@ -324,7 +324,7 @@ struct EditProfileView: View {
                     "選擇出生日期",
                     selection: $birthDate,
                     in: ...Date(),
-                    displayedComponents: .date
+                    displayedComponents: [.date]
                 )
                 .datePickerStyle(.graphical)
                 .tint(AppTheme.primary(for: colorScheme))
@@ -368,7 +368,7 @@ struct EditProfileView: View {
             .foregroundColor(
                 gender == tag
                 ? AppTheme.primary(for: colorScheme)
-                : .secondary
+                : AppTheme.textSecondary(for: colorScheme)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 10)
@@ -389,12 +389,12 @@ struct EditProfileView: View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title)
                 .font(.caption.bold())
-                .foregroundColor(.secondary)
+                .foregroundColor(AppTheme.textSecondary(for: colorScheme))
             
             SecureField(
                 "",
                 text: text,
-                prompt: Text(placeholder).foregroundColor(Color.gray.opacity(0.6))
+                prompt: Text(placeholder).foregroundColor(AppTheme.textSecondary(for: colorScheme).opacity(0.6))
             )
             .textContentType(.oneTimeCode)
             .autocorrectionDisabled(true)

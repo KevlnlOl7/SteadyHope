@@ -236,6 +236,7 @@ struct MediaManagementView: View {
     @Binding var selectedMediaItems: [PhotosPickerItem]
     @Binding var currentPageIndex: Int
     @Binding var previewImage: UIImage?
+    @Environment(\.colorScheme) private var colorScheme
 
     /// 允許上傳之最大照片張數限制
     var maxImages: Int = 5
@@ -245,12 +246,13 @@ struct MediaManagementView: View {
             HStack {
                 Text("照片")
                     .font(.subheadline.bold())
+                    .foregroundColor(AppTheme.textPrimary(for: colorScheme))
 
                 Spacer()
 
                 Text("\(tempSelectedImages.count)/\(maxImages)")
                     .font(.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(AppTheme.textSecondary(for: colorScheme))
             }
 
             PhotosPicker(
@@ -266,8 +268,8 @@ struct MediaManagementView: View {
                 .font(.caption.bold())
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 10)
-                .background(Color.blue.opacity(0.08))
-                .foregroundColor(.blue)
+                .background(AppTheme.primary(for: colorScheme).opacity(0.1))
+                .foregroundColor(AppTheme.primary(for: colorScheme))
                 .cornerRadius(8)
             }
             .disabled(tempSelectedImages.count >= maxImages)
@@ -369,6 +371,7 @@ struct ImageCarouselView: View {
     @Binding var currentIndex: Int
     var height: CGFloat = 320
     var onTap: ((UIImage) -> Void)?
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         Group {
@@ -419,19 +422,18 @@ struct ImageCarouselView: View {
     /// 無圖片時呈現之留白預設圖示視圖
     private var emptyView: some View {
         RoundedRectangle(cornerRadius: 12)
-            .fill(Color.gray.opacity(0.15))
+            .fill(AppTheme.textSecondary(for: colorScheme).opacity(0.12))
             .frame(height: height)
             .overlay {
                 Image(systemName: "photo.on.rectangle.angled")
                     .font(.largeTitle)
-                    .foregroundColor(.gray)
+                    .foregroundColor(AppTheme.textSecondary(for: colorScheme))
             }
     }
 }
 
 /// 透過將 UIKit 父層視圖背景設為透明以支援全螢幕覆蓋模態之輔助視圖
 struct BackgroundClearView: UIViewRepresentable {
-    /// 建立底層 UIView 實體並異步調整上層容器背景為透明
     func makeUIView(context: Context) -> UIView {
         let view = UIView()
 
@@ -442,6 +444,5 @@ struct BackgroundClearView: UIViewRepresentable {
         return view
     }
 
-    /// 更新 UIKit 視圖
     func updateUIView(_ uiView: UIView, context: Context) {}
 }

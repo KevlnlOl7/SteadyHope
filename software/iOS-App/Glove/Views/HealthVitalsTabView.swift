@@ -5,6 +5,7 @@ struct HealthVitalsTabView: View {
     @ObservedObject var vitalsVM: HealthVitalsViewModel
     var isCaregiver: Bool
     var filterDate: Date
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         ScrollView {
@@ -14,6 +15,7 @@ struct HealthVitalsTabView: View {
                         .foregroundColor(.red)
                     Text("生理健康數值")
                         .font(.headline)
+                        .foregroundColor(AppTheme.textPrimary(for: colorScheme))
 
                     Spacer()
 
@@ -40,20 +42,22 @@ struct HealthVitalsTabView: View {
 
                 if vitalsVM.isLoading {
                     ProgressView("載入中...")
+                        .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                         .padding(.vertical, 30)
                 } else if vitalsVM.vitalsList.isEmpty {
                     VStack(spacing: 8) {
                         Image(systemName: "waveform.path.ecg")
                             .font(.system(size: 36))
-                            .foregroundColor(.gray.opacity(0.5))
+                            .foregroundColor(AppTheme.textSecondary(for: colorScheme).opacity(0.5))
                         Text("今日尚無生理數據紀錄")
                             .font(.caption)
-                            .foregroundColor(.secondary)
+                            .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 40)
-                    .background(Color.white)
+                    .background(AppTheme.cardBackground(for: colorScheme))
                     .cornerRadius(12)
+                    .softCardShadow()
                 } else {
                     ForEach(vitalsVM.vitalsList) { item in
                         vitalsCard(item)
@@ -62,7 +66,7 @@ struct HealthVitalsTabView: View {
             }
             .padding()
         }
-        .background(Color(red: 0.96, green: 0.97, blue: 0.98))
+        .background(AppTheme.background(for: colorScheme))
     }
 
     /// 單張生理數據摘要卡片
@@ -72,10 +76,11 @@ struct HealthVitalsTabView: View {
             HStack {
                 HStack(spacing: 6) {
                     Image(systemName: "clock.fill")
-                        .foregroundColor(.blue)
+                        .foregroundColor(AppTheme.primary(for: colorScheme))
                         .font(.caption)
                     Text(item.date.toString(format: "HH:mm"))
                         .font(.subheadline.bold())
+                        .foregroundColor(AppTheme.textPrimary(for: colorScheme))
                 }
 
                 Spacer()
@@ -103,7 +108,7 @@ struct HealthVitalsTabView: View {
                     } label: {
                         Image(systemName: "ellipsis")
                             .font(.caption.bold())
-                            .foregroundColor(.gray)
+                            .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                             .padding(4)
                     }
                 }
@@ -141,7 +146,7 @@ struct HealthVitalsTabView: View {
                 if let weight = item.bodyWeight, !weight.isEmpty {
                     vitalItemView(
                         icon: "scalemass.fill",
-                        color: .blue,
+                        color: AppTheme.primary(for: colorScheme),
                         title: "體重",
                         value: "\(weight) kg"
                     )
@@ -165,9 +170,9 @@ struct HealthVitalsTabView: View {
             }
         }
         .padding(14)
-        .background(Color.white)
+        .background(AppTheme.cardBackground(for: colorScheme))
         .cornerRadius(12)
-        .shadow(color: Color.black.opacity(0.03), radius: 3)
+        .softCardShadow()
     }
 
     /// 單一生理項目資訊標籤元件
@@ -189,14 +194,15 @@ struct HealthVitalsTabView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
                     .font(.caption2)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                 Text(value)
                     .font(.subheadline.bold())
+                    .foregroundColor(AppTheme.textPrimary(for: colorScheme))
             }
             Spacer()
         }
         .padding(8)
-        .background(Color(red: 0.98, green: 0.98, blue: 0.99))
+        .background(AppTheme.background(for: colorScheme))
         .cornerRadius(8)
     }
 }

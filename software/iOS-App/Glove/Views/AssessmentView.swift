@@ -3,6 +3,7 @@ import SwiftUI
 
 struct AssessmentView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var colorScheme
     @ObservedObject var loginVM: LoginViewModel
     
     @StateObject private var viewModel = AssessmentViewModel()
@@ -30,7 +31,7 @@ struct AssessmentView: View {
                         }
                         .padding(16)
                     }
-                    .background(Color(red: 0.96, green: 0.96, blue: 0.97))
+                    .background(AppTheme.background(for: colorScheme))
                 }
             }
             .navigationTitle(isCaregiver ? "評估歷史紀錄" : "症狀評估量表")
@@ -43,6 +44,7 @@ struct AssessmentView: View {
                         } label: {
                             Image(systemName: "clock.arrow.circlepath")
                                 .imageScale(.medium)
+                                .foregroundColor(AppTheme.primary(for: colorScheme))
                         }
                     }
                 }
@@ -65,9 +67,10 @@ struct AssessmentView: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Image(systemName: "sparkles")
-                    .foregroundColor(.orange)
+                    .foregroundColor(AppTheme.accent(for: colorScheme))
                 Text("今日快速檢測")
                     .font(.headline)
+                    .foregroundColor(AppTheme.textPrimary(for: colorScheme))
             }
 
             NavigationLink {
@@ -83,20 +86,20 @@ struct AssessmentView: View {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("今日狀態 1 分鐘快篩")
                             .font(.system(size: 16, weight: .bold))
-                            .foregroundColor(.primary)
+                            .foregroundColor(AppTheme.textPrimary(for: colorScheme))
                         Text("精選 5 題核心指標：情緒、吞嚥、穿衣、手部與步態")
                             .font(.caption)
-                            .foregroundColor(.secondary)
+                            .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                     }
                     Spacer()
                     Image(systemName: "play.circle.fill")
                         .font(.title)
-                        .foregroundColor(.accentColor)
+                        .foregroundColor(AppTheme.primary(for: colorScheme))
                 }
                 .padding(16)
-                .background(Color.white)
-                .cornerRadius(12)
-                .shadow(color: Color.black.opacity(0.04), radius: 4, y: 2)
+                .background(AppTheme.cardBackground(for: colorScheme))
+                .cornerRadius(15)
+                .softCardShadow()
             }
         }
     }
@@ -106,6 +109,7 @@ struct AssessmentView: View {
         VStack(alignment: .leading, spacing: 10) {
             Text("主題自選填寫")
                 .font(.headline)
+                .foregroundColor(AppTheme.textPrimary(for: colorScheme))
 
             VStack(spacing: 8) {
                 ForEach(AssessmentSection.allCases) { sec in
@@ -122,24 +126,25 @@ struct AssessmentView: View {
                             Image(systemName: sec.icon)
                                 .font(.system(size: 18))
                                 .frame(width: 32, height: 32)
-                                .background(Color.accentColor.opacity(0.12))
-                                .foregroundColor(.accentColor)
+                                .background(AppTheme.primary(for: colorScheme).opacity(0.12))
+                                .foregroundColor(AppTheme.primary(for: colorScheme))
                                 .clipShape(Circle())
 
                             Text(sec.rawValue)
                                 .font(.system(size: 15, weight: .medium))
-                                .foregroundColor(.primary)
+                                .foregroundColor(AppTheme.textPrimary(for: colorScheme))
 
                             Spacer()
 
                             Image(systemName: "chevron.right")
                                 .font(.caption2)
-                                .foregroundColor(.secondary)
+                                .foregroundColor(AppTheme.textSecondary(for: colorScheme).opacity(0.6))
                         }
                         .padding(.horizontal, 14)
                         .padding(.vertical, 12)
-                        .background(Color.white)
-                        .cornerRadius(10)
+                        .background(AppTheme.cardBackground(for: colorScheme))
+                        .cornerRadius(15)
+                        .softCardShadow()
                     }
                 }
             }
@@ -151,6 +156,7 @@ struct AssessmentView: View {
         VStack(alignment: .leading, spacing: 10) {
             Text("定期深度評估")
                 .font(.headline)
+                .foregroundColor(AppTheme.textPrimary(for: colorScheme))
 
             NavigationLink {
                 AssessmentFormView(
@@ -163,10 +169,10 @@ struct AssessmentView: View {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("完整 25 題綜合量表")
                             .font(.system(size: 15, weight: .bold))
-                            .foregroundColor(.primary)
+                            .foregroundColor(AppTheme.textPrimary(for: colorScheme))
                         Text("建議每週或回診前完整填寫一次")
                             .font(.caption)
-                            .foregroundColor(.secondary)
+                            .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                     }
                     Spacer()
                     Text("開始")
@@ -174,13 +180,13 @@ struct AssessmentView: View {
                         .foregroundColor(.white)
                         .padding(.horizontal, 16)
                         .padding(.vertical, 6)
-                        .background(Color.accentColor)
+                        .background(AppTheme.primary(for: colorScheme))
                         .cornerRadius(16)
                 }
                 .padding(14)
-                .background(Color.white)
-                .cornerRadius(12)
-                .shadow(color: Color.black.opacity(0.04), radius: 4, y: 2)
+                .background(AppTheme.cardBackground(for: colorScheme))
+                .cornerRadius(15)
+                .softCardShadow()
             }
         }
     }
@@ -190,44 +196,44 @@ struct AssessmentView: View {
             HStack(spacing: 8) {
                 Image(systemName: "info.circle.fill")
                     .font(.system(size: 16))
-                    .foregroundColor(.blue)
+                    .foregroundColor(AppTheme.primary(for: colorScheme))
                 
                 Text("關於症狀評估量表的說明")
                     .font(.system(size: 15, weight: .bold))
-                    .foregroundColor(.primary)
+                    .foregroundColor(AppTheme.textPrimary(for: colorScheme))
             }
             
             Divider()
-                .background(Color.blue.opacity(0.2))
+                .background(AppTheme.primary(for: colorScheme).opacity(0.2))
             
             VStack(alignment: .leading, spacing: 8) {
                 Label {
                     Text("智慧化數據分析：填寫的資料將由 AI 模型進行綜合彙整與趨勢追蹤，提供更精準的照護建議。")
                 } icon: {
                     Image(systemName: "checkmark.circle")
-                        .foregroundColor(.blue)
+                        .foregroundColor(AppTheme.primary(for: colorScheme))
                 }
                 
                 Label {
                     Text("定期追蹤的價值：持續記錄有助於醫療團隊在您回診時，更全面地了解日常病況變化。")
                 } icon: {
                     Image(systemName: "checkmark.circle")
-                        .foregroundColor(.blue)
+                        .foregroundColor(AppTheme.primary(for: colorScheme))
                 }
             }
             .font(.system(size: 13))
-            .foregroundColor(.secondary)
+            .foregroundColor(AppTheme.textSecondary(for: colorScheme))
             .lineSpacing(3)
         }
         .padding(16)
         .background(
             RoundedRectangle(cornerRadius: 14)
-                .fill(Color(red: 0.94, green: 0.97, blue: 1.0))
-                .shadow(color: Color.blue.opacity(0.06), radius: 6, y: 2)
+                .fill(AppTheme.primary(for: colorScheme).opacity(0.08))
+                .shadow(color: AppTheme.primary(for: colorScheme).opacity(0.06), radius: 6, y: 2)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 14)
-                .stroke(Color.blue.opacity(0.15), lineWidth: 1)
+                .stroke(AppTheme.primary(for: colorScheme).opacity(0.15), lineWidth: 1)
         )
         .padding(.top, 12)
     }
@@ -237,6 +243,7 @@ struct AssessmentView: View {
 private struct AssessmentFormView: View {
     /// 關閉表單畫面環境變數
     @Environment(\.dismiss) private var dismissForm
+    @Environment(\.colorScheme) private var colorScheme
 
     /// 導覽列與表單頁面標題
     let title: String
@@ -254,10 +261,11 @@ private struct AssessmentFormView: View {
                     VStack(alignment: .leading, spacing: 12) {
                         Text("\(index + 1). \(q.title)")
                             .font(.system(size: 16, weight: .bold))
+                            .foregroundColor(AppTheme.textPrimary(for: colorScheme))
 
                         Text(q.subtitle)
                             .font(.caption)
-                            .foregroundColor(.secondary)
+                            .foregroundColor(AppTheme.textSecondary(for: colorScheme))
 
                         VStack(spacing: 8) {
                             ForEach(q.options) { opt in
@@ -267,16 +275,16 @@ private struct AssessmentFormView: View {
                                 } label: {
                                     HStack(alignment: .top, spacing: 10) {
                                         Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                                            .foregroundColor(isSelected ? .accentColor : .gray)
+                                            .foregroundColor(isSelected ? AppTheme.primary(for: colorScheme) : AppTheme.textSecondary(for: colorScheme).opacity(0.4))
                                             .font(.system(size: 18))
 
                                         VStack(alignment: .leading, spacing: 2) {
                                             Text("\(opt.score) 分 - \(opt.title)")
                                                 .font(.system(size: 14, weight: .semibold))
-                                                .foregroundColor(.primary)
+                                                .foregroundColor(AppTheme.textPrimary(for: colorScheme))
                                             Text(opt.description)
                                                 .font(.caption)
-                                                .foregroundColor(.secondary)
+                                                .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                                                 .multilineTextAlignment(.leading)
                                         }
                                         Spacer()
@@ -284,8 +292,8 @@ private struct AssessmentFormView: View {
                                     .padding(10)
                                     .background(
                                         isSelected
-                                            ? Color.accentColor.opacity(0.08)
-                                            : Color(uiColor: .secondarySystemBackground)
+                                            ? AppTheme.primary(for: colorScheme).opacity(0.08)
+                                            : AppTheme.background(for: colorScheme)
                                     )
                                     .cornerRadius(8)
                                 }
@@ -293,8 +301,9 @@ private struct AssessmentFormView: View {
                         }
                     }
                     .padding(14)
-                    .background(Color.white)
+                    .background(AppTheme.cardBackground(for: colorScheme))
                     .cornerRadius(12)
+                    .softCardShadow()
                 }
 
                 Button {
@@ -322,14 +331,14 @@ private struct AssessmentFormView: View {
                         .padding(.vertical, 14)
                     }
                 }
-                .background(Color.accentColor)
+                .background(AppTheme.primary(for: colorScheme))
                 .cornerRadius(10)
                 .disabled(viewModel.isSubmitting)
                 .padding(.top, 10)
             }
             .padding(16)
         }
-        .background(Color(red: 0.96, green: 0.96, blue: 0.97))
+        .background(AppTheme.background(for: colorScheme))
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
         .onChange(of: viewModel.showSuccessAlert) {

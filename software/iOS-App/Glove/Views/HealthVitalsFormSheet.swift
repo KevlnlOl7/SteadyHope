@@ -8,11 +8,12 @@ struct HealthVitalsFormSheet: View {
     var filterDate: Date
 
     @State private var showDatePickerSheet: Bool = false
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         NavigationStack {
             ZStack {
-                Color(red: 0.96, green: 0.97, blue: 0.98)
+                AppTheme.background(for: colorScheme)
                     .ignoresSafeArea()
 
                 ScrollView(showsIndicators: false) {
@@ -40,7 +41,7 @@ struct HealthVitalsFormSheet: View {
                             vitalsVM.showAddVitalsSheet = false
                         }
                     }
-                    .foregroundColor(.secondary)
+                    .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     let isSettedSystolic = !vitalsVM.systolicBP.trimmingCharacters(in: .whitespaces).isEmpty
@@ -54,7 +55,7 @@ struct HealthVitalsFormSheet: View {
                         }
                     }
                     .font(.system(size: 16, weight: .bold))
-                    .foregroundColor(isBloodPressureInvalid ? .gray : .blue)
+                    .foregroundColor(isBloodPressureInvalid ? AppTheme.textSecondary(for: colorScheme).opacity(0.4) : AppTheme.primary(for: colorScheme))
                     .disabled(isBloodPressureInvalid)
                 }
             }
@@ -66,7 +67,7 @@ struct HealthVitalsFormSheet: View {
         VStack(alignment: .leading, spacing: 6) {
             Text("測量時間")
                 .font(.caption.bold())
-                .foregroundColor(.secondary)
+                .foregroundColor(AppTheme.textSecondary(for: colorScheme))
 
             Button {
                 showDatePickerSheet = true
@@ -74,27 +75,27 @@ struct HealthVitalsFormSheet: View {
                 HStack {
                     Image(systemName: "calendar.badge.clock")
                         .font(.system(size: 16))
-                        .foregroundColor(.blue)
+                        .foregroundColor(AppTheme.primary(for: colorScheme))
 
                     Text(formattedDateTime(vitalsVM.recordDate))
                         .font(.system(size: 15))
-                        .foregroundColor(.primary)
+                        .foregroundColor(AppTheme.textPrimary(for: colorScheme))
 
                     Spacer()
 
                     Image(systemName: "chevron.down")
                         .font(.system(size: 12, weight: .semibold))
-                        .foregroundColor(.gray.opacity(0.6))
+                        .foregroundColor(AppTheme.textSecondary(for: colorScheme).opacity(0.6))
                 }
                 .padding(.horizontal, 14)
                 .padding(.vertical, 12)
-                .background(Color.white)
+                .background(AppTheme.background(for: colorScheme))
                 .cornerRadius(10)
             }
             .buttonStyle(.plain)
         }
         .padding(16)
-        .background(Color.white)
+        .background(AppTheme.cardBackground(for: colorScheme))
         .cornerRadius(16)
         .shadow(color: Color.black.opacity(0.04), radius: 6, y: 2)
     }
@@ -107,43 +108,46 @@ struct HealthVitalsFormSheet: View {
                     .foregroundColor(.red)
                 Text("血壓與血糖")
                     .font(.system(size: 15, weight: .bold))
+                    .foregroundColor(AppTheme.textPrimary(for: colorScheme))
             }
 
             VStack(alignment: .leading, spacing: 6) {
                 Text("血壓 (收縮壓 / 舒張壓)")
                     .font(.caption.bold())
-                    .foregroundColor(.secondary)
+                    .foregroundColor(AppTheme.textSecondary(for: colorScheme))
 
                 HStack(spacing: 8) {
                     TextField(
                         "",
                         text: $vitalsVM.systolicBP,
-                        prompt: Text("收縮壓").foregroundColor(.gray.opacity(0.6))
+                        prompt: Text("收縮壓").foregroundColor(AppTheme.textSecondary(for: colorScheme).opacity(0.6))
                     )
+                    .foregroundColor(AppTheme.textPrimary(for: colorScheme))
                     .keyboardType(.numberPad)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 10)
-                    .background(Color(red: 0.96, green: 0.97, blue: 0.98))
+                    .background(AppTheme.background(for: colorScheme))
                     .cornerRadius(8)
 
                     Text("/")
                         .font(.headline)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(AppTheme.textSecondary(for: colorScheme))
 
                     TextField(
                         "",
                         text: $vitalsVM.diastolicBP,
-                        prompt: Text("舒張壓").foregroundColor(.gray.opacity(0.6))
+                        prompt: Text("舒張壓").foregroundColor(AppTheme.textSecondary(for: colorScheme).opacity(0.6))
                     )
+                    .foregroundColor(AppTheme.textPrimary(for: colorScheme))
                     .keyboardType(.numberPad)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 10)
-                    .background(Color(red: 0.96, green: 0.97, blue: 0.98))
+                    .background(AppTheme.background(for: colorScheme))
                     .cornerRadius(8)
 
                     Text("mmHg")
                         .font(.caption.bold())
-                        .foregroundColor(.secondary)
+                        .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                         .frame(width: 48, alignment: .trailing)
                 }
 
@@ -161,29 +165,30 @@ struct HealthVitalsFormSheet: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text("血糖")
                     .font(.caption.bold())
-                    .foregroundColor(.secondary)
+                    .foregroundColor(AppTheme.textSecondary(for: colorScheme))
 
                 HStack(spacing: 8) {
                     TextField(
                         "",
                         text: $vitalsVM.bloodSugar,
-                        prompt: Text("飯前/飯後血糖值").foregroundColor(.gray.opacity(0.6))
+                        prompt: Text("飯前/飯後血糖值").foregroundColor(AppTheme.textSecondary(for: colorScheme).opacity(0.6))
                     )
+                    .foregroundColor(AppTheme.textPrimary(for: colorScheme))
                     .keyboardType(.decimalPad)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 10)
-                    .background(Color(red: 0.96, green: 0.97, blue: 0.98))
+                    .background(AppTheme.background(for: colorScheme))
                     .cornerRadius(8)
 
                     Text("mg/dL")
                         .font(.caption.bold())
-                        .foregroundColor(.secondary)
+                        .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                         .frame(width: 48, alignment: .trailing)
                 }
             }
         }
         .padding(16)
-        .background(Color.white)
+        .background(AppTheme.cardBackground(for: colorScheme))
         .cornerRadius(16)
         .shadow(color: Color.black.opacity(0.04), radius: 6, y: 2)
     }
@@ -196,58 +201,61 @@ struct HealthVitalsFormSheet: View {
                     .foregroundColor(.orange)
                 Text("體溫與體重")
                     .font(.system(size: 15, weight: .bold))
+                    .foregroundColor(AppTheme.textPrimary(for: colorScheme))
             }
 
             HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("體溫")
                         .font(.caption.bold())
-                        .foregroundColor(.secondary)
+                        .foregroundColor(AppTheme.textSecondary(for: colorScheme))
 
                     HStack(spacing: 4) {
                         TextField(
                             "",
                             text: $vitalsVM.bodyTemp,
-                            prompt: Text("例: 36.5").foregroundColor(.gray.opacity(0.6))
+                            prompt: Text("例: 36.5").foregroundColor(AppTheme.textSecondary(for: colorScheme).opacity(0.6))
                         )
+                        .foregroundColor(AppTheme.textPrimary(for: colorScheme))
                         .keyboardType(.decimalPad)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 10)
-                        .background(Color(red: 0.96, green: 0.97, blue: 0.98))
+                        .background(AppTheme.background(for: colorScheme))
                         .cornerRadius(8)
 
                         Text("°C")
                             .font(.caption.bold())
-                            .foregroundColor(.secondary)
+                            .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                     }
                 }
 
                 VStack(alignment: .leading, spacing: 6) {
                     Text("體重")
                         .font(.caption.bold())
-                        .foregroundColor(.secondary)
+                        .foregroundColor(AppTheme.textSecondary(for: colorScheme))
 
                     HStack(spacing: 4) {
                         TextField(
                             "",
                             text: $vitalsVM.bodyWeight,
-                            prompt: Text("例: 65.0").foregroundColor(.gray.opacity(0.6))
+                            prompt: Text("例: 65.0").foregroundColor(AppTheme.textSecondary(for: colorScheme).opacity(0.6))
                         )
+                        .foregroundColor(AppTheme.textPrimary(for: colorScheme))
                         .keyboardType(.decimalPad)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 10)
-                        .background(Color(red: 0.96, green: 0.97, blue: 0.98))
+                        .background(AppTheme.background(for: colorScheme))
                         .cornerRadius(8)
 
                         Text("kg")
                             .font(.caption.bold())
-                            .foregroundColor(.secondary)
+                            .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                     }
                 }
             }
         }
         .padding(16)
-        .background(Color.white)
+        .background(AppTheme.cardBackground(for: colorScheme))
         .cornerRadius(16)
         .shadow(color: Color.black.opacity(0.04), radius: 6, y: 2)
     }
@@ -260,28 +268,30 @@ struct HealthVitalsFormSheet: View {
                     .foregroundColor(.indigo)
                 Text("睡眠與飲食")
                     .font(.system(size: 15, weight: .bold))
+                    .foregroundColor(AppTheme.textPrimary(for: colorScheme))
             }
 
             VStack(alignment: .leading, spacing: 6) {
                 Text("睡眠時數")
                     .font(.caption.bold())
-                    .foregroundColor(.secondary)
+                    .foregroundColor(AppTheme.textSecondary(for: colorScheme))
 
                 HStack(spacing: 8) {
                     TextField(
                         "",
                         text: $vitalsVM.sleepHours,
-                        prompt: Text("例: 7.5").foregroundColor(.gray.opacity(0.6))
+                        prompt: Text("例: 7.5").foregroundColor(AppTheme.textSecondary(for: colorScheme).opacity(0.6))
                     )
+                    .foregroundColor(AppTheme.textPrimary(for: colorScheme))
                     .keyboardType(.decimalPad)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 10)
-                    .background(Color(red: 0.96, green: 0.97, blue: 0.98))
+                    .background(AppTheme.background(for: colorScheme))
                     .cornerRadius(8)
 
                     Text("小時")
                         .font(.caption.bold())
-                        .foregroundColor(.secondary)
+                        .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                         .frame(width: 48, alignment: .trailing)
                 }
             }
@@ -289,21 +299,22 @@ struct HealthVitalsFormSheet: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text("飲食狀況")
                     .font(.caption.bold())
-                    .foregroundColor(.secondary)
+                    .foregroundColor(AppTheme.textSecondary(for: colorScheme))
 
                 TextField(
                     "",
                     text: $vitalsVM.foodAmount,
-                    prompt: Text("例：正常、食慾不佳、半碗").foregroundColor(.gray.opacity(0.6))
+                    prompt: Text("例：正常、食慾不佳、半碗").foregroundColor(AppTheme.textSecondary(for: colorScheme).opacity(0.6))
                 )
+                .foregroundColor(AppTheme.textPrimary(for: colorScheme))
                 .padding(.horizontal, 12)
                 .padding(.vertical, 10)
-                .background(Color(red: 0.96, green: 0.97, blue: 0.98))
+                .background(AppTheme.background(for: colorScheme))
                 .cornerRadius(8)
             }
         }
         .padding(16)
-        .background(Color.white)
+        .background(AppTheme.cardBackground(for: colorScheme))
         .cornerRadius(16)
         .shadow(color: Color.black.opacity(0.04), radius: 6, y: 2)
     }
@@ -319,12 +330,12 @@ struct HealthVitalsFormSheet: View {
                     displayedComponents: [.date, .hourAndMinute]
                 )
                 .datePickerStyle(.graphical)
-                .tint(.blue)
+                .tint(AppTheme.primary(for: colorScheme))
                 .padding()
 
                 Spacer()
             }
-            .background(Color(red: 0.96, green: 0.97, blue: 0.98))
+            .background(AppTheme.background(for: colorScheme))
             .navigationTitle("選擇測量時間")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -333,7 +344,7 @@ struct HealthVitalsFormSheet: View {
                         showDatePickerSheet = false
                     }
                     .font(.system(size: 16, weight: .bold))
-                    .foregroundColor(.blue)
+                    .foregroundColor(AppTheme.primary(for: colorScheme))
                 }
             }
         }

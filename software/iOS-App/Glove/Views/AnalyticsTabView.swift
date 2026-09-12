@@ -5,6 +5,7 @@ import SwiftUI
 struct AnalyticsTabView: View {
     @ObservedObject var medVM: MedicationViewModel
     @ObservedObject var dataVM: DataViewModel
+    @Environment(\.colorScheme) private var colorScheme
 
     /// 查詢目標日期
     var selectedDate: Date
@@ -16,9 +17,10 @@ struct AnalyticsTabView: View {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("藥效波動分析")
                         .font(.title2.bold())
+                        .foregroundColor(AppTheme.textPrimary(for: colorScheme))
                     Text("結合手套感測器紀錄之「即時震動強度 (RMS)」與「服藥時間」，評估藥效作用期與衰退期（OFF 時期）。")
                         .font(.subheadline)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                 }
                 .padding(.horizontal)
 
@@ -27,9 +29,10 @@ struct AnalyticsTabView: View {
                     HStack {
                         Text("震動強度與用藥時間軸疊加")
                             .font(.headline)
+                            .foregroundColor(AppTheme.textPrimary(for: colorScheme))
                         Spacer()
-                        legendBadge(color: .blue, title: "震動 RMS")
-                        legendBadge(color: .purple, title: "服藥點")
+                        legendBadge(color: AppTheme.primary(for: colorScheme), title: "震動 RMS")
+                        legendBadge(color: AppTheme.accent(for: colorScheme), title: "服藥點")
                     }
 
                     let tremorPoints = displayTremorData
@@ -38,13 +41,13 @@ struct AnalyticsTabView: View {
                         VStack(spacing: 8) {
                             Image(systemName: "waveform.path.ecg")
                                 .font(.system(size: 36))
-                                .foregroundColor(.gray.opacity(0.5))
+                                .foregroundColor(AppTheme.textSecondary(for: colorScheme).opacity(0.5))
                             Text("目前尚無震動或服藥數據")
                                 .font(.subheadline)
-                                .foregroundColor(.secondary)
+                                .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                         }
                         .frame(maxWidth: .infinity, minHeight: 200)
-                        .background(Color(uiColor: .secondarySystemGroupedBackground))
+                        .background(AppTheme.cardBackground(for: colorScheme))
                         .cornerRadius(12)
                     } else {
                         Chart {
@@ -54,7 +57,7 @@ struct AnalyticsTabView: View {
                                     x: .value("時間", point.timestamp),
                                     y: .value("強度", point.rmsValue)
                                 )
-                                .foregroundStyle(Color.blue)
+                                .foregroundStyle(AppTheme.primary(for: colorScheme))
                                 .interpolationMethod(.monotone)
 
                                 AreaMark(
@@ -63,7 +66,7 @@ struct AnalyticsTabView: View {
                                 )
                                 .foregroundStyle(
                                     LinearGradient(
-                                        colors: [Color.blue.opacity(0.25), Color.blue.opacity(0.0)],
+                                        colors: [AppTheme.primary(for: colorScheme).opacity(0.25), AppTheme.primary(for: colorScheme).opacity(0.0)],
                                         startPoint: .top,
                                         endPoint: .bottom
                                     )
@@ -74,7 +77,7 @@ struct AnalyticsTabView: View {
                                         x: .value("時間", point.timestamp),
                                         y: .value("強度", point.rmsValue)
                                     )
-                                    .foregroundStyle(Color.blue)
+                                    .foregroundStyle(AppTheme.primary(for: colorScheme))
                                     .symbolSize(25)
                                 }
                             }
@@ -85,7 +88,7 @@ struct AnalyticsTabView: View {
                                     x: .value("服藥時間", med.date)
                                 )
                                 .lineStyle(StrokeStyle(lineWidth: 2, dash: [4, 4]))
-                                .foregroundStyle(Color.purple)
+                                .foregroundStyle(AppTheme.accent(for: colorScheme))
                                 .annotation(position: .top, alignment: .center) {
                                     VStack(spacing: 2) {
                                         Image(systemName: med.medType == .patch ? "figure.stand" : "pill.fill")
@@ -95,12 +98,12 @@ struct AnalyticsTabView: View {
                                     }
                                     .padding(.horizontal, 5)
                                     .padding(.vertical, 2)
-                                    .background(Color.purple.opacity(0.12))
-                                    .foregroundColor(.purple)
+                                    .background(AppTheme.accent(for: colorScheme).opacity(0.12))
+                                    .foregroundColor(AppTheme.accent(for: colorScheme))
                                     .cornerRadius(4)
                                     .overlay(
                                         RoundedRectangle(cornerRadius: 4)
-                                            .stroke(Color.purple.opacity(0.3), lineWidth: 1)
+                                            .stroke(AppTheme.accent(for: colorScheme).opacity(0.3), lineWidth: 1)
                                     )
                                 }
                             }
@@ -128,7 +131,7 @@ struct AnalyticsTabView: View {
                     }
                 }
                 .padding()
-                .background(Color.white)
+                .background(AppTheme.cardBackground(for: colorScheme))
                 .cornerRadius(16)
                 .shadow(color: Color.black.opacity(0.04), radius: 6, y: 2)
                 .padding(.horizontal)
@@ -137,29 +140,31 @@ struct AnalyticsTabView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     Text("數據關聯摘要")
                         .font(.headline)
+                        .foregroundColor(AppTheme.textPrimary(for: colorScheme))
 
                     HStack(spacing: 12) {
                         Image(systemName: "clock.arrow.circlepath")
-                            .foregroundColor(.blue)
+                            .foregroundColor(AppTheme.primary(for: colorScheme))
                             .font(.title2)
 
                         VStack(alignment: .leading, spacing: 2) {
                             Text("藥效起效與衰退觀察")
                                 .font(.subheadline.bold())
-                            Text("可觀察服藥點 (紫色虛線) 之後，震動強度 (藍色曲線) 下降之時間差；若震動強度再度升高，即提示藥效衰退期 (Wearing-off)。")
+                                .foregroundColor(AppTheme.textPrimary(for: colorScheme))
+                            Text("可觀察服藥點 (橙色虛線) 之後，震動強度 (藍色曲線) 下降之時間差；若震動強度再度升高，即提示藥效衰退期 (Wearing-off)。")
                                 .font(.caption)
-                                .foregroundColor(.secondary)
+                                .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                         }
                     }
                 }
                 .padding()
-                .background(Color.blue.opacity(0.05))
+                .background(AppTheme.primary(for: colorScheme).opacity(0.08))
                 .cornerRadius(12)
                 .padding(.horizontal)
             }
             .padding(.vertical)
         }
-        .background(Color(red: 0.96, green: 0.97, blue: 0.98))
+        .background(AppTheme.background(for: colorScheme))
     }
 
     /// 取得震動強度數據（優先過濾當日紀錄，若無資料則回傳完整歷史清單以避免畫面空白）
@@ -220,7 +225,7 @@ struct AnalyticsTabView: View {
     private func legendBadge(color: Color, title: String) -> some View {
         HStack(spacing: 4) {
             Circle().fill(color).frame(width: 8, height: 8)
-            Text(title).font(.caption).foregroundColor(.secondary)
+            Text(title).font(.caption).foregroundColor(AppTheme.textSecondary(for: colorScheme))
         }
     }
 }

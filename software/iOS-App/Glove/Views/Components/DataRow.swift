@@ -8,13 +8,14 @@ struct DataRow: View {
     var showEdit: Bool = true
     var text: String = "修改"
     var showDivider: Bool = true
+    @Environment(\.colorScheme) private var colorScheme
     
     var body: some View {
         VStack(spacing: 0) {
             HStack {
                 if let iconName = icon {
                     Image(systemName: iconName)
-                        .foregroundColor(.blue)
+                        .foregroundColor(AppTheme.primary(for: colorScheme))
                         .font(.system(size: 20))
                         .frame(width: 28, alignment: .center)
                 }
@@ -23,24 +24,24 @@ struct DataRow: View {
                         .font(.system(size: 18, weight: .medium))
                         .fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .foregroundColor(.black)
+                        .foregroundColor(AppTheme.textPrimary(for: colorScheme))
                 }
                 Spacer(minLength: 10)
                 if let sub = subtitle {
                     Text(sub)
                         .font(.system(size: 16))
-                        .foregroundColor(.secondary)
+                        .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                 }
                 Spacer()
                 
                 if showEdit {
                     Text(text)
                         .font(.system(size: 15))
-                        .foregroundColor(.gray.opacity(0.6))
+                        .foregroundColor(AppTheme.textSecondary(for: colorScheme).opacity(0.6))
                     
                     Image(systemName: "chevron.right")
                         .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(.gray.opacity(0.3))
+                        .foregroundColor(AppTheme.textSecondary(for: colorScheme).opacity(0.4))
                 }
             }
             .padding(.vertical, 15)

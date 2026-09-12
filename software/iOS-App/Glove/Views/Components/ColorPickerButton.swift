@@ -7,6 +7,7 @@ struct ColorPickerButton: View {
     
     /// 目前全域/頁面所選擇的色彩狀態綁定
     @Binding var selectedColor: Color
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         Circle()
@@ -14,7 +15,7 @@ struct ColorPickerButton: View {
             .frame(width: 36, height: 36)
             .overlay(
                 Circle().stroke(
-                    Color.gray.opacity(0.5),
+                    AppTheme.textPrimary(for: colorScheme).opacity(0.6),
                     lineWidth: selectedColor == color ? 3 : 0
                 )
             )

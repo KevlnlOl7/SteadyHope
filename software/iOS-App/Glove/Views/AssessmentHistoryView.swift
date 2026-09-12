@@ -2,6 +2,7 @@ import SwiftUI
 
 struct AssessmentHistoryView: View {
     @StateObject private var viewModel = AssessmentViewModel()
+    @Environment(\.colorScheme) private var colorScheme
 
     /// 歷史查詢模式列舉（單日與區間）
     enum QueryMode: String, CaseIterable, Identifiable {
@@ -51,7 +52,7 @@ struct AssessmentHistoryView: View {
 
             historyResultView
         }
-        .background(Color(red: 0.96, green: 0.96, blue: 0.97).ignoresSafeArea())
+        .background(AppTheme.background(for: colorScheme).ignoresSafeArea())
         .navigationTitle("歷史填寫紀錄")
         .navigationBarTitleDisplayMode(.inline)
         .navigationDestination(isPresented: $showDetail) {
@@ -89,7 +90,7 @@ struct AssessmentHistoryView: View {
             HStack {
                 Text(monthYearString(from: currentMonth))
                     .font(.system(size: 16, weight: .bold))
-                    .foregroundColor(.primary)
+                    .foregroundColor(AppTheme.textPrimary(for: colorScheme))
 
                 Spacer()
 
@@ -98,8 +99,9 @@ struct AssessmentHistoryView: View {
                 } label: {
                     Image(systemName: "chevron.left")
                         .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(AppTheme.textPrimary(for: colorScheme))
                         .padding(8)
-                        .background(Color(uiColor: .systemGray6))
+                        .background(AppTheme.textSecondary(for: colorScheme).opacity(0.12))
                         .clipShape(Circle())
                 }
 
@@ -108,8 +110,9 @@ struct AssessmentHistoryView: View {
                 } label: {
                     Image(systemName: "chevron.right")
                         .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(AppTheme.textPrimary(for: colorScheme))
                         .padding(8)
-                        .background(Color(uiColor: .systemGray6))
+                        .background(AppTheme.textSecondary(for: colorScheme).opacity(0.12))
                         .clipShape(Circle())
                 }
             }
@@ -120,7 +123,7 @@ struct AssessmentHistoryView: View {
                     Text(day)
                         .font(.caption)
                         .fontWeight(.semibold)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                         .frame(maxWidth: .infinity)
                 }
             }
@@ -146,19 +149,19 @@ struct AssessmentHistoryView: View {
                                     .foregroundColor(
                                         isSelected
                                             ? .white
-                                            : (hasData ? .primary : Color(uiColor: .quaternaryLabel))
+                                            : (hasData ? AppTheme.textPrimary(for: colorScheme) : AppTheme.textSecondary(for: colorScheme).opacity(0.3))
                                     )
 
                                 Circle()
                                     .fill(
                                         isSelected
                                             ? Color.white
-                                            : (hasData ? Color.accentColor : Color.clear)
+                                            : (hasData ? AppTheme.primary(for: colorScheme) : Color.clear)
                                     )
                                     .frame(width: 4, height: 4)
                             }
                             .frame(width: 36, height: 36)
-                            .background(isSelected ? Color.accentColor : Color.clear)
+                            .background(isSelected ? AppTheme.primary(for: colorScheme) : Color.clear)
                             .clipShape(Circle())
                         }
                         .disabled(!hasData)
@@ -169,17 +172,17 @@ struct AssessmentHistoryView: View {
             }
 
             HStack(spacing: 6) {
-                Circle().fill(Color.accentColor).frame(width: 6, height: 6)
+                Circle().fill(AppTheme.primary(for: colorScheme)).frame(width: 6, height: 6)
                 Text("有填寫紀錄之日期")
                     .font(.caption2)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                 Spacer()
             }
             .padding(.top, 4)
             .padding(.leading, 4)
         }
         .padding(14)
-        .background(Color.white)
+        .background(AppTheme.cardBackground(for: colorScheme))
         .cornerRadius(14)
         .shadow(color: Color.black.opacity(0.04), radius: 4, y: 2)
         .padding(.horizontal, 16)
@@ -194,6 +197,7 @@ struct AssessmentHistoryView: View {
                     selection: $startDate,
                     displayedComponents: [.date]
                 )
+                .foregroundColor(AppTheme.textPrimary(for: colorScheme))
                 Divider()
                 DatePicker(
                     "結束日期",
@@ -201,6 +205,7 @@ struct AssessmentHistoryView: View {
                     in: startDate...,
                     displayedComponents: [.date]
                 )
+                .foregroundColor(AppTheme.textPrimary(for: colorScheme))
             }
 
             Button {
@@ -219,13 +224,13 @@ struct AssessmentHistoryView: View {
                 .foregroundColor(.white)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 14)
-                .background(Color.accentColor)
+                .background(AppTheme.primary(for: colorScheme))
                 .cornerRadius(10)
             }
             .disabled(viewModel.isLoadingHistory)
         }
         .padding(16)
-        .background(Color.white)
+        .background(AppTheme.cardBackground(for: colorScheme))
         .cornerRadius(12)
         .shadow(color: Color.black.opacity(0.04), radius: 4, y: 2)
         .padding(.horizontal, 16)
@@ -246,13 +251,13 @@ struct AssessmentHistoryView: View {
                     Spacer()
                     Image(systemName: "doc.text.magnifyingglass")
                         .font(.system(size: 42))
-                        .foregroundColor(.secondary)
+                        .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                     Text("尚無評估紀錄")
                         .font(.headline)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(AppTheme.textPrimary(for: colorScheme))
                     Text(queryMode == .singleDay ? "請點選有藍點標記的日期查看" : "此日期區間沒有評估紀錄")
                         .font(.subheadline)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                     Spacer()
                 }
             } else {
@@ -260,7 +265,7 @@ struct AssessmentHistoryView: View {
                     ForEach(viewModel.groupedHistoryRecords) { group in
                         Section(header: Text(group.dateText)
                             .font(.system(size: 15, weight: .semibold))
-                            .foregroundColor(.primary)
+                            .foregroundColor(AppTheme.textPrimary(for: colorScheme))
                         ) {
                             ForEach(group.records, id: \.self) { record in
                                 Button {
@@ -271,15 +276,15 @@ struct AssessmentHistoryView: View {
                                         VStack(alignment: .leading, spacing: 6) {
                                             Text("總分：\(record.totalScore) 分")
                                                 .font(.system(size: 16, weight: .bold))
-                                                .foregroundColor(.primary)
+                                                .foregroundColor(AppTheme.textPrimary(for: colorScheme))
                                             Text("情緒：\(record.moodScore) | 日常：\(record.adlScore) | 動作：\(record.motorScore)")
                                                 .font(.subheadline)
-                                                .foregroundColor(.secondary)
+                                                .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                                         }
                                         Spacer()
                                         Image(systemName: "chevron.right")
                                             .font(.caption)
-                                            .foregroundColor(.secondary)
+                                            .foregroundColor(AppTheme.textSecondary(for: colorScheme).opacity(0.6))
                                     }
                                     .padding(.vertical, 4)
                                 }

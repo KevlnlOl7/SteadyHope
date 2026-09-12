@@ -7,6 +7,7 @@ struct DataView: View {
     @ObservedObject var loginVM: LoginViewModel
     @ObservedObject var dataVM: DataViewModel = DataViewModel.shared
     @ObservedObject var bleVM: BluetoothViewModel
+    @Environment(\.colorScheme) private var colorScheme
 
     /// 模式切換與介面展示設定
     @AppStorage("isSimpleModeEnabled") private var isSimpleMode: Bool = false
@@ -86,7 +87,7 @@ struct DataView: View {
 
     var body: some View {
         ZStack {
-            Color(red: 0.97, green: 0.97, blue: 0.97)
+            AppTheme.background(for: colorScheme)
                 .ignoresSafeArea()
                 .onTapGesture {
                     isFieldFocused = false
@@ -161,15 +162,17 @@ struct DataView: View {
         HStack {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text(titleText).font(.system(size: 26, weight: .bold))
+                    Text(titleText)
+                        .font(.system(size: 26, weight: .bold))
+                        .foregroundColor(AppTheme.textPrimary(for: colorScheme))
                     if isCaregiver {
                         Text("受照護者")
                             .font(.caption2)
                             .fontWeight(.bold)
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
-                            .background(Color.blue.opacity(0.12))
-                            .foregroundColor(.blue)
+                            .background(AppTheme.primary(for: colorScheme).opacity(0.12))
+                            .foregroundColor(AppTheme.primary(for: colorScheme))
                             .cornerRadius(4)
                     }
                 }
@@ -177,7 +180,9 @@ struct DataView: View {
 
                 HStack(spacing: 6) {
                     Circle().fill(statusColor(currentStatusText)).frame(width: 8, height: 8)
-                    Text("狀態：\(currentStatusText)").font(.system(size: 14, weight: .medium)).foregroundColor(.secondary)
+                    Text("狀態：\(currentStatusText)")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                 }
             }
             Spacer()
@@ -208,16 +213,16 @@ struct DataView: View {
     private var pastUnlabeledAlertBanner: some View {
         HStack(spacing: 10) {
             Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundColor(.orange)
+                .foregroundColor(AppTheme.accent(for: colorScheme))
                 .font(.system(size: 18))
 
             VStack(alignment: .leading, spacing: 3) {
                 Text("歷史紀錄待補填提醒")
                     .font(.system(size: 13, weight: .bold))
-                    .foregroundColor(.primary)
-                Text("尚有 \(reminderCandidateCount) 筆高震顫紀錄未填寫情境。補齊後可協助醫師掌握發作規律。")
+                    .foregroundColor(AppTheme.textPrimary(for: colorScheme))
+                Text("尚有 \(reminderCandidateCount) 筆震顫紀錄未填寫情境。補齊後可協助醫師掌握發作規律。")
                     .font(.caption2)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                     .fixedSize(horizontal: false, vertical: true)
             }
 
@@ -241,12 +246,11 @@ struct DataView: View {
                 }
             } label: {
                 Text("前往補填")
-                    .font(.caption2)
-                    .fontWeight(.bold)
-                    .foregroundColor(.white)
+                    .font(.caption2.bold())
+                    .foregroundColor(AppTheme.background(for: colorScheme))
                     .padding(.horizontal, 10)
-                    .padding(.vertical, 7)
-                    .background(Color.orange)
+                    .padding(.vertical, 6)
+                    .background(AppTheme.accent(for: colorScheme))
                     .cornerRadius(8)
             }
             .buttonStyle(.plain)
@@ -256,7 +260,7 @@ struct DataView: View {
             } label: {
                 Image(systemName: "xmark")
                     .font(.system(size: 11, weight: .bold))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                     .frame(width: 28, height: 28)
                     .background(Color.black.opacity(0.06))
                     .clipShape(Circle())
@@ -265,7 +269,7 @@ struct DataView: View {
             .buttonStyle(.plain)
         }
         .padding(12)
-        .background(Color.orange.opacity(0.12))
+        .background(AppTheme.accent(for: colorScheme).opacity(0.12))
         .cornerRadius(12)
         .padding(.horizontal, 20)
     }
@@ -291,10 +295,10 @@ struct DataView: View {
                         Text("回到今天")
                             .font(.caption2)
                             .fontWeight(.bold)
-                            .foregroundColor(.blue)
+                            .foregroundColor(AppTheme.primary(for: colorScheme))
                             .padding(.horizontal, 8)
                             .padding(.vertical, 4)
-                            .background(Color.blue.opacity(0.1))
+                            .background(AppTheme.primary(for: colorScheme).opacity(0.1))
                             .cornerRadius(6)
                     }
                 }
@@ -307,7 +311,7 @@ struct DataView: View {
                     Image(systemName: isSimpleMode ? "eyeglasses" : "chart.xyaxis.line").font(.caption)
                     Text(isSimpleMode ? "簡易模式" : "標準模式").font(.caption).fontWeight(.bold)
                 }
-                .foregroundColor(isSimpleMode ? .green : .secondary)
+                .foregroundColor(isSimpleMode ? .green : AppTheme.textSecondary(for: colorScheme))
             }
             .toggleStyle(SwitchToggleStyle(tint: .green))
             .fixedSize()
@@ -320,46 +324,48 @@ struct DataView: View {
         HStack(spacing: 15) {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
-                    Text("主要震動頻率").font(.caption).foregroundColor(.secondary)
+                    Text("主要震動頻率").font(.caption).foregroundColor(AppTheme.textSecondary(for: colorScheme))
                     Spacer()
                     Button {
                         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
                         withAnimation(.easeInOut(duration: 0.2)) { activeInfoSheet = .frequency }
                     } label: {
-                        Image(systemName: "questionmark.circle").font(.caption).foregroundColor(.blue)
+                        Image(systemName: "questionmark.circle").font(.caption).foregroundColor(AppTheme.primary(for: colorScheme))
                     }
                 }
                 Text(standardFreqDisplayText)
                     .font(.system(size: 26, weight: .bold))
-                    .foregroundColor(.blue)
+                    .foregroundColor(AppTheme.primary(for: colorScheme))
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding()
-            .background(Color.white)
+            .background(AppTheme.cardBackground(for: colorScheme))
             .cornerRadius(15)
+            .softCardShadow()
 
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
-                    Text("震動強度 (RMS)").font(.caption).foregroundColor(.secondary)
+                    Text("震動強度 (RMS)").font(.caption).foregroundColor(AppTheme.textSecondary(for: colorScheme))
                     Spacer()
                     Button {
                         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
                         withAnimation(.easeInOut(duration: 0.2)) { activeInfoSheet = .rms }
                     } label: {
-                        Image(systemName: "questionmark.circle").font(.caption).foregroundColor(.blue)
+                        Image(systemName: "questionmark.circle").font(.caption).foregroundColor(AppTheme.primary(for: colorScheme))
                     }
                 }
                 HStack(alignment: .firstTextBaseline, spacing: 4) {
                     Text(standardRMSDisplayText)
                         .font(.system(size: 22, weight: .bold))
-                        .foregroundColor((!isCaregiver && !bleVM.isConnected) ? .secondary : .primary)
-                    Text("deg/s").font(.caption).foregroundColor(.secondary)
+                        .foregroundColor((!isCaregiver && !bleVM.isConnected) ? AppTheme.textSecondary(for: colorScheme) : AppTheme.textPrimary(for: colorScheme))
+                    Text("deg/s").font(.caption).foregroundColor(AppTheme.textSecondary(for: colorScheme))
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding()
-            .background(Color.white)
+            .background(AppTheme.cardBackground(for: colorScheme))
             .cornerRadius(15)
+            .softCardShadow()
         }
         .padding(.horizontal, 20)
     }
@@ -370,32 +376,33 @@ struct DataView: View {
             HStack(spacing: 12) {
                 VStack(spacing: 8) {
                     HStack(spacing: 5) {
-                        Text("震顫節奏").font(.system(size: 15, weight: .semibold)).foregroundColor(.secondary)
+                        Text("震顫節奏").font(.system(size: 15, weight: .semibold)).foregroundColor(AppTheme.textSecondary(for: colorScheme))
                         Button {
                             activeInfoSheet = .frequency
                         } label: {
-                            Image(systemName: "questionmark.circle.fill").font(.system(size: 17)).foregroundColor(.blue)
+                            Image(systemName: "questionmark.circle.fill").font(.system(size: 17)).foregroundColor(AppTheme.primary(for: colorScheme))
                         }
                         .buttonStyle(.plain)
                     }
                     Text(!isCaregiver && !bleVM.isConnected ? "--" : dataVM.dominantFrequencyText)
                         .font(.system(size: 30, weight: .heavy, design: .rounded))
                         .minimumScaleFactor(0.75)
-                        .foregroundColor(.blue)
+                        .foregroundColor(AppTheme.primary(for: colorScheme))
                         .lineLimit(1)
                 }
                 .frame(maxWidth: .infinity, minHeight: 112)
                 .padding(.horizontal, 8)
-                .background(Color.white)
+                .background(AppTheme.cardBackground(for: colorScheme))
                 .cornerRadius(16)
+                .softCardShadow()
 
                 VStack(spacing: 8) {
                     HStack(spacing: 5) {
-                        Text("抖動幅度").font(.system(size: 15, weight: .semibold)).foregroundColor(.secondary)
+                        Text("抖動幅度").font(.system(size: 15, weight: .semibold)).foregroundColor(AppTheme.textSecondary(for: colorScheme))
                         Button {
                             activeInfoSheet = .rms
                         } label: {
-                            Image(systemName: "questionmark.circle.fill").font(.system(size: 17)).foregroundColor(.blue)
+                            Image(systemName: "questionmark.circle.fill").font(.system(size: 17)).foregroundColor(AppTheme.primary(for: colorScheme))
                         }
                         .buttonStyle(.plain)
                     }
@@ -403,29 +410,31 @@ struct DataView: View {
                         Text(!isCaregiver && !bleVM.isConnected ? "--" : String(format: "%.1f", max(0, dataVM.currentRMS)))
                             .font(.system(size: 30, weight: .heavy, design: .rounded))
                             .minimumScaleFactor(0.75)
-                            .foregroundColor((!isCaregiver && !bleVM.isConnected) ? .secondary : (dataVM.currentRMS >= 0.20 ? .orange : .primary))
+                            .foregroundColor((!isCaregiver && !bleVM.isConnected) ? AppTheme.textSecondary(for: colorScheme) : (dataVM.currentRMS >= 0.20 ? .orange : AppTheme.textPrimary(for: colorScheme)))
                             .lineLimit(1)
-                        Text("deg/s").font(.caption2).foregroundColor(.secondary)
+                        Text("deg/s").font(.caption2).foregroundColor(AppTheme.textSecondary(for: colorScheme))
                     }
                 }
                 .frame(maxWidth: .infinity, minHeight: 112)
                 .padding(.horizontal, 8)
-                .background(Color.white)
+                .background(AppTheme.cardBackground(for: colorScheme))
                 .cornerRadius(16)
+                .softCardShadow()
             }
 
             HStack(spacing: 10) {
                 Circle().fill(simpleStatusColor).frame(width: 12, height: 12)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(simpleStatusTitle).font(.system(size: 16, weight: .bold)).foregroundColor(simpleStatusColor)
-                    Text(simpleStatusDescription).font(.caption).foregroundColor(.secondary).fixedSize(horizontal: false, vertical: true)
+                    Text(simpleStatusDescription).font(.caption).foregroundColor(AppTheme.textSecondary(for: colorScheme)).fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer()
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 13)
-            .background(Color.white)
+            .background(AppTheme.cardBackground(for: colorScheme))
             .cornerRadius(14)
+            .softCardShadow()
         }
         .padding(.horizontal, 20)
     }
@@ -443,7 +452,7 @@ struct DataView: View {
     }
 
     private var simpleStatusColor: Color {
-        if !isCaregiver && !bleVM.isConnected { return .gray }
+        if !isCaregiver && !bleVM.isConnected { return AppTheme.textSecondary(for: colorScheme) }
         return dataVM.currentRMS >= 0.20 ? .orange : .green
     }
 
@@ -457,7 +466,7 @@ struct DataView: View {
             isViewingToday: isViewingToday,
             activeInfoSheet: $activeInfoSheet,
             selectedPoint: dataVM.selectedPoint,
-            isChartCleared: $isChartCleared, 
+            isChartCleared: $isChartCleared,
             jumpTargetDate: $chartJumpTargetDate,
             onPointSelected: { point in handleChartPointSelection(point, parentProxy: parentProxy) },
             onChartSelectionCleared: {
@@ -483,7 +492,7 @@ struct DataView: View {
         isChartCleared = false
 
         if let event = dataVM.filteredEvents.min(by: { abs($0.timestamp.timeIntervalSince(point.timestamp)) < abs($1.timestamp.timeIntervalSince(point.timestamp)) }),
-           abs(event.timestamp.timeIntervalSince(point.timestamp)) <= 5.0 {
+          abs(event.timestamp.timeIntervalSince(point.timestamp)) <= 5.0 {
             dataVM.expandedEventID = event.id
             DispatchQueue.main.async {
                 withAnimation(.easeOut(duration: 0.25)) {
@@ -497,11 +506,12 @@ struct DataView: View {
     private var tremorEventsSectionView: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Image(systemName: "list.bullet.rectangle.portrait.fill").foregroundColor(.blue)
+                Image(systemName: "list.bullet.rectangle.portrait.fill").foregroundColor(AppTheme.primary(for: colorScheme))
                 let targetPrefix = isCaregiver ? "\(loginVM.partnerName) 的" : ""
                 let dateStr = isViewingToday ? "今日" : dataVM.selectedFilterDate.toString(format: "yyyy/MM/dd")
                 Text("\(targetPrefix)\(dateStr)震顫紀錄 (\(dataVM.filteredEvents.count) 筆)")
                     .font(.system(size: 18, weight: .bold))
+                    .foregroundColor(AppTheme.textPrimary(for: colorScheme))
                 Spacer()
             }
             .padding(.horizontal, 20)
@@ -513,12 +523,13 @@ struct DataView: View {
                         .foregroundColor(.green.opacity(0.6))
                     Text(isViewingToday ? "今日尚無捕捉到顯著震顫事件" : "該日無顯著震顫事件紀錄")
                         .font(.subheadline)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 30)
-                .background(Color.white)
+                .background(AppTheme.cardBackground(for: colorScheme))
                 .cornerRadius(20)
+                .softCardShadow()
                 .padding(.horizontal, 20)
             } else {
                 eventListView
@@ -536,7 +547,7 @@ struct DataView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text(hourHeader)
                         .font(.system(size: 16, weight: .bold))
-                        .foregroundColor(.secondary)
+                        .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                         .padding(.horizontal, 20)
                         .padding(.top, 4)
 
@@ -575,10 +586,10 @@ struct DataView: View {
     /// 依狀態文字對應指示燈色彩
     private func statusColor(_ status: String) -> Color {
         switch status {
-        case "照護者家屬": return .blue
+        case "照護者家屬": return AppTheme.primary(for: colorScheme)
         case "資料正常": return .green
         case "資料累積中": return .orange
-        case "裝置未連線", "未連線": return .gray
+        case "裝置未連線", "未連線": return AppTheme.textSecondary(for: colorScheme)
         default: return .red
         }
     }
@@ -599,6 +610,7 @@ private struct RMSTrendChartViewContainer: View {
     let onPointSelected: (DataViewModel.RMSTrendPoint) -> Void
     let onChartSelectionCleared: () -> Void
     let onReturnToNow: () -> Void
+    @Environment(\.colorScheme) private var colorScheme
 
     /// 圖表可視範圍、滾動位置與縮放拖曳狀態
     @State private var visibleDuration: TimeInterval = 60
@@ -787,7 +799,7 @@ private struct RMSTrendChartViewContainer: View {
                     Spacer()
                     Text("deg/s")
                         .font(.system(size: 13, weight: .medium, design: .rounded))
-                        .foregroundColor(.secondary)
+                        .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                         .padding(.trailing, 2)
                 }
                 .padding(.bottom, -2)
@@ -797,14 +809,16 @@ private struct RMSTrendChartViewContainer: View {
             }
         }
         .padding()
-        .background(Color.white)
+        .background(AppTheme.cardBackground(for: colorScheme))
         .cornerRadius(20)
+        .softCardShadow()
         .padding(.horizontal, 20)
-        .shadow(color: Color.black.opacity(0.05), radius: 8, y: 4)
         .sheet(isPresented: $showTimePicker) {
             NavigationStack {
                 VStack(spacing: 20) {
-                    Text("選擇圖表時間").font(.headline)
+                    Text("選擇圖表時間")
+                        .font(.headline)
+                        .foregroundColor(AppTheme.textPrimary(for: colorScheme))
 
                     DatePicker(
                         "時間",
@@ -817,7 +831,7 @@ private struct RMSTrendChartViewContainer: View {
 
                     Text(selectedChartTime.toString(format: "yyyy/MM/dd HH:mm"))
                         .font(.system(size: 16, weight: .semibold, design: .rounded))
-                        .foregroundColor(.blue)
+                        .foregroundColor(AppTheme.primary(for: colorScheme))
 
                     if isViewingToday {
                         Button {
@@ -837,10 +851,10 @@ private struct RMSTrendChartViewContainer: View {
                                 Text("回到現在")
                             }
                             .font(.system(size: 15, weight: .bold))
-                            .foregroundColor(.blue)
+                            .foregroundColor(AppTheme.primary(for: colorScheme))
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 11)
-                            .background(Color.blue.opacity(0.10))
+                            .background(AppTheme.primary(for: colorScheme).opacity(0.10))
                             .cornerRadius(10)
                         }
                         .buttonStyle(.plain)
@@ -850,6 +864,7 @@ private struct RMSTrendChartViewContainer: View {
                     Spacer()
                 }
                 .padding()
+                .background(AppTheme.background(for: colorScheme))
                 .navigationTitle("查看時間")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
@@ -857,6 +872,7 @@ private struct RMSTrendChartViewContainer: View {
                         Button("取消") {
                             showTimePicker = false
                         }
+                        .foregroundColor(AppTheme.primary(for: colorScheme))
                     }
 
                     ToolbarItem(placement: .confirmationAction) {
@@ -870,6 +886,7 @@ private struct RMSTrendChartViewContainer: View {
                             showTimePicker = false
                         }
                         .fontWeight(.bold)
+                        .foregroundColor(AppTheme.primary(for: colorScheme))
                     }
                 }
             }
@@ -927,7 +944,7 @@ private struct RMSTrendChartViewContainer: View {
                             x: .value("時間", point.timestamp),
                             y: .value("強度", max(0, point.rmsValue))
                         )
-                        .foregroundStyle(Color(red: 0.16, green: 0.50, blue: 0.96))
+                        .foregroundStyle(AppTheme.primary(for: colorScheme))
                         .lineStyle(StrokeStyle(lineWidth: 2))
                         .interpolationMethod(.linear)
                     }
@@ -962,6 +979,7 @@ private struct RMSTrendChartViewContainer: View {
                         AxisValueLabel {
                             Text(String(format: "%.1f", doubleVal))
                                 .font(.system(size: 11, design: .rounded))
+                                .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                                 .frame(width: 32, alignment: .trailing)
                         }
                     }
@@ -976,7 +994,7 @@ private struct RMSTrendChartViewContainer: View {
                         AxisValueLabel {
                             Text(xAxisLabel(for: date))
                                 .font(.system(size: 10, weight: .medium, design: .rounded))
-                                .foregroundStyle(Color.secondary)
+                                .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
                                 .padding(.top, 4)
                                 .lineLimit(1)
                         }
@@ -1050,10 +1068,11 @@ private struct RMSTrendChartViewContainer: View {
         HStack {
             HStack(spacing: 6) {
                 Image(systemName: "chart.line.uptrend.xyaxis")
-                    .foregroundColor(.blue)
+                    .foregroundColor(AppTheme.primary(for: colorScheme))
 
                 Text("\(visibleHeaderTime.toString(format: "HH:mm")) 震動強度走勢")
                     .font(.system(size: 18, weight: .bold))
+                    .foregroundColor(AppTheme.textPrimary(for: colorScheme))
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
 
@@ -1062,7 +1081,7 @@ private struct RMSTrendChartViewContainer: View {
                 } label: {
                     Image(systemName: "questionmark.circle.fill")
                         .font(.system(size: 16))
-                        .foregroundColor(.blue.opacity(0.8))
+                        .foregroundColor(AppTheme.primary(for: colorScheme).opacity(0.8))
                 }
                 .buttonStyle(.plain)
             }
@@ -1078,10 +1097,10 @@ private struct RMSTrendChartViewContainer: View {
                     Text("選擇時間")
                 }
                 .font(.caption2.weight(.bold))
-                .foregroundColor(.blue)
+                .foregroundColor(AppTheme.primary(for: colorScheme))
                 .padding(.horizontal, 8)
                 .padding(.vertical, 5)
-                .background(Color.blue.opacity(0.10))
+                .background(AppTheme.primary(for: colorScheme).opacity(0.10))
                 .cornerRadius(6)
             }
             .buttonStyle(.plain)
@@ -1093,18 +1112,18 @@ private struct RMSTrendChartViewContainer: View {
         VStack(spacing: 8) {
             Image(systemName: "chart.line.uptrend.xyaxis")
                 .font(.system(size: 30))
-                .foregroundColor(.secondary.opacity(0.6))
+                .foregroundColor(AppTheme.textSecondary(for: colorScheme).opacity(0.6))
 
             Text("\(selectedDate.toString(format: "MM/dd")) 尚無連續走勢資料")
                 .font(.subheadline)
-                .foregroundColor(.secondary)
+                .foregroundColor(AppTheme.textSecondary(for: colorScheme))
 
             Text("選擇時間後，可查看該時段的震動資料")
                 .font(.caption2)
-                .foregroundColor(.secondary)
+                .foregroundColor(AppTheme.textSecondary(for: colorScheme))
         }
         .frame(maxWidth: .infinity, minHeight: chartHeight)
-        .background(Color.white)
+        .background(AppTheme.cardBackground(for: colorScheme))
         .cornerRadius(15)
     }
 
@@ -1269,7 +1288,7 @@ private struct RMSTrendChartViewContainer: View {
                     Text("顯著震顫(點擊跳轉至下方事件)")
                         .font(.caption2)
                         .fontWeight(.medium)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                 }
 
                 HStack(spacing: 4) {
@@ -1278,7 +1297,8 @@ private struct RMSTrendChartViewContainer: View {
                         .frame(width: 9, height: 9)
                     Text("馬達啟動區間")
                         .font(.caption2)
-                        .foregroundColor(.secondary)
+                        .fontWeight(.medium)
+                        .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                 }
 
                 HStack(spacing: 4) {
@@ -1287,7 +1307,8 @@ private struct RMSTrendChartViewContainer: View {
                         .frame(width: 7, height: 7)
                     Text("目前選取")
                         .font(.caption2)
-                        .foregroundColor(.secondary)
+                        .fontWeight(.medium)
+                        .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                 }
             }
         }

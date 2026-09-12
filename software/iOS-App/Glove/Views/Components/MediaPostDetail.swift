@@ -14,6 +14,7 @@ struct MediaPostDetail: View {
     let mediaDataList: [Data]
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var colorScheme
 
     /// 當前輪播圖片索引值
     @State private var currentIndex = 0
@@ -52,11 +53,11 @@ struct MediaPostDetail: View {
                                 Text(dateString)
                                     .font(.caption)
                             }
-                            .foregroundColor(.secondary)
+                            .foregroundColor(AppTheme.textSecondary(for: colorScheme))
 
                             Text(note.isEmpty ? "（無文字描述）" : note)
                                 .font(.body)
-                                .foregroundColor(.primary)
+                                .foregroundColor(AppTheme.textPrimary(for: colorScheme))
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                         .padding(.horizontal, 4)
@@ -83,7 +84,7 @@ struct MediaPostDetail: View {
                                     Text(dateString)
                                         .font(.caption)
                                 }
-                                .foregroundColor(.secondary)
+                                .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                             }
 
                             Divider()
@@ -91,24 +92,24 @@ struct MediaPostDetail: View {
                             VStack(alignment: .leading, spacing: 6) {
                                 Text("症狀描述")
                                     .font(.caption.bold())
-                                    .foregroundColor(.secondary)
+                                    .foregroundColor(AppTheme.textSecondary(for: colorScheme))
 
                                 Text(note.isEmpty ? "（無文字描述）" : note)
                                     .font(.system(size: 18, weight: .medium))
-                                    .foregroundColor(.primary)
+                                    .foregroundColor(AppTheme.textPrimary(for: colorScheme))
                                     .lineSpacing(6)
                                     .fixedSize(horizontal: false, vertical: true)
                             }
                         }
                         .padding(16)
-                        .background(Color.white)
+                        .background(AppTheme.cardBackground(for: colorScheme))
                         .cornerRadius(14)
                         .shadow(color: Color.black.opacity(0.04), radius: 4, y: 2)
                     }
                 }
                 .padding()
             }
-            .background(Color(red: 0.96, green: 0.97, blue: 0.98))
+            .background(AppTheme.background(for: colorScheme))
             .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -117,6 +118,7 @@ struct MediaPostDetail: View {
                         dismiss()
                     }
                     .font(.subheadline.bold())
+                    .foregroundColor(AppTheme.primary(for: colorScheme))
                 }
             }
             .fullScreenCover(item: $previewImage) { item in

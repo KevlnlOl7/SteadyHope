@@ -4,6 +4,7 @@ struct MedicationPlanManageView: View {
     @ObservedObject var planVM: MedicationPlanViewModel
     var currentUserID: Int
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         NavigationStack {
@@ -14,13 +15,14 @@ struct MedicationPlanManageView: View {
                 }
                 .padding()
             }
-            .background(Color(red: 0.96, green: 0.97, blue: 0.98))
+            .background(AppTheme.background(for: colorScheme))
             .navigationTitle("管理每日用藥清單")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button("完成") { dismiss() }
                         .font(.body.bold())
+                        .foregroundColor(AppTheme.primary(for: colorScheme))
                 }
             }
         }
@@ -32,6 +34,7 @@ struct MedicationPlanManageView: View {
             HStack {
                 Text(planVM.editingPlanIndex == nil ? "新增每日用藥清單" : "編輯每日用藥清單")
                     .font(.headline)
+                    .foregroundColor(AppTheme.textPrimary(for: colorScheme))
                 Spacer()
                 if planVM.editingPlanIndex != nil {
                     Button("取消編輯") { planVM.resetPlanForm() }
@@ -44,7 +47,7 @@ struct MedicationPlanManageView: View {
                 // 用藥方式選擇（口服 / 貼片 / 注射）
                 HStack(spacing: 12) {
                     Image(systemName: "square.grid.2x2.fill")
-                        .foregroundColor(.blue)
+                        .foregroundColor(AppTheme.primary(for: colorScheme))
                         .frame(width: 20)
                     Picker("用藥方式", selection: $planVM.planMedType) {
                         ForEach(MedicationType.allCases, id: \.self) { type in
@@ -74,11 +77,12 @@ struct MedicationPlanManageView: View {
                 if planVM.planMedType == .oral || planVM.planMedType == .injection {
                     HStack(spacing: 12) {
                         Image(systemName: "pill.fill")
-                            .foregroundColor(.blue)
+                            .foregroundColor(AppTheme.primary(for: colorScheme))
                             .frame(width: 20)
 
                         // 藥品名稱輸入框
                         TextField("藥品名稱", text: $planVM.planName)
+                            .foregroundColor(AppTheme.textPrimary(for: colorScheme))
 
                         if planVM.planMedType == .oral {
                             Menu {
@@ -119,10 +123,10 @@ struct MedicationPlanManageView: View {
                                     Image(systemName: "chevron.down")
                                         .font(.caption.bold())
                                 }
-                                .foregroundColor(.blue)
+                                .foregroundColor(AppTheme.primary(for: colorScheme))
                                 .padding(.horizontal, 10)
                                 .padding(.vertical, 6)
-                                .background(Color.blue.opacity(0.1))
+                                .background(AppTheme.primary(for: colorScheme).opacity(0.1))
                                 .cornerRadius(8)
                             }
                         }
@@ -133,12 +137,14 @@ struct MedicationPlanManageView: View {
 
                     HStack(spacing: 12) {
                         Image(systemName: "scalemass.fill")
-                            .foregroundColor(.blue)
+                            .foregroundColor(AppTheme.primary(for: colorScheme))
                             .frame(width: 20)
                         TextField("用量", text: $planVM.planDose)
+                            .foregroundColor(AppTheme.textPrimary(for: colorScheme))
                             .keyboardType(.decimalPad)
                             .frame(width: 60)
                         TextField("單位", text: $planVM.planUnit)
+                            .foregroundColor(AppTheme.textPrimary(for: colorScheme))
                             .frame(width: 100)
                         Spacer()
                     }
@@ -150,11 +156,11 @@ struct MedicationPlanManageView: View {
                 // 重複頻率設定
                 HStack(spacing: 12) {
                     Image(systemName: "repeat")
-                        .foregroundColor(.blue)
+                        .foregroundColor(AppTheme.primary(for: colorScheme))
                         .frame(width: 20)
                     Text("重複")
                         .font(.subheadline)
-                        .foregroundColor(.primary)
+                        .foregroundColor(AppTheme.textPrimary(for: colorScheme))
                     Spacer()
                     Picker("重複", selection: $planVM.repeatFrequency) {
                         ForEach(RepeatFrequency.allCases) { freq in
@@ -162,6 +168,7 @@ struct MedicationPlanManageView: View {
                         }
                     }
                     .pickerStyle(.menu)
+                    .tint(AppTheme.primary(for: colorScheme))
                 }
                 .padding()
 
@@ -174,14 +181,14 @@ struct MedicationPlanManageView: View {
                         HStack {
                             Text("自訂重複細節")
                                 .font(.subheadline)
-                                .foregroundColor(.primary)
+                                .foregroundColor(AppTheme.textPrimary(for: colorScheme))
                             Spacer()
                             Text(planVM.customRepeatSummaryText)
                                 .font(.caption)
-                                .foregroundColor(.secondary)
+                                .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                             Image(systemName: "chevron.right")
                                 .font(.caption)
-                                .foregroundColor(.gray)
+                                .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                         }
                         .padding()
                     }
@@ -193,11 +200,11 @@ struct MedicationPlanManageView: View {
                 if planVM.planMedType == .patch {
                     HStack(spacing: 12) {
                         Image(systemName: "clock.fill")
-                            .foregroundColor(.blue)
+                            .foregroundColor(AppTheme.primary(for: colorScheme))
                             .frame(width: 20)
                         Text("每日貼片時間")
                             .font(.subheadline)
-                            .foregroundColor(.secondary)
+                            .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                         Spacer()
                         DatePicker("", selection: $planVM.inputTime, displayedComponents: .hourAndMinute)
                             .labelsHidden()
@@ -207,11 +214,11 @@ struct MedicationPlanManageView: View {
                     VStack(alignment: .leading, spacing: 12) {
                         HStack(spacing: 12) {
                             Image(systemName: "clock.fill")
-                                .foregroundColor(.blue)
+                                .foregroundColor(AppTheme.primary(for: colorScheme))
                                 .frame(width: 20)
                             Text("服藥時間")
                                 .font(.subheadline)
-                                .foregroundColor(.secondary)
+                                .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                             Spacer()
                             DatePicker("", selection: $planVM.inputTime, displayedComponents: .hourAndMinute)
                                 .labelsHidden()
@@ -220,8 +227,8 @@ struct MedicationPlanManageView: View {
                                     .font(.caption.bold())
                                     .padding(.horizontal, 10)
                                     .padding(.vertical, 6)
-                                    .background(Color.blue.opacity(0.12))
-                                    .foregroundColor(.blue)
+                                    .background(AppTheme.primary(for: colorScheme).opacity(0.12))
+                                    .foregroundColor(AppTheme.primary(for: colorScheme))
                                     .cornerRadius(6)
                             }
                             .buttonStyle(.plain)
@@ -230,7 +237,7 @@ struct MedicationPlanManageView: View {
                         if planVM.selectedTimes.isEmpty {
                             Text("請選擇時間並點擊「新增時間」")
                                 .font(.caption2)
-                                .foregroundColor(.gray)
+                                .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                                 .padding(.leading, 32)
                         } else {
                             ScrollView(.horizontal, showsIndicators: false) {
@@ -248,7 +255,7 @@ struct MedicationPlanManageView: View {
                                         }
                                         .padding(.horizontal, 10)
                                         .padding(.vertical, 5)
-                                        .background(Color.blue)
+                                        .background(AppTheme.primary(for: colorScheme))
                                         .foregroundColor(.white)
                                         .cornerRadius(16)
                                     }
@@ -260,7 +267,7 @@ struct MedicationPlanManageView: View {
                     .padding()
                 }
             }
-            .background(Color(red: 0.98, green: 0.98, blue: 0.99))
+            .background(AppTheme.background(for: colorScheme))
             .cornerRadius(10)
 
             // 提交 / 儲存按鈕
@@ -275,13 +282,13 @@ struct MedicationPlanManageView: View {
                 .foregroundColor(.white)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 12)
-                .background(planVM.isFormInvalid ? Color.gray.opacity(0.5) : (planVM.editingPlanIndex == nil ? Color.blue : Color.green))
+                .background(planVM.isFormInvalid ? AppTheme.textSecondary(for: colorScheme).opacity(0.4) : (planVM.editingPlanIndex == nil ? AppTheme.primary(for: colorScheme) : Color.green))
                 .cornerRadius(10)
             }
             .disabled(planVM.isFormInvalid)
         }
         .padding()
-        .background(Color.white)
+        .background(AppTheme.cardBackground(for: colorScheme))
         .cornerRadius(14)
         .shadow(color: Color.black.opacity(0.04), radius: 6, y: 2)
     }
@@ -291,12 +298,13 @@ struct MedicationPlanManageView: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("已設定用藥清單 (\(planVM.planList.count) 筆)")
                 .font(.headline)
+                .foregroundColor(AppTheme.textPrimary(for: colorScheme))
             Divider()
 
             if planVM.planList.isEmpty {
                 Text("目前尚未建立固定用藥處方")
                     .font(.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                     .padding(.vertical, 8)
             } else {
                 VStack(spacing: 0) {
@@ -305,18 +313,19 @@ struct MedicationPlanManageView: View {
                             VStack(alignment: .leading, spacing: 4) {
                                 HStack {
                                     Text(plan.name).font(.body.bold())
+                                        .foregroundColor(AppTheme.textPrimary(for: colorScheme))
                                     if !plan.dose.isEmpty {
                                         Text("(\(plan.dose))")
                                             .font(.subheadline)
-                                            .foregroundColor(.secondary)
+                                            .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                                     }
                                 }
                                 Text("服藥時間：\(planVM.formatPlanTimes(plan))")
                                     .font(.caption)
-                                    .foregroundColor(.gray)
+                                    .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                                 Text("重複週期：\(plan.repeatSummary)")
                                     .font(.caption2)
-                                    .foregroundColor(.blue)
+                                    .foregroundColor(AppTheme.primary(for: colorScheme))
                             }
                             Spacer()
 
@@ -324,13 +333,14 @@ struct MedicationPlanManageView: View {
                                 .font(.caption2)
                                 .padding(.horizontal, 6)
                                 .padding(.vertical, 2)
-                                .background(plan.medType == .patch ? Color.orange.opacity(0.15) : Color.blue.opacity(0.15))
+                                .background(plan.medType == .patch ? AppTheme.accent(for: colorScheme).opacity(0.15) : AppTheme.primary(for: colorScheme).opacity(0.15))
+                                .foregroundColor(plan.medType == .patch ? AppTheme.accent(for: colorScheme) : AppTheme.primary(for: colorScheme))
                                 .cornerRadius(4)
 
                             Button { planVM.loadPlanForEditing(at: index) } label: {
                                 Image(systemName: "pencil")
                                     .font(.subheadline)
-                                    .foregroundColor(.blue)
+                                    .foregroundColor(AppTheme.primary(for: colorScheme))
                                     .padding(.leading, 8)
                             }
                             .buttonStyle(.plain)
@@ -353,7 +363,7 @@ struct MedicationPlanManageView: View {
             }
         }
         .padding()
-        .background(Color.white)
+        .background(AppTheme.cardBackground(for: colorScheme))
         .cornerRadius(12)
         .shadow(color: Color.black.opacity(0.03), radius: 3)
     }
@@ -362,6 +372,7 @@ struct MedicationPlanManageView: View {
 /// 自訂週期細部設定檢視（支援依天、週、月設定頻率與特定日期）
 struct CustomRepeatView: View {
     @ObservedObject var planVM: MedicationPlanViewModel
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         Form {
@@ -371,16 +382,20 @@ struct CustomRepeatView: View {
                         Text(unit.rawValue).tag(unit)
                     }
                 }
+                .tint(AppTheme.primary(for: colorScheme))
+
                 Stepper(value: $planVM.customInterval, in: 1...99) {
                     HStack {
                         Text("每")
+                            .foregroundColor(AppTheme.textPrimary(for: colorScheme))
                         Spacer()
                         Text("\(planVM.customInterval) \(planVM.customUnit.rawValue)")
-                            .foregroundColor(.secondary)
+                            .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                     }
                 }
             } footer: {
                 Text(planVM.customRepeatFooterText)
+                    .foregroundColor(AppTheme.textSecondary(for: colorScheme))
             }
 
             if planVM.customUnit == .week {
@@ -388,10 +403,11 @@ struct CustomRepeatView: View {
                     ForEach(Weekday.allCases) { day in
                         HStack {
                             Text(day.shortName)
+                                .foregroundColor(AppTheme.textPrimary(for: colorScheme))
                             Spacer()
                             if planVM.selectedWeekdays.contains(day) {
                                 Image(systemName: "checkmark")
-                                    .foregroundColor(.blue)
+                                    .foregroundColor(AppTheme.primary(for: colorScheme))
                             }
                         }
                         .contentShape(Rectangle())
@@ -413,8 +429,8 @@ struct CustomRepeatView: View {
                             Text("\(day)")
                                 .font(.subheadline.bold())
                                 .frame(width: 36, height: 36)
-                                .background(planVM.selectedMonthDays.contains(day) ? Color.blue : Color.clear)
-                                .foregroundColor(planVM.selectedMonthDays.contains(day) ? .white : .primary)
+                                .background(planVM.selectedMonthDays.contains(day) ? AppTheme.primary(for: colorScheme) : Color.clear)
+                                .foregroundColor(planVM.selectedMonthDays.contains(day) ? .white : AppTheme.textPrimary(for: colorScheme))
                                 .clipShape(Circle())
                                 .onTapGesture {
                                     if planVM.selectedMonthDays.contains(day) {
@@ -429,6 +445,8 @@ struct CustomRepeatView: View {
                 }
             }
         }
+        .scrollContentBackground(.hidden)
+        .background(AppTheme.background(for: colorScheme))
         .navigationTitle("自訂")
         .navigationBarTitleDisplayMode(.inline)
     }

@@ -3,6 +3,7 @@ import SwiftUI
 
 struct PatchWorkflowSheet: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var colorScheme
 
     @ObservedObject var medVM: MedicationViewModel
 
@@ -74,7 +75,7 @@ struct PatchWorkflowSheet: View {
                 }
                 .padding()
             }
-            .background(Color(red: 0.96, green: 0.97, blue: 0.98))
+            .background(AppTheme.background(for: colorScheme))
             .navigationTitle(editingRecord != nil ? "編輯貼片紀錄" : "貼片打卡與紀錄")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -83,6 +84,7 @@ struct PatchWorkflowSheet: View {
                         medVM.editingRecord = nil
                         dismiss()
                     }
+                    .foregroundColor(AppTheme.primary(for: colorScheme))
                 }
             }
             .alert("部位輪替提醒", isPresented: $show14DayWarning) {
@@ -119,14 +121,15 @@ struct PatchWorkflowSheet: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 6) {
                 Image(systemName: "square.grid.2x2.fill")
-                    .foregroundColor(.orange)
+                    .foregroundColor(AppTheme.accent(for: colorScheme))
                 Text("Neupro 紐普洛穿皮貼片劑")
                     .font(.subheadline.bold())
+                    .foregroundColor(AppTheme.textPrimary(for: colorScheme))
             }
 
             Text("請選擇今日貼片劑量規格：")
                 .font(.caption)
-                .foregroundColor(.secondary)
+                .foregroundColor(AppTheme.textSecondary(for: colorScheme))
 
             HStack(spacing: 10) {
                 ForEach(strengthOptions, id: \.self) { strength in
@@ -139,10 +142,11 @@ struct PatchWorkflowSheet: View {
                             .padding(.vertical, 8)
                             .background(
                                 selectedStrength == strength
-                                    ? Color.orange : Color.gray.opacity(0.12)
+                                    ? AppTheme.accent(for: colorScheme)
+                                    : AppTheme.textSecondary(for: colorScheme).opacity(0.12)
                             )
                             .foregroundColor(
-                                selectedStrength == strength ? .white : .primary
+                                selectedStrength == strength ? .white : AppTheme.textPrimary(for: colorScheme)
                             )
                             .cornerRadius(8)
                     }
@@ -151,7 +155,7 @@ struct PatchWorkflowSheet: View {
             }
         }
         .padding()
-        .background(Color.white)
+        .background(AppTheme.cardBackground(for: colorScheme))
         .cornerRadius(14)
     }
 
@@ -239,17 +243,17 @@ struct PatchWorkflowSheet: View {
                         ? "checkmark.square.fill" : "square"
                 )
                 .font(.system(size: 28, weight: .bold))
-                .foregroundColor(hasRemovedOldPatch ? .green : .gray)
+                .foregroundColor(hasRemovedOldPatch ? .green : AppTheme.textSecondary(for: colorScheme))
             }
             .buttonStyle(.plain)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text("我已確認撕除昨天的舊貼片")
                     .font(.system(size: 16, weight: .bold))
-                    .foregroundColor(hasRemovedOldPatch ? .primary : .red)
+                    .foregroundColor(hasRemovedOldPatch ? AppTheme.textPrimary(for: colorScheme) : .red)
                 Text("防止舊貼片殘留導致重複用藥劑量過高")
                     .font(.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(AppTheme.textSecondary(for: colorScheme))
             }
         }
         .padding()
@@ -273,6 +277,7 @@ struct PatchWorkflowSheet: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("選擇今日黏貼部位：")
                 .font(.headline)
+                .foregroundColor(AppTheme.textPrimary(for: colorScheme))
 
             LazyVGrid(
                 columns: [GridItem(.flexible()), GridItem(.flexible())],
@@ -299,25 +304,25 @@ struct PatchWorkflowSheet: View {
                                     .font(.caption2)
                                     .padding(.horizontal, 4)
                                     .padding(.vertical, 2)
-                                    .background(Color.orange.opacity(0.2))
-                                    .foregroundColor(.orange)
+                                    .background(AppTheme.accent(for: colorScheme).opacity(0.2))
+                                    .foregroundColor(AppTheme.accent(for: colorScheme))
                                     .cornerRadius(4)
                             }
                         }
                         .padding()
                         .background(
                             selectedRegion == region
-                                ? Color.blue.opacity(0.1)
-                                : Color.gray.opacity(0.05)
+                                ? AppTheme.primary(for: colorScheme).opacity(0.12)
+                                : AppTheme.background(for: colorScheme)
                         )
                         .foregroundColor(
-                            selectedRegion == region ? .blue : .primary
+                            selectedRegion == region ? AppTheme.primary(for: colorScheme) : AppTheme.textPrimary(for: colorScheme)
                         )
                         .cornerRadius(10)
                         .overlay(
                             RoundedRectangle(cornerRadius: 10).stroke(
                                 selectedRegion == region
-                                    ? Color.blue : Color.clear,
+                                    ? AppTheme.primary(for: colorScheme) : Color.clear,
                                 lineWidth: 2
                             )
                         )
@@ -327,7 +332,7 @@ struct PatchWorkflowSheet: View {
             }
         }
         .padding()
-        .background(Color.white)
+        .background(AppTheme.cardBackground(for: colorScheme))
         .cornerRadius(14)
     }
 
@@ -336,6 +341,7 @@ struct PatchWorkflowSheet: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("皮膚狀況追蹤：")
                 .font(.headline)
+                .foregroundColor(AppTheme.textPrimary(for: colorScheme))
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
@@ -350,13 +356,13 @@ struct PatchWorkflowSheet: View {
                                 .padding(.vertical, 8)
                                 .background(
                                     (!isCustomCondition && selectedSkinCondition == option)
-                                        ? Color.purple
-                                        : Color.gray.opacity(0.12)
+                                        ? AppTheme.primary(for: colorScheme)
+                                        : AppTheme.textSecondary(for: colorScheme).opacity(0.12)
                                 )
                                 .foregroundColor(
                                     (!isCustomCondition && selectedSkinCondition == option)
                                         ? .white
-                                        : .primary
+                                        : AppTheme.textPrimary(for: colorScheme)
                                 )
                                 .cornerRadius(20)
                         }
@@ -375,9 +381,9 @@ struct PatchWorkflowSheet: View {
                         .padding(.vertical, 8)
                         .background(
                             isCustomCondition
-                                ? Color.purple : Color.gray.opacity(0.12)
+                                ? AppTheme.primary(for: colorScheme) : AppTheme.textSecondary(for: colorScheme).opacity(0.12)
                         )
-                        .foregroundColor(isCustomCondition ? .white : .primary)
+                        .foregroundColor(isCustomCondition ? .white : AppTheme.textPrimary(for: colorScheme))
                         .cornerRadius(20)
                     }
                     .buttonStyle(.plain)
@@ -387,6 +393,7 @@ struct PatchWorkflowSheet: View {
             if isCustomCondition {
                 TextField("請輸入皮膚狀況（例如：過敏、紅腫發熱）", text: $customSkinCondition)
                     .textFieldStyle(.roundedBorder)
+                    .foregroundColor(AppTheme.textPrimary(for: colorScheme))
                     .padding(.top, 4)
             }
 
@@ -394,7 +401,7 @@ struct PatchWorkflowSheet: View {
 
             Text("若有皮膚異常，可拍照記錄局部狀態（選填）")
                 .font(.caption)
-                .foregroundColor(.secondary)
+                .foregroundColor(AppTheme.textSecondary(for: colorScheme))
 
             MediaManagementView(
                 tempSelectedImages: $tempImages,
@@ -404,7 +411,7 @@ struct PatchWorkflowSheet: View {
             )
         }
         .padding()
-        .background(Color.white)
+        .background(AppTheme.cardBackground(for: colorScheme))
         .cornerRadius(14)
     }
 
@@ -434,7 +441,7 @@ struct PatchWorkflowSheet: View {
             .foregroundColor(.white)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 14)
-            .background(isReady ? Color.blue : Color.gray.opacity(0.4))
+            .background(isReady ? AppTheme.primary(for: colorScheme) : AppTheme.textSecondary(for: colorScheme).opacity(0.4))
             .cornerRadius(12)
         }
         .disabled(!isReady)

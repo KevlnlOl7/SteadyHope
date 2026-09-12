@@ -15,6 +15,8 @@ struct VersionItem: Identifiable {
 }
 
 struct VersionHistoryView: View {
+    @Environment(\.colorScheme) private var colorScheme
+
     private let history: [VersionItem] = [
         VersionItem(
             version: "1.0.0",
@@ -69,7 +71,7 @@ struct VersionHistoryView: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 16)
         }
-        .background(Color(uiColor: .systemGroupedBackground))
+        .background(AppTheme.background(for: colorScheme))
         .navigationTitle("版本紀錄")
         .navigationBarTitleDisplayMode(.inline)
     }
@@ -79,15 +81,15 @@ struct VersionHistoryView: View {
             HStack(alignment: .center, spacing: 8) {
                 Text("Version \(item.version)")
                     .font(.system(size: 18, weight: .bold, design: .rounded))
-                    .foregroundColor(.primary)
+                    .foregroundColor(AppTheme.textPrimary(for: colorScheme))
 
                 if item.isLatest {
                     Text("最新")
                         .font(.system(size: 11, weight: .semibold))
-                        .foregroundColor(.blue)
+                        .foregroundColor(AppTheme.primary(for: colorScheme))
                         .padding(.horizontal, 8)
                         .padding(.vertical, 2)
-                        .background(Color.blue.opacity(0.1))
+                        .background(AppTheme.primary(for: colorScheme).opacity(0.1))
                         .clipShape(Capsule())
                 }
 
@@ -95,7 +97,7 @@ struct VersionHistoryView: View {
 
                 Text(item.releaseDate)
                     .font(.system(size: 13))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(AppTheme.textSecondary(for: colorScheme))
             }
 
             VStack(alignment: .leading, spacing: 14) {
@@ -103,18 +105,18 @@ struct VersionHistoryView: View {
                     VStack(alignment: .leading, spacing: 6) {
                         Text(section.title)
                             .font(.system(size: 14, weight: .bold))
-                            .foregroundColor(.primary)
+                            .foregroundColor(AppTheme.textPrimary(for: colorScheme))
 
                         ForEach(section.items, id: \.self) { change in
                             HStack(alignment: .top, spacing: 8) {
                                 Circle()
-                                    .fill(Color.secondary.opacity(0.45))
+                                    .fill(AppTheme.textSecondary(for: colorScheme).opacity(0.45))
                                     .frame(width: 4, height: 4)
                                     .padding(.top, 7)
 
                                 Text(change)
                                     .font(.system(size: 13.5))
-                                    .foregroundColor(.secondary)
+                                    .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                                     .lineSpacing(3)
                             }
                         }
@@ -124,7 +126,7 @@ struct VersionHistoryView: View {
         }
         .padding(18)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(uiColor: .secondarySystemGroupedBackground))
+        .background(AppTheme.cardBackground(for: colorScheme))
         .cornerRadius(14)
     }
 }

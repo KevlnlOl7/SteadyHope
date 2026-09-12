@@ -14,6 +14,8 @@ struct SummaryCardView: View {
     /// 文字編輯區塊最小高度
     let minHeight: CGFloat
 
+    @Environment(\.colorScheme) private var colorScheme
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
@@ -23,17 +25,18 @@ struct SummaryCardView: View {
                 Text(title)
                     .font(.caption)
                     .fontWeight(.semibold)
-                    .foregroundColor(.primary)
+                    .foregroundColor(AppTheme.textPrimary(for: colorScheme))
             }
 
             TextEditor(text: $text)
                 .frame(minHeight: minHeight)
                 .padding(8)
-                .background(Color(.secondarySystemGroupedBackground))
+                .foregroundColor(AppTheme.textPrimary(for: colorScheme))
+                .background(AppTheme.cardBackground(for: colorScheme))
                 .cornerRadius(10)
                 .overlay(
                     RoundedRectangle(cornerRadius: 10)
-                        .stroke(Color.gray.opacity(0.15), lineWidth: 1)
+                        .stroke(AppTheme.textSecondary(for: colorScheme).opacity(0.2), lineWidth: 1)
                 )
         }
         .padding(.vertical, 4)

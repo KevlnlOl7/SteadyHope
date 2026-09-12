@@ -9,6 +9,7 @@ struct ProfileSideMenuView: View {
     @ObservedObject var symptomVM: SymptomViewModel
     @ObservedObject var vitalsVM: HealthVitalsViewModel
     @StateObject private var reminderManager = MedicalReminderManager.shared
+    @Environment(\.colorScheme) private var colorScheme
 
     /// 判斷使用者是否為照護者且尚未綁定被照護者
     private var isUnlinkedCaregiver: Bool {
@@ -73,7 +74,7 @@ struct ProfileSideMenuView: View {
                     logoutButton
                 }
                 .frame(width: 280)
-                .background(Color.white)
+                .background(AppTheme.cardBackground(for: colorScheme))
                 .ignoresSafeArea(.container, edges: .bottom)
                 .transition(.move(edge: .leading))
             }
@@ -92,26 +93,26 @@ struct ProfileSideMenuView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Image(systemName: "person.crop.circle.fill")
                     .font(.system(size: 56))
-                    .foregroundColor(.gray)
+                    .foregroundColor(AppTheme.textSecondary(for: colorScheme))
 
                 Text(loginVM.userData?.userName ?? "用戶")
                     .font(.system(size: 20, weight: .bold))
-                    .foregroundColor(.primary)
+                    .foregroundColor(AppTheme.textPrimary(for: colorScheme))
 
                 HStack {
                     Text(loginVM.userData?.role == 1 ? "照護者" : "使用者")
                         .font(.caption2)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 3)
-                        .background(Color.blue.opacity(0.12))
-                        .foregroundColor(.blue)
+                        .background(AppTheme.primary(for: colorScheme).opacity(0.15))
+                        .foregroundColor(AppTheme.primary(for: colorScheme))
                         .cornerRadius(6)
 
                     Spacer()
 
                     Image(systemName: "chevron.right")
                         .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(.gray.opacity(0.5))
+                        .foregroundColor(AppTheme.textSecondary(for: colorScheme).opacity(0.5))
                 }
             }
             .contentShape(Rectangle())
@@ -127,21 +128,21 @@ struct ProfileSideMenuView: View {
         VStack(alignment: .leading, spacing: 8) {
             Text("提醒日程")
                 .font(.caption)
-                .foregroundColor(.secondary)
+                .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                 .padding(.horizontal, 20)
                 .padding(.top, 10)
 
             VStack(spacing: 8) {
                 ReminderCard(
                     icon: "pills.fill",
-                    iconColor: .orange,
+                    iconColor: AppTheme.accent(for: colorScheme),
                     title: "下次用藥時間",
                     timeText: nextDoseTimeText
                 )
 
                 ReminderCard(
                     icon: "calendar.badge.clock",
-                    iconColor: .blue,
+                    iconColor: AppTheme.primary(for: colorScheme),
                     title: "下次回診時間",
                     timeText: reminderManager.clinicVisitDisplayText
                 )
@@ -164,7 +165,7 @@ struct ProfileSideMenuView: View {
         VStack(alignment: .leading, spacing: 8) {
             Text("功能與設定")
                 .font(.caption)
-                .foregroundColor(.secondary)
+                .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                 .padding(.horizontal, 20)
                 .padding(.top, isUnlinkedCaregiver ? 10 : 0)
 
@@ -239,6 +240,7 @@ struct ReminderCard: View {
     let iconColor: Color
     let title: String
     let timeText: String
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         HStack(spacing: 12) {
@@ -250,15 +252,15 @@ struct ReminderCard: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
                     .font(.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                 Text(timeText)
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundColor(.primary)
+                    .foregroundColor(AppTheme.textPrimary(for: colorScheme))
             }
             Spacer()
         }
         .padding(10)
-        .background(Color(red: 0.96, green: 0.96, blue: 0.97))
+        .background(AppTheme.background(for: colorScheme))
         .cornerRadius(10)
     }
 }
@@ -267,20 +269,21 @@ struct ReminderCard: View {
 struct MenuRow: View {
     let icon: String
     let title: String
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: icon)
                 .font(.system(size: 16))
-                .foregroundColor(.gray)
+                .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                 .frame(width: 24)
             Text(title)
                 .font(.system(size: 15))
-                .foregroundColor(.primary)
+                .foregroundColor(AppTheme.textPrimary(for: colorScheme))
             Spacer()
             Image(systemName: "chevron.right")
                 .font(.system(size: 12))
-                .foregroundColor(.gray.opacity(0.5))
+                .foregroundColor(AppTheme.textSecondary(for: colorScheme).opacity(0.5))
         }
         .padding(.vertical, 10)
         .padding(.horizontal, 8)

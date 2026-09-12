@@ -469,6 +469,7 @@ struct GuideRepository {
 struct GuideImagePlaceholder: View {
     let assetName: String?
     let prompt: String
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         VStack(spacing: 8) {
@@ -482,27 +483,27 @@ struct GuideImagePlaceholder: View {
                 VStack(spacing: 8) {
                     Image(systemName: "photo.badge.plus")
                         .font(.system(size: 26))
-                        .foregroundColor(Color(hex: "3182ce"))
+                        .foregroundColor(AppTheme.primary(for: colorScheme))
 
                     Text("畫面操作指引圖示")
                         .font(.system(size: 13, weight: .bold))
-                        .foregroundColor(Color(hex: "2d3748"))
+                        .foregroundColor(AppTheme.textPrimary(for: colorScheme))
 
                     Text(prompt)
                         .font(.system(size: 11))
-                        .foregroundColor(Color(hex: "718096"))
+                        .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, 14)
                 }
                 .frame(maxWidth: .infinity)
                 .frame(minHeight: 120)
-                .background(Color(hex: "f7fafc"))
+                .background(AppTheme.background(for: colorScheme))
                 .overlay(
                     RoundedRectangle(cornerRadius: 12)
                         .strokeBorder(
                             style: StrokeStyle(lineWidth: 1.5, dash: [6])
                         )
-                        .foregroundColor(Color(hex: "cbd5e0"))
+                        .foregroundColor(AppTheme.textSecondary(for: colorScheme).opacity(0.3))
                 )
                 .cornerRadius(12)
             }
@@ -514,6 +515,7 @@ struct GuideImagePlaceholder: View {
 struct UserGuideView: View {
     @State private var selectedCategory: GuideCategory = .all
     @State private var searchText: String = ""
+    @Environment(\.colorScheme) private var colorScheme
 
     var filteredTopics: [(category: GuideCategory, topic: GuideTopic)] {
         var results: [(category: GuideCategory, topic: GuideTopic)] = []
@@ -568,7 +570,7 @@ struct UserGuideView: View {
                     .padding(.bottom, 24)
                 }
             }
-            .background(Color(hex: "f8fafc"))
+            .background(AppTheme.background(for: colorScheme))
             .navigationTitle("系統操作說明")
             .navigationBarTitleDisplayMode(.inline)
             .searchable(text: $searchText, prompt: "搜尋使用方法（如：貼片、配對、自評）")
@@ -592,12 +594,12 @@ struct UserGuideView: View {
                         }
                         .padding(.horizontal, 14)
                         .padding(.vertical, 8)
-                        .background(selectedCategory == category ? Color(hex: "3182ce") : Color.white)
-                        .foregroundColor(selectedCategory == category ? .white : Color(hex: "4a5568"))
+                        .background(selectedCategory == category ? AppTheme.primary(for: colorScheme) : AppTheme.cardBackground(for: colorScheme))
+                        .foregroundColor(selectedCategory == category ? .white : AppTheme.textSecondary(for: colorScheme))
                         .cornerRadius(20)
                         .overlay(
                             RoundedRectangle(cornerRadius: 20)
-                                .stroke(selectedCategory == category ? Color.clear : Color(hex: "e2e8f0"), lineWidth: 1)
+                                .stroke(selectedCategory == category ? Color.clear : AppTheme.textSecondary(for: colorScheme).opacity(0.2), lineWidth: 1)
                         )
                     }
                 }
@@ -605,7 +607,7 @@ struct UserGuideView: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
         }
-        .background(Color.white)
+        .background(AppTheme.cardBackground(for: colorScheme))
         .overlay(Divider(), alignment: .bottom)
     }
 
@@ -613,16 +615,16 @@ struct UserGuideView: View {
         VStack(spacing: 12) {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 38))
-                .foregroundColor(Color(hex: "a0aec0"))
+                .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                 .padding(.top, 40)
 
             Text("找不到符合的說明主題")
                 .font(.system(size: 15, weight: .bold))
-                .foregroundColor(Color(hex: "4a5568"))
+                .foregroundColor(AppTheme.textPrimary(for: colorScheme))
 
             Text("請嘗試輸入其他生活關鍵字，或切換上方分類檢視。")
                 .font(.system(size: 13))
-                .foregroundColor(Color(hex: "718096"))
+                .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                 .multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity)
@@ -633,66 +635,68 @@ struct UserGuideView: View {
 struct GuideTopicCard: View {
     let topic: GuideTopic
     let category: GuideCategory
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         HStack(alignment: .top, spacing: 14) {
             ZStack {
                 RoundedRectangle(cornerRadius: 10)
-                    .fill(Color(hex: "ebf8ff"))
+                    .fill(AppTheme.primary(for: colorScheme).opacity(0.12))
                     .frame(width: 44, height: 44)
 
                 Image(systemName: topic.systemIcon)
                     .font(.system(size: 18))
-                    .foregroundColor(Color(hex: "3182ce"))
+                    .foregroundColor(AppTheme.primary(for: colorScheme))
             }
 
             VStack(alignment: .leading, spacing: 5) {
                 HStack {
                     Text(topic.title)
                         .font(.system(size: 15, weight: .bold))
-                        .foregroundColor(Color(hex: "2d3748"))
+                        .foregroundColor(AppTheme.textPrimary(for: colorScheme))
 
                     Spacer()
 
                     Image(systemName: "chevron.right")
                         .font(.system(size: 12, weight: .semibold))
-                        .foregroundColor(Color(hex: "cbd5e0"))
+                        .foregroundColor(AppTheme.textSecondary(for: colorScheme).opacity(0.4))
                 }
 
                 Text(topic.summary)
                     .font(.system(size: 12.5))
-                    .foregroundColor(Color(hex: "718096"))
+                    .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                     .lineLimit(2)
                     .lineSpacing(2)
 
                 HStack(spacing: 8) {
                     Text(category.rawValue)
                         .font(.system(size: 10.5, weight: .semibold))
-                        .foregroundColor(Color(hex: "2b6cb0"))
+                        .foregroundColor(AppTheme.primary(for: colorScheme))
                         .padding(.horizontal, 8)
                         .padding(.vertical, 2)
-                        .background(Color(hex: "eef2f7"))
+                        .background(AppTheme.primary(for: colorScheme).opacity(0.1))
                         .cornerRadius(4)
 
                     Text("共 \(topic.steps.count) 個步驟")
                         .font(.system(size: 10.5))
-                        .foregroundColor(Color(hex: "a0aec0"))
+                        .foregroundColor(AppTheme.textSecondary(for: colorScheme).opacity(0.7))
                 }
                 .padding(.top, 3)
             }
         }
         .padding(14)
-        .background(Color.white)
+        .background(AppTheme.cardBackground(for: colorScheme))
         .cornerRadius(12)
         .overlay(
             RoundedRectangle(cornerRadius: 12)
-                .stroke(Color(hex: "e2e8f0"), lineWidth: 1)
+                .stroke(AppTheme.textSecondary(for: colorScheme).opacity(0.15), lineWidth: 1)
         )
     }
 }
 
 struct GuideDetailView: View {
     let topic: GuideTopic
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         ScrollView {
@@ -700,11 +704,11 @@ struct GuideDetailView: View {
                 VStack(alignment: .leading, spacing: 6) {
                     Text(topic.title)
                         .font(.system(size: 21, weight: .bold))
-                        .foregroundColor(Color(hex: "1a365d"))
+                        .foregroundColor(AppTheme.primary(for: colorScheme))
 
                     Text(topic.summary)
                         .font(.system(size: 13.5))
-                        .foregroundColor(Color(hex: "4a5568"))
+                        .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                         .lineSpacing(3)
                 }
                 .padding(.bottom, 4)
@@ -716,7 +720,7 @@ struct GuideDetailView: View {
                         HStack(spacing: 10) {
                             ZStack {
                                 Circle()
-                                    .fill(Color(hex: "3182ce"))
+                                    .fill(AppTheme.primary(for: colorScheme))
                                     .frame(width: 24, height: 24)
 
                                 Text("\(step.stepNumber)")
@@ -726,12 +730,12 @@ struct GuideDetailView: View {
 
                             Text(step.title)
                                 .font(.system(size: 15.5, weight: .bold))
-                                .foregroundColor(Color(hex: "2d3748"))
+                                .foregroundColor(AppTheme.textPrimary(for: colorScheme))
                         }
 
                         Text(step.description)
                             .font(.system(size: 13.5))
-                            .foregroundColor(Color(hex: "4a5568"))
+                            .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                             .lineSpacing(4)
                             .padding(.leading, 34)
 
@@ -747,7 +751,7 @@ struct GuideDetailView: View {
             }
             .padding(18)
         }
-        .background(Color(hex: "f8fafc"))
+        .background(AppTheme.background(for: colorScheme))
         .navigationTitle("操作指引")
         .navigationBarTitleDisplayMode(.inline)
     }

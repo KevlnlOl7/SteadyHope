@@ -7,6 +7,7 @@ struct TremorEventCardView: View {
     @Binding var event: TremorEvent
     @ObservedObject var dataVM: DataViewModel
     @ObservedObject var loginVM: LoginViewModel
+    @Environment(\.colorScheme) private var colorScheme
 
     let isSimpleMode: Bool
     @Binding var editingEventID: UUID?
@@ -68,7 +69,7 @@ struct TremorEventCardView: View {
                     }
                 }
                 .padding()
-                .background(Color(red: 0.98, green: 0.98, blue: 0.99))
+                .background(AppTheme.background(for: colorScheme))
             }
         }
         .cornerRadius(16)
@@ -76,7 +77,6 @@ struct TremorEventCardView: View {
         .shadow(color: Color.black.opacity(0.05), radius: 5, y: 2)
     }
 
-    // MARK: - 標題摺疊條
     private var headerButton: some View {
         Button(action: {
             UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
@@ -96,7 +96,7 @@ struct TremorEventCardView: View {
                     HStack(spacing: 8) {
                         Text(event.timestamp.toString(format: "HH:mm:ss"))
                             .font(.system(size: isSimpleMode ? 18 : 16, weight: .bold))
-                            .foregroundColor(.primary)
+                            .foregroundColor(AppTheme.textPrimary(for: colorScheme))
 
                         if isTagged {
                             Text(event.userTag)
@@ -113,8 +113,8 @@ struct TremorEventCardView: View {
                                 .fontWeight(.bold)
                                 .padding(.horizontal, 6)
                                 .padding(.vertical, 2)
-                                .background(Color.orange.opacity(0.12))
-                                .foregroundColor(.orange)
+                                .background(AppTheme.accent(for: colorScheme).opacity(0.12))
+                                .foregroundColor(AppTheme.accent(for: colorScheme))
                                 .cornerRadius(4)
                         }
 
@@ -128,8 +128,8 @@ struct TremorEventCardView: View {
                             }
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
-                            .background(Color.blue.opacity(0.12))
-                            .foregroundColor(.blue)
+                            .background(AppTheme.primary(for: colorScheme).opacity(0.12))
+                            .foregroundColor(AppTheme.primary(for: colorScheme))
                             .cornerRadius(4)
                         }
                     }
@@ -142,36 +142,37 @@ struct TremorEventCardView: View {
                         )
                     )
                     .font(isSimpleMode ? .subheadline : .caption)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                 }
 
                 Spacer()
 
                 Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
                     .font(.system(size: 14, weight: .bold))
-                    .foregroundColor(.gray)
+                    .foregroundColor(AppTheme.textSecondary(for: colorScheme))
             }
             .padding(isSimpleMode ? 16 : 14)
-            .background(Color.white)
+            .background(AppTheme.cardBackground(for: colorScheme))
         }
         .buttonStyle(.plain)
     }
 
-    // MARK: - 唯讀狀態檢視（照護者進入必定呈現此處）
     private var readOnlyPanelView: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Text("情境標籤：")
                     .font(.system(size: 14, weight: .bold))
+                    .foregroundColor(AppTheme.textPrimary(for: colorScheme))
                 Text(event.userTag.isEmpty ? "未標記" : event.userTag)
                     .font(.system(size: 14))
-                    .foregroundColor((event.userTag.isEmpty || event.userTag == "未標記") ? .orange : .primary)
+                    .foregroundColor((event.userTag.isEmpty || event.userTag == "未標記") ? AppTheme.accent(for: colorScheme) : AppTheme.textPrimary(for: colorScheme))
             }
 
             if !event.selectedImages.isEmpty {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("紀錄影像 (點擊放大檢視)：")
                         .font(.system(size: 14, weight: .bold))
+                        .foregroundColor(AppTheme.textPrimary(for: colorScheme))
 
                     TabView {
                         ForEach(Array(event.selectedImages.enumerated()), id: \.offset) { _, img in
@@ -210,8 +211,8 @@ struct TremorEventCardView: View {
                     .font(.system(size: 14, weight: .semibold))
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 8)
-                    .background(Color.blue.opacity(0.1))
-                    .foregroundColor(.blue)
+                    .background(AppTheme.primary(for: colorScheme).opacity(0.1))
+                    .foregroundColor(AppTheme.primary(for: colorScheme))
                     .cornerRadius(8)
                 }
                 .buttonStyle(.plain)
@@ -219,7 +220,6 @@ struct TremorEventCardView: View {
         }
     }
 
-    // MARK: - 編輯狀態表單（僅病患端可見）
     private var editablePanelView: some View {
         let isCurrentlySaving = savingEventID == event.id
 
@@ -227,10 +227,12 @@ struct TremorEventCardView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text("填寫發作當下活動：")
                     .font(.system(size: 14, weight: .bold))
+                    .foregroundColor(AppTheme.textPrimary(for: colorScheme))
 
                 TextField("自訂活動 (如: 拿筷子、看電視)", text: $tempUserTag)
                     .focused($isFieldFocused)
                     .textFieldStyle(.roundedBorder)
+                    .foregroundColor(AppTheme.textPrimary(for: colorScheme))
 
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
@@ -242,8 +244,8 @@ struct TremorEventCardView: View {
                                     .font(.caption)
                                     .padding(.horizontal, 12)
                                     .padding(.vertical, 6)
-                                    .background(tempUserTag == tag ? Color.blue : Color.gray.opacity(0.15))
-                                    .foregroundColor(tempUserTag == tag ? .white : .primary)
+                                    .background(tempUserTag == tag ? AppTheme.primary(for: colorScheme) : AppTheme.textSecondary(for: colorScheme).opacity(0.15))
+                                    .foregroundColor(tempUserTag == tag ? .white : AppTheme.textPrimary(for: colorScheme))
                                     .cornerRadius(12)
                             }
                         }
@@ -269,8 +271,8 @@ struct TremorEventCardView: View {
                         .font(.system(size: 14, weight: .bold))
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 10)
-                        .background(Color.gray.opacity(0.15))
-                        .foregroundColor(.secondary)
+                        .background(AppTheme.textSecondary(for: colorScheme).opacity(0.15))
+                        .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                         .cornerRadius(10)
                 }
 
@@ -314,7 +316,7 @@ struct TremorEventCardView: View {
                     .font(.system(size: 14, weight: .bold))
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 10)
-                    .background(isCurrentlySaving ? Color.gray : Color.blue)
+                    .background(isCurrentlySaving ? AppTheme.textSecondary(for: colorScheme).opacity(0.4) : AppTheme.primary(for: colorScheme))
                     .foregroundColor(.white)
                     .cornerRadius(10)
                 }
@@ -323,7 +325,6 @@ struct TremorEventCardView: View {
         }
     }
 
-    // MARK: - 細節圖表切換區塊
     private var eventDetailChartsView: some View {
         VStack(alignment: .leading, spacing: 10) {
             Picker("圖表類型", selection: $selectedChartTab) {
@@ -341,7 +342,6 @@ struct TremorEventCardView: View {
         }
     }
 
-    // 防當機：動態計算出安全的 X 軸刻度陣列
     private func generateSafeXAxisTicks(start: Date, end: Date, strideSeconds: TimeInterval) -> [Date] {
         var ticks: [Date] = []
         var current = start.timeIntervalSince1970
@@ -354,9 +354,7 @@ struct TremorEventCardView: View {
         return ticks
     }
 
-    // MARK: - 前後 3 秒震動走勢圖（含 Y 軸 deg/s 單位標籤與刻度數值）
     private var eventTrendChartView: some View {
-        // 修改為前後 3 秒（共 6 秒觀察視窗）
         let history = dataVM.getHistory(surrounding: event.timestamp, seconds: 3)
         let localMaxY = dataVM.calculateSafeMaxY(from: history)
 
@@ -364,9 +362,10 @@ struct TremorEventCardView: View {
             HStack {
                 HStack(spacing: 6) {
                     Image(systemName: "chart.line.uptrend.xyaxis")
-                        .foregroundColor(.blue)
+                        .foregroundColor(AppTheme.primary(for: colorScheme))
                     Text("\(event.timestamp.toString(format: "HH:mm:ss")) 前後 3 秒震動強度走勢")
                         .font(.system(size: 14, weight: .bold))
+                        .foregroundColor(AppTheme.textPrimary(for: colorScheme))
 
                     Button(action: {
                         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
@@ -376,7 +375,7 @@ struct TremorEventCardView: View {
                     }) {
                         Image(systemName: "questionmark.circle")
                             .font(.system(size: 14))
-                            .foregroundColor(.blue.opacity(0.8))
+                            .foregroundColor(AppTheme.primary(for: colorScheme).opacity(0.8))
                     }
                     .buttonStyle(.plain)
                 }
@@ -386,12 +385,11 @@ struct TremorEventCardView: View {
             if history.isEmpty {
                 Text("無區間數據")
                     .font(.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                     .frame(maxWidth: .infinity, minHeight: 150)
             } else {
                 let startDate = event.timestamp.addingTimeInterval(-3)
                 let endDate = event.timestamp.addingTimeInterval(3)
-                // 在 6 秒區間內，每 1 秒畫一條線，保證安全不當機
                 let safeTicks = generateSafeXAxisTicks(start: startDate, end: endDate, strideSeconds: 1.0)
 
                 Chart {
@@ -411,7 +409,7 @@ struct TremorEventCardView: View {
                                 x: .value("時間", point.timestamp),
                                 y: .value("強度", point.rmsValue)
                             )
-                            .foregroundStyle(Color.blue)
+                            .foregroundStyle(AppTheme.primary(for: colorScheme))
                             .lineStyle(StrokeStyle(lineWidth: 2.2))
                             .interpolationMethod(.linear)
                         }
@@ -433,24 +431,25 @@ struct TremorEventCardView: View {
                         AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5, dash: [4, 4]))
                             .foregroundStyle(Color.gray.opacity(0.3))
                         if let doubleVal = val.as(Double.self) {
-                            AxisValueLabel(String(format: "%.1f", doubleVal))
-                                .font(.system(size: 10, design: .rounded))
+                            AxisValueLabel {
+                                Text(String(format: "%.1f", doubleVal))
+                                    .font(.system(size: 10, design: .rounded))
+                                    .foregroundColor(AppTheme.textSecondary(for: colorScheme))
+                            }
                         }
                     }
                 }
                 .chartYAxisLabel("震動強度 (deg/s)", position: .top)
                 .chartXScale(domain: startDate...endDate)
                 .chartXAxis {
-                    // 使用安全陣列，並加上你喜歡的垂直虛線 (AxisGridLine)
                     AxisMarks(position: .bottom, values: safeTicks) { val in
-                        // 保留你喜歡的垂直虛線樣式
                         AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5, dash: [4, 4]))
                             .foregroundStyle(Color.gray.opacity(0.3))
                         
                         if let date = val.as(Date.self) {
                             AxisValueLabel(date.toString(format: "ss") + "s")
                                 .font(.system(size: 10, weight: .medium, design: .rounded))
-                                .foregroundStyle(Color.secondary)
+                                .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
                         }
                     }
                 }
@@ -459,15 +458,15 @@ struct TremorEventCardView: View {
                 HStack(spacing: 14) {
                     HStack(spacing: 4) {
                         Circle().fill(Color.red).frame(width: 8, height: 8)
-                        Text("發作核心點").font(.caption2).foregroundColor(.secondary)
+                        Text("發作核心點").font(.caption2).foregroundColor(AppTheme.textSecondary(for: colorScheme))
                     }
                     HStack(spacing: 4) {
                         Circle().fill(Color.orange).frame(width: 7, height: 7)
-                        Text("顯著震顫 (≥ 0.20)").font(.caption2).foregroundColor(.secondary)
+                        Text("顯著震顫 (≥ 0.20)").font(.caption2).foregroundColor(AppTheme.textSecondary(for: colorScheme))
                     }
                     HStack(spacing: 4) {
                         RoundedRectangle(cornerRadius: 2).fill(Color.orange.opacity(0.3)).frame(width: 9, height: 9)
-                        Text("馬達介入區間").font(.caption2).foregroundColor(.secondary)
+                        Text("馬達介入區間").font(.caption2).foregroundColor(AppTheme.textSecondary(for: colorScheme))
                     }
                     Spacer()
                 }
@@ -475,12 +474,11 @@ struct TremorEventCardView: View {
             }
         }
         .padding()
-        .background(Color.white)
+        .background(AppTheme.cardBackground(for: colorScheme))
         .cornerRadius(16)
         .shadow(color: Color.black.opacity(0.03), radius: 4, y: 2)
     }
 
-    // MARK: - PSD 頻譜分佈圖
     private func psdDetailChartView(psdData: [DataViewModel.PSDPoint]) -> some View {
         let isSignalReliable = event.rmsValue >= 0.20 && event.rmsValue.isFinite
         let validPowers = psdData.map(\.power).filter { $0.isFinite && !$0.isNaN }
@@ -495,6 +493,7 @@ struct TremorEventCardView: View {
                         .foregroundColor(.purple)
                     Text("\(event.timestamp.toString(format: "HH:mm:ss")) 的\n震動頻率分佈")
                         .font(.system(size: 16, weight: .bold))
+                        .foregroundColor(AppTheme.textPrimary(for: colorScheme))
 
                     Button(action: {
                         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
@@ -514,10 +513,10 @@ struct TremorEventCardView: View {
                 Text(String(format: "強度: %.2f deg/s", event.rmsValue.isFinite ? event.rmsValue : 0.0))
                     .font(.caption)
                     .fontWeight(.semibold)
-                    .foregroundColor(isSignalReliable ? .purple : .secondary)
+                    .foregroundColor(isSignalReliable ? .purple : AppTheme.textSecondary(for: colorScheme))
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
-                    .background(isSignalReliable ? Color.purple.opacity(0.1) : Color.gray.opacity(0.1))
+                    .background(isSignalReliable ? Color.purple.opacity(0.1) : AppTheme.textSecondary(for: colorScheme).opacity(0.1))
                     .cornerRadius(6)
             }
 
@@ -538,7 +537,7 @@ struct TremorEventCardView: View {
                             width: .fixed(5)
                         )
                         .foregroundStyle(
-                            (psdPoint.frequencyHz >= 3.0 && psdPoint.frequencyHz <= 7.0) ? Color.purple : Color.gray.opacity(0.25)
+                            (psdPoint.frequencyHz >= 3.0 && psdPoint.frequencyHz <= 7.0) ? Color.purple : AppTheme.textSecondary(for: colorScheme).opacity(0.25)
                         )
                     }
                 }
@@ -562,7 +561,11 @@ struct TremorEventCardView: View {
             .chartXAxis {
                 AxisMarks(values: [0, 3, 5, 7, 10, 15]) { val in
                     AxisGridLine()
-                    AxisValueLabel("\(val.as(Int.self) ?? 0) Hz")
+                    AxisValueLabel {
+                        Text("\(val.as(Int.self) ?? 0) Hz")
+                            .font(.system(size: 10, design: .rounded))
+                            .foregroundColor(AppTheme.textSecondary(for: colorScheme))
+                    }
                 }
             }
             .chartYAxisLabel("PSD 能量 ((deg/s)²/Hz)", position: .top)
@@ -571,19 +574,19 @@ struct TremorEventCardView: View {
             HStack(spacing: 15) {
                 HStack(spacing: 4) {
                     RoundedRectangle(cornerRadius: 2).fill(Color.purple.opacity(0.3)).frame(width: 12, height: 12)
-                    Text("3-7 Hz (典型震顫區)").font(.caption).foregroundColor(.secondary)
+                    Text("3-7 Hz (典型震顫區)").font(.caption).foregroundColor(AppTheme.textSecondary(for: colorScheme))
                 }
 
                 if isSignalReliable {
                     HStack(spacing: 4) {
                         Circle().fill(Color.red).frame(width: 6, height: 6)
-                        Text("主要震動頻率").font(.caption).foregroundColor(.secondary)
+                        Text("主要震動頻率").font(.caption).foregroundColor(AppTheme.textSecondary(for: colorScheme))
                     }
                 }
             }
         }
         .padding()
-        .background(Color.white)
+        .background(AppTheme.cardBackground(for: colorScheme))
         .cornerRadius(16)
         .shadow(color: Color.black.opacity(0.05), radius: 5, y: 2)
     }

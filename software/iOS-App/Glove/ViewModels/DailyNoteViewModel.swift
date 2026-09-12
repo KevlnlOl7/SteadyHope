@@ -319,13 +319,71 @@ final class DailyNoteViewModel: ObservableObject {
     /// 根據心情中文名稱取得對應的主題色
     /// - Parameter name: 心情名稱（開心、平靜、疲憊、不舒服）
     /// - Returns: 對應的心情標籤色彩
-    func getMoodColor(for name: String) -> Color {
-        switch name {
-        case "開心": return .orange
-        case "平靜": return .green
-        case "疲憊": return .blue
-        case "不舒服": return .purple
-        default: return .gray
+    func getMoodColor(for name: String, colorScheme: ColorScheme = .light) -> Color {
+        if colorScheme == .dark {
+            switch name {
+            case "開心": return Color(hex: "E2B08B")
+            case "平靜": return Color(hex: "98BFA3")
+            case "疲憊": return Color(hex: "93B4CB")
+            case "不舒服": return Color(hex: "BEA8C2")
+            default: return Color(hex: "94A3B8")
+            }
+        } else {
+            switch name {
+            case "開心": return .orange
+            case "平靜": return .green
+            case "疲憊": return .blue
+            case "不舒服": return .purple
+            default: return .gray
+            }
+        }
+    }
+
+    /// 取得便利貼在不同色彩模式下的底色
+    func getNoteCardColor(for hex: String, colorScheme: ColorScheme) -> Color {
+        let cleanedHex = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted).uppercased()
+
+        if colorScheme == .dark {
+            switch cleanedHex {
+            case "FFF0CC", "FFEEC2", "FFF4D6", "725B3E":
+                return Color(hex: "725B3E")
+            case "E6F5FF", "E5F5FF", "DDF0FF", "3D566E":
+                return Color(hex: "3D566E")
+            case "EBFBEB", "E8FAE8", "E2FBE5", "3D5A46":
+                return Color(hex: "3D5A46")
+            case "FAEBFA", "F9EBF9", "FBE7F2", "69485B":
+                return Color(hex: "69485B")
+            default:
+                return Color(hex: "424A54")
+            }
+        } else {
+            // 淺色模式維持原本預設底色
+            switch cleanedHex {
+            case "725B3E": return Color(red: 1.0, green: 0.94, blue: 0.8)
+            case "3D566E": return Color(red: 0.9, green: 0.96, blue: 1.0)
+            case "3D5A46": return Color(red: 0.92, green: 0.98, blue: 0.93)
+            case "69485B": return Color(red: 0.98, green: 0.92, blue: 0.95)
+            default: return Color(hex: hex)
+            }
+        }
+    }
+
+    /// 提供表單選色器對應之色彩陣列
+    func notePalette(for colorScheme: ColorScheme) -> [Color] {
+        if colorScheme == .dark {
+            return [
+                Color(hex: "725B3E"),
+                Color(hex: "3D566E"),
+                Color(hex: "3D5A46"),
+                Color(hex: "69485B")
+            ]
+        } else {
+            return [
+                Color(red: 1.0, green: 0.94, blue: 0.8),
+                Color(red: 0.9, green: 0.96, blue: 1.0),
+                Color(red: 0.92, green: 0.98, blue: 0.93),
+                Color(red: 0.98, green: 0.92, blue: 0.95)
+            ]
         }
     }
 }

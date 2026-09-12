@@ -11,6 +11,8 @@ struct MedicationView: View {
     @StateObject private var vitalsVM = HealthVitalsViewModel()
     @StateObject var bleVM: BluetoothViewModel
 
+    @Environment(\.colorScheme) private var colorScheme
+
     /// 輸入框焦點狀態
     @FocusState private var isInputFocused: Bool
 
@@ -76,7 +78,7 @@ struct MedicationView: View {
 
     var body: some View {
         ZStack {
-            Color(red: 0.96, green: 0.97, blue: 0.98).ignoresSafeArea()
+            AppTheme.background(for: colorScheme).ignoresSafeArea()
             VStack(spacing: 0) {
                 medicationHeaderBar
                 mainContentView
@@ -125,6 +127,7 @@ struct MedicationView: View {
             HStack(spacing: 8) {
                 Text(!isPatient ? "\(loginVM.partnerName) 的健康與用藥" : "健康與用藥管理")
                     .font(.system(size: 26, weight: .bold))
+                    .foregroundColor(AppTheme.textPrimary(for: colorScheme))
             }
             .padding(.horizontal, 12)
             .padding(.top, 7)
@@ -142,10 +145,10 @@ struct MedicationView: View {
                             Text("今天")
                         }
                         .font(.caption2.bold())
-                        .foregroundColor(.blue)
+                        .foregroundColor(AppTheme.primary(for: colorScheme))
                         .padding(.horizontal, 8)
                         .padding(.vertical, 5)
-                        .background(Color.blue.opacity(0.1))
+                        .background(AppTheme.primary(for: colorScheme).opacity(0.1))
                         .cornerRadius(6)
                     }
                     .buttonStyle(.plain)
@@ -188,7 +191,7 @@ struct MedicationView: View {
             .pickerStyle(.segmented)
             .padding(.horizontal)
             .padding(.vertical, 8)
-            .background(Color(red: 0.96, green: 0.97, blue: 0.98))
+            .background(AppTheme.background(for: colorScheme))
             selectedTabView
         }
     }
@@ -218,7 +221,9 @@ struct MedicationView: View {
             VStack(spacing: 16) {
                 VStack(alignment: .leading, spacing: 14) {
                     HStack {
-                        Text("每日固定清單打卡").font(.headline)
+                        Text("每日固定清單打卡")
+                            .font(.headline)
+                            .foregroundColor(AppTheme.textPrimary(for: colorScheme))
                         Spacer()
                         if isPatient || canManageMedPlan {
                             Button {
@@ -231,8 +236,8 @@ struct MedicationView: View {
                                 .font(.caption.bold())
                                 .padding(.horizontal, 10)
                                 .padding(.vertical, 6)
-                                .background(Color.blue.opacity(0.1))
-                                .foregroundColor(.blue)
+                                .background(AppTheme.primary(for: colorScheme).opacity(0.1))
+                                .foregroundColor(AppTheme.primary(for: colorScheme))
                                 .cornerRadius(8)
                             }
                         }
@@ -245,7 +250,7 @@ struct MedicationView: View {
             .padding()
             .padding(.bottom, 90)
         }
-        .background(Color(red: 0.96, green: 0.97, blue: 0.98))
+        .background(AppTheme.background(for: colorScheme))
     }
 
     /// 單次自訂用藥紀錄、區間查詢與實際服藥列表檢視
@@ -263,11 +268,11 @@ struct MedicationView: View {
                 .padding()
                 .padding(.bottom, 90)
             }
-            .background(Color(red: 0.96, green: 0.97, blue: 0.98))
+            .background(AppTheme.background(for: colorScheme))
         }
     }
 
-    /// 用藥紀錄區間查詢卡片，支援展開、收起與日期範圍檢索
+    /// 用藥紀錄區間查詢卡片
     private var medicationRangeQueryCard: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 8) {
@@ -278,10 +283,10 @@ struct MedicationView: View {
                 } label: {
                     HStack(spacing: 8) {
                         Image(systemName: "calendar.badge.clock")
-                            .foregroundColor(.blue)
+                            .foregroundColor(AppTheme.primary(for: colorScheme))
                         Text("區間查詢")
                             .font(.headline)
-                            .foregroundColor(.primary)
+                            .foregroundColor(AppTheme.textPrimary(for: colorScheme))
                     }
                 }
                 .buttonStyle(.plain)
@@ -295,10 +300,10 @@ struct MedicationView: View {
                             Text("回到今天")
                         }
                         .font(.caption2.bold())
-                        .foregroundColor(.blue)
+                        .foregroundColor(AppTheme.primary(for: colorScheme))
                         .padding(.horizontal, 8)
                         .padding(.vertical, 5)
-                        .background(Color.blue.opacity(0.1))
+                        .background(AppTheme.primary(for: colorScheme).opacity(0.1))
                         .cornerRadius(6)
                     }
                     .buttonStyle(.plain)
@@ -309,7 +314,7 @@ struct MedicationView: View {
                     }
                 } label: {
                     Image(systemName: isRangeQueryExpanded ? "chevron.up" : "chevron.down")
-                        .foregroundColor(.gray)
+                        .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                         .font(.subheadline.bold())
                         .frame(width: 32, height: 32)
                         .contentShape(Rectangle())
@@ -319,8 +324,10 @@ struct MedicationView: View {
             if isRangeQueryExpanded {
                 VStack(spacing: 12) {
                     DatePicker("開始日期", selection: $rangeStartDate, in: ...rangeEndDate, displayedComponents: [.date])
+                        .foregroundColor(AppTheme.textPrimary(for: colorScheme))
                     Divider()
                     DatePicker("結束日期", selection: $rangeEndDate, in: rangeStartDate...Date(), displayedComponents: [.date])
+                        .foregroundColor(AppTheme.textPrimary(for: colorScheme))
                     Button {
                         Task {
                             await medVM.loadRecords(from: rangeStartDate, to: rangeEndDate)
@@ -341,7 +348,7 @@ struct MedicationView: View {
                         .foregroundColor(.white)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 12)
-                        .background(Color.blue)
+                        .background(AppTheme.primary(for: colorScheme))
                         .cornerRadius(10)
                     }
                     .disabled(medVM.isLoadingRange)
@@ -350,9 +357,9 @@ struct MedicationView: View {
             }
         }
         .padding()
-        .background(Color.white)
+        .background(AppTheme.cardBackground(for: colorScheme))
         .cornerRadius(12)
-        .shadow(color: Color.black.opacity(0.04), radius: 4, y: 2)
+        .softCardShadow()
     }
 
     /// 新增或編輯單次用藥紀錄表單卡片
@@ -367,10 +374,10 @@ struct MedicationView: View {
                 } label: {
                     HStack(spacing: 8) {
                         Image(systemName: isEditing ? "pencil.circle.fill" : "plus.circle.fill")
-                            .foregroundColor(isEditing ? .orange : .blue)
+                            .foregroundColor(isEditing ? AppTheme.accent(for: colorScheme) : AppTheme.primary(for: colorScheme))
                         Text(isEditing ? "編輯單次用藥紀錄" : "新增單次用藥紀錄")
                             .font(.headline)
-                            .foregroundColor(isEditing ? .orange : .primary)
+                            .foregroundColor(isEditing ? AppTheme.accent(for: colorScheme) : AppTheme.textPrimary(for: colorScheme))
                     }
                 }
                 .buttonStyle(.plain)
@@ -398,7 +405,7 @@ struct MedicationView: View {
                     }
                 } label: {
                     Image(systemName: isAddRecordExpanded ? "chevron.up" : "chevron.down")
-                        .foregroundColor(.gray)
+                        .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                         .font(.subheadline.bold())
                         .frame(width: 32, height: 32)
                         .contentShape(Rectangle())
@@ -409,9 +416,10 @@ struct MedicationView: View {
                 VStack(spacing: 0) {
                     HStack(spacing: 12) {
                         Image(systemName: "pill.fill")
-                            .foregroundColor(.blue)
+                            .foregroundColor(AppTheme.primary(for: colorScheme))
                             .frame(width: 20)
                         TextField("藥品名稱", text: $medVM.inputName)
+                            .foregroundColor(AppTheme.textPrimary(for: colorScheme))
                             .focused($isInputFocused)
                         Menu {
                             let nonPatchList = MedicationPresets.allList.filter { $0.medType != .patch }
@@ -445,10 +453,10 @@ struct MedicationView: View {
                                 Text("快選").font(.subheadline.bold())
                                 Image(systemName: "chevron.down").font(.caption.bold())
                             }
-                            .foregroundColor(.blue)
+                            .foregroundColor(AppTheme.primary(for: colorScheme))
                             .padding(.horizontal, 10)
                             .padding(.vertical, 6)
-                            .background(Color.blue.opacity(0.1))
+                            .background(AppTheme.primary(for: colorScheme).opacity(0.1))
                             .cornerRadius(8)
                         }
                     }
@@ -456,13 +464,15 @@ struct MedicationView: View {
                     Divider().padding(.leading, 44)
                     HStack(spacing: 12) {
                         Image(systemName: "scalemass.fill")
-                            .foregroundColor(.blue)
+                            .foregroundColor(AppTheme.primary(for: colorScheme))
                             .frame(width: 20)
                         TextField("用量", text: $medVM.inputDose)
+                            .foregroundColor(AppTheme.textPrimary(for: colorScheme))
                             .keyboardType(.decimalPad)
                             .focused($isInputFocused)
                             .frame(width: 60)
                         TextField("單位", text: $medVM.inputUnit)
+                            .foregroundColor(AppTheme.textPrimary(for: colorScheme))
                             .focused($isInputFocused)
                             .frame(width: 60)
                         Spacer()
@@ -471,16 +481,16 @@ struct MedicationView: View {
                     Divider().padding(.leading, 44)
                     HStack(spacing: 12) {
                         Image(systemName: "clock.fill")
-                            .foregroundColor(.blue)
+                            .foregroundColor(AppTheme.primary(for: colorScheme))
                             .frame(width: 20)
                         DatePicker("時間", selection: $medVM.inputDate)
                             .font(.subheadline)
-                            .foregroundColor(.secondary)
+                            .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                     }
                     .padding(.horizontal)
                     .padding(.vertical, 8)
                 }
-                .background(Color(red: 0.98, green: 0.98, blue: 0.99))
+                .background(AppTheme.background(for: colorScheme))
                 .cornerRadius(10)
                 Button {
                     isInputFocused = false
@@ -507,19 +517,19 @@ struct MedicationView: View {
                         Text(isEditing ? "儲存修改" : "新增單次紀錄")
                     }
                     .font(.subheadline.bold())
-                    .foregroundColor(.white)
+                    .foregroundColor(AppTheme.background(for: colorScheme))
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 12)
-                    .background(medVM.isAddRecordValid ? (isEditing ? Color.orange : Color.blue) : Color.gray.opacity(0.4))
+                    .background(medVM.isAddRecordValid ? (isEditing ? AppTheme.accent(for: colorScheme) : AppTheme.primary(for: colorScheme)) : AppTheme.textSecondary(for: colorScheme).opacity(0.4))
                     .cornerRadius(10)
                 }
                 .disabled(!medVM.isAddRecordValid)
             }
         }
         .padding()
-        .background(Color.white)
+        .background(AppTheme.cardBackground(for: colorScheme))
         .cornerRadius(14)
-        .shadow(color: Color.black.opacity(0.04), radius: 6, y: 2)
+        .softCardShadow()
     }
 
     /// 依據給藥型態產生對應顏色與文字的標籤視圖
@@ -534,7 +544,7 @@ struct MedicationView: View {
         }()
         let color: Color = {
             switch type {
-            case .oral: return .blue
+            case .oral: return AppTheme.primary(for: colorScheme)
             case .injection: return .teal
             case .patch: return .orange
             }
@@ -553,19 +563,20 @@ struct MedicationView: View {
         let doseItems = planVM.oralDoseItems(for: filterDate)
         return VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Image(systemName: "pills.fill").foregroundColor(.blue)
+                Image(systemName: "pills.fill").foregroundColor(AppTheme.primary(for: colorScheme))
                 Text("固定用藥清單").font(.subheadline.bold())
+                    .foregroundColor(AppTheme.textPrimary(for: colorScheme))
                 Spacer()
                 let completedCount = doseItems.filter { medVM.isDoseTaken(for: $0, on: filterDate) }.count
                 Text("\(completedCount)/\(doseItems.count) 完成")
                     .font(.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(AppTheme.textSecondary(for: colorScheme))
             }
             Divider()
             if doseItems.isEmpty {
                 Text("目前尚無設定固定常規處方")
                     .font(.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                     .padding(.vertical, 4)
             } else {
                 VStack(alignment: .leading, spacing: 0) {
@@ -577,7 +588,7 @@ struct MedicationView: View {
                             } label: {
                                 Image(systemName: isTaken ? "checkmark.circle.fill" : "circle")
                                     .font(.title3)
-                                    .foregroundColor(isTaken ? .green : .gray.opacity(0.5))
+                                    .foregroundColor(isTaken ? .green : AppTheme.textSecondary(for: colorScheme).opacity(0.5))
                             }
                             .buttonStyle(.plain)
                             VStack(alignment: .leading, spacing: 4) {
@@ -585,11 +596,11 @@ struct MedicationView: View {
                                     Text(item.plan.name)
                                         .font(.body.bold())
                                         .strikethrough(isTaken, color: .gray)
-                                        .foregroundColor(isTaken ? .gray : .primary)
+                                        .foregroundColor(isTaken ? AppTheme.textSecondary(for: colorScheme) : AppTheme.textPrimary(for: colorScheme))
                                     if !item.plan.dose.isEmpty {
                                         Text("(\(item.plan.dose))")
                                             .font(.subheadline)
-                                            .foregroundColor(.secondary)
+                                            .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                                     }
                                     if item.plan.creatorRole == 1 {
                                         Text("照護者代填")
@@ -606,7 +617,7 @@ struct MedicationView: View {
                             Spacer()
                             Text(item.timeString)
                                 .font(.subheadline)
-                                .foregroundColor(.gray)
+                                .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                         }
                         .padding(.vertical, 6)
                         if index < doseItems.count - 1 {
@@ -617,9 +628,9 @@ struct MedicationView: View {
             }
         }
         .padding()
-        .background(Color.white)
+        .background(AppTheme.cardBackground(for: colorScheme))
         .cornerRadius(12)
-        .shadow(color: Color.black.opacity(0.03), radius: 3)
+        .softCardShadow()
     }
 
     /// 每日穿皮貼片用藥狀態、黏貼部位與膚況檢核卡片
@@ -638,19 +649,19 @@ struct MedicationView: View {
             } label: {
                 HStack {
                     Image(systemName: "square.grid.2x2.fill")
-                        .foregroundColor(.orange)
+                        .foregroundColor(AppTheme.accent(for: colorScheme))
                     Text("每日貼片用藥")
                         .font(.subheadline.bold())
-                        .foregroundColor(.primary)
+                        .foregroundColor(AppTheme.textPrimary(for: colorScheme))
                     Text(hasPlan ? "(已設定提醒)" : "(未設定提醒)")
                         .font(.caption2)
-                        .foregroundColor(hasPlan ? .blue : .gray)
+                        .foregroundColor(hasPlan ? AppTheme.primary(for: colorScheme) : AppTheme.textSecondary(for: colorScheme))
                     Spacer()
                     Text(isCompleted ? "已完成" : "未完成")
                         .font(.caption.bold())
-                        .foregroundColor(isCompleted ? .green : .secondary)
+                        .foregroundColor(isCompleted ? .green : AppTheme.textSecondary(for: colorScheme))
                     Image(systemName: isPatchScheduleExpanded ? "chevron.up" : "chevron.down")
-                        .foregroundColor(.gray)
+                        .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                         .font(.subheadline.bold())
                         .padding(.leading, 4)
                 }
@@ -665,11 +676,11 @@ struct MedicationView: View {
                             HStack(spacing: 6) {
                                 Text(record.name.isEmpty ? "貼片" : record.name)
                                     .font(.system(size: 17, weight: .bold))
-                                    .foregroundColor(.primary)
+                                    .foregroundColor(AppTheme.textPrimary(for: colorScheme))
                                 if !record.dose.isEmpty {
                                     Text("(\(record.dose))")
                                         .font(.subheadline)
-                                        .foregroundColor(.secondary)
+                                        .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                                 }
                                 if record.creatorRole == 1 {
                                     Text("照護者代填")
@@ -685,7 +696,7 @@ struct MedicationView: View {
                             VStack(alignment: .center, spacing: 2) {
                                 Text(record.date.toString(format: "HH:mm"))
                                     .font(.caption2.monospacedDigit())
-                                    .foregroundColor(.gray)
+                                    .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                                 Text("已打卡")
                                     .font(.caption2.bold())
                                     .padding(.horizontal, 8)
@@ -704,8 +715,8 @@ struct MedicationView: View {
                                 .font(.caption.bold())
                                 .padding(.horizontal, 8)
                                 .padding(.vertical, 5)
-                                .background(Color.blue.opacity(0.1))
-                                .foregroundColor(.blue)
+                                .background(AppTheme.primary(for: colorScheme).opacity(0.1))
+                                .foregroundColor(AppTheme.primary(for: colorScheme))
                                 .cornerRadius(6)
                             }
                             if let skin = record.skinCondition, !skin.isEmpty {
@@ -790,8 +801,8 @@ struct MedicationView: View {
                             }
                             .padding(.horizontal, 14)
                             .padding(.vertical, 12)
-                            .background((isPatient || canAddMedRecord) ? Color.blue.opacity(0.08) : Color.gray.opacity(0.1))
-                            .foregroundColor((isPatient || canAddMedRecord) ? .blue : .gray)
+                            .background((isPatient || canAddMedRecord) ? AppTheme.primary(for: colorScheme).opacity(0.08) : AppTheme.textSecondary(for: colorScheme).opacity(0.1))
+                            .foregroundColor((isPatient || canAddMedRecord) ? AppTheme.primary(for: colorScheme) : AppTheme.textSecondary(for: colorScheme))
                             .cornerRadius(10)
                         }
                         .buttonStyle(.plain)
@@ -817,8 +828,8 @@ struct MedicationView: View {
                         }
                         .padding(.horizontal, 14)
                         .padding(.vertical, 12)
-                        .background((isPatient || canAddMedRecord) ? Color.blue.opacity(0.08) : Color.gray.opacity(0.1))
-                        .foregroundColor((isPatient || canAddMedRecord) ? .blue : .gray)
+                        .background((isPatient || canAddMedRecord) ? AppTheme.primary(for: colorScheme).opacity(0.08) : AppTheme.textSecondary(for: colorScheme).opacity(0.1))
+                        .foregroundColor((isPatient || canAddMedRecord) ? AppTheme.primary(for: colorScheme) : AppTheme.textSecondary(for: colorScheme))
                         .cornerRadius(10)
                     }
                     .buttonStyle(.plain)
@@ -828,9 +839,9 @@ struct MedicationView: View {
             }
         }
         .padding()
-        .background(Color.white)
+        .background(AppTheme.cardBackground(for: colorScheme))
         .cornerRadius(12)
-        .shadow(color: Color.black.opacity(0.03), radius: 3)
+        .softCardShadow()
     }
 
     /// 今日實際已服藥或已打卡之項目紀錄清單卡片
@@ -850,19 +861,20 @@ struct MedicationView: View {
         }()
         return VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Image(systemName: "list.clipboard.fill").foregroundColor(.blue)
+                Image(systemName: "list.clipboard.fill").foregroundColor(AppTheme.primary(for: colorScheme))
                 VStack(alignment: .leading, spacing: 2) {
                     Text(titleText).font(.subheadline.bold()).lineLimit(2)
-                    Text("\(filteredRecords.count) 筆紀錄").font(.caption2).foregroundColor(.secondary)
+                        .foregroundColor(AppTheme.textPrimary(for: colorScheme))
+                    Text("\(filteredRecords.count) 筆紀錄").font(.caption2).foregroundColor(AppTheme.textSecondary(for: colorScheme))
                 }
                 Spacer()
                 if isRangeQueryMode {
                     Text("區間")
                         .font(.caption2.bold())
-                        .foregroundColor(.blue)
+                        .foregroundColor(AppTheme.primary(for: colorScheme))
                         .padding(.horizontal, 7)
                         .padding(.vertical, 4)
-                        .background(Color.blue.opacity(0.1))
+                        .background(AppTheme.primary(for: colorScheme).opacity(0.1))
                         .cornerRadius(6)
                 }
             }
@@ -874,10 +886,10 @@ struct MedicationView: View {
                 VStack(spacing: 8) {
                     Image(systemName: isRangeQueryMode ? "calendar.badge.exclamationmark" : "pills.circle")
                         .font(.system(size: 30))
-                        .foregroundColor(.secondary)
+                        .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                     Text(isRangeQueryMode ? "這段期間沒有服藥紀錄" : "目前尚無服藥打卡或單次紀錄")
                         .font(.caption)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                 }
                 .padding(.vertical, 20)
                 .frame(maxWidth: .infinity)
@@ -915,11 +927,11 @@ struct MedicationView: View {
                                     HStack(spacing: 6) {
                                         Text(record.name)
                                             .font(.system(size: 16, weight: .bold))
-                                            .foregroundColor(.primary)
+                                            .foregroundColor(AppTheme.textPrimary(for: colorScheme))
                                         if !record.dose.isEmpty {
                                             Text("(\(record.dose))")
                                                 .font(.subheadline)
-                                                .foregroundColor(.secondary)
+                                                .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                                         }
                                         if record.creatorRole == 1 {
                                             Text("照護者代填")
@@ -935,14 +947,14 @@ struct MedicationView: View {
                                     if isRangeQueryMode {
                                         Text(record.date.toString(format: "yyyy/MM/dd HH:mm"))
                                             .font(.caption2.monospacedDigit())
-                                            .foregroundColor(.secondary)
+                                            .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                                     }
                                 }
                                 Spacer()
                                 if !isRangeQueryMode {
                                     Text(record.date.toString(format: "HH:mm"))
                                         .font(.subheadline)
-                                        .foregroundColor(.gray)
+                                        .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                                 }
                             }
                             .padding(.horizontal, 16)
@@ -958,23 +970,9 @@ struct MedicationView: View {
         }
         .padding(.bottom, 6)
         .frame(maxWidth: .infinity)
-        .background(Color.white)
+        .background(AppTheme.cardBackground(for: colorScheme))
         .cornerRadius(12)
-        .shadow(color: Color.black.opacity(0.03), radius: 3)
-    }
-
-    /// 啟動單筆既有用藥紀錄編輯並自動滑動至畫面頂端表單
-    private func startEditingRecord(_ record: MedicationRecord, scrollProxy: ScrollViewProxy) {
-        medVM.startEditingRecord(record)
-        withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
-            isAddRecordExpanded = true
-        }
-        activeSwipeRowID = nil
-        DispatchQueue.main.async {
-            withAnimation(.easeInOut(duration: 0.35)) {
-                scrollProxy.scrollTo("topAddOrEditRecordCard", anchor: .top)
-            }
-        }
+        .softCardShadow()
     }
 
     /// 症狀與日常動作障礙影音紀錄牆分頁檢視
@@ -985,18 +983,19 @@ struct MedicationView: View {
                     addSymptomCard
                 }
                 Text("症狀與動作障礙影音紀錄牆").font(.headline)
+                    .foregroundColor(AppTheme.textPrimary(for: colorScheme))
                 if symptomVM.isFetchingData {
                     HStack {
                         Spacer()
                         VStack(spacing: 8) {
                             ProgressView()
-                            Text("載入資料中...").font(.caption).foregroundColor(.secondary)
+                            Text("載入資料中...").font(.caption).foregroundColor(AppTheme.textSecondary(for: colorScheme))
                         }
                         .padding(.vertical, 30)
                         Spacer()
                     }
                 } else if symptomVM.symptomList.isEmpty {
-                    Text("目前尚無上傳之影音紀錄").foregroundColor(.secondary).padding()
+                    Text("目前尚無上傳之影音紀錄").foregroundColor(AppTheme.textSecondary(for: colorScheme)).padding()
                 } else {
                     LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
                         ForEach(symptomVM.symptomList) { item in
@@ -1008,7 +1007,7 @@ struct MedicationView: View {
             .padding()
             .padding(.bottom, 90)
         }
-        .background(Color(red: 0.96, green: 0.97, blue: 0.98))
+        .background(AppTheme.background(for: colorScheme))
         .sheet(item: $selectedSymptomItem) { item in
             MediaPostDetail(
                 title: "症狀紀錄詳情",
@@ -1042,7 +1041,7 @@ struct MedicationView: View {
                                 .cornerRadius(8)
                         } else {
                             Rectangle()
-                                .fill(Color.gray.opacity(0.15))
+                                .fill(AppTheme.textSecondary(for: colorScheme).opacity(0.15))
                                 .frame(height: 120)
                                 .cornerRadius(8)
                         }
@@ -1063,9 +1062,9 @@ struct MedicationView: View {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(item.symptomNote.isEmpty ? "（無文字描述）" : item.symptomNote)
                                 .font(.caption.bold())
-                                .foregroundColor(.primary)
+                                .foregroundColor(AppTheme.textPrimary(for: colorScheme))
                                 .lineLimit(2)
-                            Text(item.date.toString(format: "M/d HH:mm")).font(.caption2).foregroundColor(.secondary)
+                            Text(item.date.toString(format: "M/d HH:mm")).font(.caption2).foregroundColor(AppTheme.textSecondary(for: colorScheme))
                         }
                         Spacer(minLength: 0)
                         cardMenuOrProgress(for: item, isProcessing: isProcessing)
@@ -1089,7 +1088,7 @@ struct MedicationView: View {
                     }
                     Text(item.symptomNote.isEmpty ? "（無文字描述）" : item.symptomNote)
                         .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(.primary)
+                        .foregroundColor(AppTheme.textPrimary(for: colorScheme))
                         .lineLimit(4)
                         .multilineTextAlignment(.leading)
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -1098,15 +1097,15 @@ struct MedicationView: View {
                         Image(systemName: "clock").font(.system(size: 10))
                         Text(item.date.toString(format: "M/d HH:mm")).font(.caption2)
                     }
-                    .foregroundColor(.secondary)
+                    .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                 }
                 .padding(12)
                 .frame(minHeight: 140)
             }
         }
-        .background(Color.white)
+        .background(AppTheme.cardBackground(for: colorScheme))
         .cornerRadius(12)
-        .shadow(color: Color.black.opacity(0.04), radius: 3, y: 1)
+        .softCardShadow()
         .opacity(isProcessing ? 0.6 : 1.0)
         .contentShape(Rectangle())
         .onTapGesture {
@@ -1136,7 +1135,7 @@ struct MedicationView: View {
             } label: {
                 Image(systemName: "ellipsis")
                     .font(.caption.bold())
-                    .foregroundColor(.gray)
+                    .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                     .padding(4)
                     .contentShape(Rectangle())
             }
@@ -1152,10 +1151,10 @@ struct MedicationView: View {
                 }
             } label: {
                 HStack {
-                    Text("紀錄突發症狀 / 動作障礙").font(.headline).foregroundColor(.primary)
+                    Text("紀錄突發症狀 / 動作障礙").font(.headline).foregroundColor(AppTheme.textPrimary(for: colorScheme))
                     Spacer()
                     Image(systemName: isAddSymptomExpanded ? "chevron.up" : "chevron.down")
-                        .foregroundColor(.gray)
+                        .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                         .font(.subheadline.bold())
                 }
             }
@@ -1165,6 +1164,7 @@ struct MedicationView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     TextField("症狀描述（例如：手部顫抖、步態凍結）", text: $symptomVM.symptomNote)
                         .textFieldStyle(.roundedBorder)
+                        .foregroundColor(AppTheme.textPrimary(for: colorScheme))
                 }
                 MediaManagementView(
                     tempSelectedImages: $tempSelectedImages,
@@ -1185,8 +1185,8 @@ struct MedicationView: View {
                             .font(.system(size: 14, weight: .bold))
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 10)
-                            .background(Color.gray.opacity(symptomVM.isAddSymptomValid(tempImagesCount: tempSelectedImages.count) ? 0.15 : 0.05))
-                            .foregroundColor(symptomVM.isAddSymptomValid(tempImagesCount: tempSelectedImages.count) ? .secondary : .gray.opacity(0.4))
+                            .background(AppTheme.textSecondary(for: colorScheme).opacity(symptomVM.isAddSymptomValid(tempImagesCount: tempSelectedImages.count) ? 0.15 : 0.05))
+                            .foregroundColor(symptomVM.isAddSymptomValid(tempImagesCount: tempSelectedImages.count) ? AppTheme.textSecondary(for: colorScheme) : AppTheme.textSecondary(for: colorScheme).opacity(0.4))
                             .cornerRadius(10)
                     }
                     .disabled(!symptomVM.isAddSymptomValid(tempImagesCount: tempSelectedImages.count))
@@ -1210,7 +1210,7 @@ struct MedicationView: View {
                         .foregroundColor(.white)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 10)
-                        .background(symptomVM.isAddSymptomValid(tempImagesCount: tempSelectedImages.count) ? Color.red.opacity(0.85) : Color.gray.opacity(0.4))
+                        .background(symptomVM.isAddSymptomValid(tempImagesCount: tempSelectedImages.count) ? Color.red.opacity(0.85) : AppTheme.textSecondary(for: colorScheme).opacity(0.4))
                         .cornerRadius(10)
                     }
                     .disabled(!symptomVM.isAddSymptomValid(tempImagesCount: tempSelectedImages.count))
@@ -1218,9 +1218,9 @@ struct MedicationView: View {
             }
         }
         .padding()
-        .background(Color.white)
+        .background(AppTheme.cardBackground(for: colorScheme))
         .cornerRadius(12)
-        .shadow(color: Color.black.opacity(0.04), radius: 4)
+        .softCardShadow()
     }
 
     /// 編輯特定症狀紀錄描述文字與多媒體之彈出工作頁面
@@ -1230,10 +1230,13 @@ struct MedicationView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     Text("修改症狀文字描述").font(.headline)
+                        .foregroundColor(AppTheme.textPrimary(for: colorScheme))
                     TextField("症狀描述（例如：手部顫抖、步態凍結）", text: $symptomVM.editSymptomNote)
                         .textFieldStyle(.roundedBorder)
+                        .foregroundColor(AppTheme.textPrimary(for: colorScheme))
                     Divider()
                     Text("調整影音照片").font(.headline)
+                        .foregroundColor(AppTheme.textPrimary(for: colorScheme))
                     MediaManagementView(
                         tempSelectedImages: $symptomVM.editTempImages,
                         selectedMediaItems: $editSelectedMediaItems,
@@ -1243,18 +1246,20 @@ struct MedicationView: View {
                 }
                 .padding()
             }
-            .background(Color(red: 0.96, green: 0.97, blue: 0.98))
+            .background(AppTheme.background(for: colorScheme))
             .navigationTitle("編輯症狀紀錄")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("取消") { symptomVM.editingSymptomItem = nil }
+                        .foregroundColor(AppTheme.primary(for: colorScheme))
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("儲存") {
                         symptomVM.saveEditedSymptom(originalItem: item)
                     }
                     .bold()
+                    .foregroundColor(AppTheme.primary(for: colorScheme))
                 }
             }
         }
@@ -1269,9 +1274,10 @@ struct MedicationView: View {
             .padding()
             .padding(.bottom, 90)
         }
-        .background(Color(red: 0.96, green: 0.97, blue: 0.98))
+        .background(AppTheme.background(for: colorScheme))
     }
 }
+
 
 /// 提供向左滑動展開自訂操作按鈕（編輯、刪除）之通用互動列表列元件
 struct SwipeableRecordRow<Content: View>: View {
@@ -1299,6 +1305,8 @@ struct SwipeableRecordRow<Content: View>: View {
     /// 後方操作按鈕區域寬度常數
     private let actionButtonsWidth: CGFloat = 136
 
+    @Environment(\.colorScheme) private var colorScheme
+
     /// 判斷當前列表列是否正處於完全展開狀態
     private var isOpen: Bool {
         isSwipeEnabled && openRowID == id
@@ -1325,11 +1333,11 @@ struct SwipeableRecordRow<Content: View>: View {
                                 .font(.system(size: 16, weight: .bold))
                                 .foregroundColor(.white)
                                 .frame(width: 52, height: 34)
-                                .background(Color.blue)
+                                .background(AppTheme.primary(for: colorScheme))
                                 .clipShape(Capsule())
                             Text("編輯")
                                 .font(.system(size: 12, weight: .medium))
-                                .foregroundColor(.blue)
+                                .foregroundColor(AppTheme.primary(for: colorScheme))
                         }
                         .frame(width: 56, height: 54)
                         .contentShape(Rectangle())
@@ -1365,7 +1373,7 @@ struct SwipeableRecordRow<Content: View>: View {
             }
 
             content()
-                .background(Color.white)
+                .background(AppTheme.cardBackground(for: colorScheme))
                 .offset(x: isSwipeEnabled ? currentOffset : 0)
                 .zIndex(1)
                 .contentShape(Rectangle())

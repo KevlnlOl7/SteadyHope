@@ -3,6 +3,7 @@ import SwiftUI
 struct SettingView: View {
     @ObservedObject var loginVM: LoginViewModel
     @ObservedObject private var bleVM = BluetoothViewModel.shared
+    @Environment(\.colorScheme) private var colorScheme
 
     @FocusState private var isInputFocused: Bool
 
@@ -33,26 +34,26 @@ struct SettingView: View {
     /// 依據藍牙運作狀態計算主要情境識別色彩
     private var statusColor: Color {
         if !bleVM.isBluetoothPoweredOn {
-            return .orange
+            return AppTheme.accent(for: colorScheme)
         } else if bleVM.isConnected {
             return .green
         } else if bleVM.isScanning {
-            return .blue
+            return AppTheme.primary(for: colorScheme)
         } else if isFailed {
             return .red
         } else {
-            return .secondary
+            return AppTheme.textSecondary(for: colorScheme)
         }
     }
 
     /// 根據藍牙狀態動態決定操作按鈕背景色
     private var actionButtonColor: Color {
         if !bleVM.isBluetoothPoweredOn {
-            return Color.gray.opacity(0.6)
+            return AppTheme.textSecondary(for: colorScheme).opacity(0.6)
         } else if bleVM.isScanning {
-            return Color.blue.opacity(0.7)
+            return AppTheme.primary(for: colorScheme).opacity(0.7)
         } else {
-            return Color.blue
+            return AppTheme.primary(for: colorScheme)
         }
     }
 
@@ -73,7 +74,7 @@ struct SettingView: View {
 
     var body: some View {
         ZStack {
-            Color(red: 0.97, green: 0.97, blue: 0.97)
+            AppTheme.background(for: colorScheme)
                 .ignoresSafeArea()
 
             ScrollViewReader { proxy in
@@ -81,6 +82,7 @@ struct SettingView: View {
                     VStack(spacing: 20) {
                         Text("手套設定與狀態")
                             .font(.system(size: 28, weight: .bold))
+                            .foregroundColor(AppTheme.textPrimary(for: colorScheme))
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(.horizontal, 25)
                             .padding(.top, 18)
@@ -121,9 +123,10 @@ struct SettingView: View {
                 }) {
                     Text("+ / -")
                         .font(.system(size: 17, weight: .bold))
+                        .foregroundColor(AppTheme.primary(for: colorScheme))
                         .padding(.horizontal, 10)
                         .padding(.vertical, 4)
-                        .background(Color.blue.opacity(0.12))
+                        .background(AppTheme.primary(for: colorScheme).opacity(0.12))
                         .cornerRadius(6)
                 }
 
@@ -133,6 +136,7 @@ struct SettingView: View {
                     hideKeyboard()
                 }
                 .font(.system(size: 16, weight: .semibold))
+                .foregroundColor(AppTheme.primary(for: colorScheme))
             }
         }
     }
@@ -153,9 +157,10 @@ struct SettingView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("手套已連線")
                         .font(.system(size: 15, weight: .semibold))
+                        .foregroundColor(AppTheme.textPrimary(for: colorScheme))
                     Text("運作狀態正常")
                         .font(.system(size: 12))
-                        .foregroundColor(.secondary)
+                        .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                 }
 
                 Spacer()
@@ -175,7 +180,7 @@ struct SettingView: View {
                 }
             }
             .padding(16)
-            .background(Color.white)
+            .background(AppTheme.cardBackground(for: colorScheme))
             .cornerRadius(16)
             .shadow(color: Color.black.opacity(0.04), radius: 8, y: 3)
             .padding(.horizontal, 25)
@@ -184,7 +189,7 @@ struct SettingView: View {
                 HStack {
                     Text("目前裝置電量")
                         .font(.system(size: 16, weight: .medium))
-                        .foregroundColor(.secondary)
+                        .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                     Spacer()
                     BatteryIcon(level: bleVM.batteryLevel)
                 }
@@ -192,14 +197,16 @@ struct SettingView: View {
                 HStack(alignment: .bottom, spacing: 2) {
                     Text("\(bleVM.batteryLevel)")
                         .font(.system(size: 60, weight: .medium))
+                        .foregroundColor(AppTheme.textPrimary(for: colorScheme))
                     Text("%")
                         .font(.system(size: 24))
+                        .foregroundColor(AppTheme.textPrimary(for: colorScheme))
                         .padding(.bottom, 10)
                 }
             }
             .padding(25)
             .frame(maxWidth: .infinity)
-            .background(Color.white)
+            .background(AppTheme.cardBackground(for: colorScheme))
             .cornerRadius(20)
             .shadow(color: Color.black.opacity(0.05), radius: 10, y: 4)
             .padding(.horizontal, 25)
@@ -207,10 +214,10 @@ struct SettingView: View {
             HStack(spacing: 12) {
                 ZStack {
                     Circle()
-                        .fill(bleVM.isMotorEnabled ? Color.green.opacity(0.15) : Color.gray.opacity(0.12))
+                        .fill(bleVM.isMotorEnabled ? Color.green.opacity(0.15) : AppTheme.textSecondary(for: colorScheme).opacity(0.12))
                         .frame(width: 36, height: 36)
                     Image(systemName: bleVM.isMotorEnabled ? "bolt.fill" : "bolt.slash.fill")
-                        .foregroundColor(bleVM.isMotorEnabled ? .green : .secondary)
+                        .foregroundColor(bleVM.isMotorEnabled ? .green : AppTheme.textSecondary(for: colorScheme))
                         .font(.system(size: 16))
                 }
 
@@ -227,11 +234,11 @@ struct SettingView: View {
                 Spacer()
             }
             .padding(14)
-            .background(Color.white)
+            .background(AppTheme.cardBackground(for: colorScheme))
             .cornerRadius(16)
             .overlay(
                 RoundedRectangle(cornerRadius: 16)
-                    .stroke(bleVM.isMotorEnabled ? Color.green.opacity(0.3) : Color.gray.opacity(0.15), lineWidth: 1)
+                    .stroke(bleVM.isMotorEnabled ? Color.green.opacity(0.3) : AppTheme.textSecondary(for: colorScheme).opacity(0.15), lineWidth: 1)
             )
             .shadow(color: Color.black.opacity(0.03), radius: 6, y: 2)
             .padding(.horizontal, 25)
@@ -253,15 +260,16 @@ struct SettingView: View {
         VStack(alignment: .leading, spacing: 16) {
             HStack {
                 Image(systemName: "ruler.fill")
-                    .foregroundColor(.blue)
+                    .foregroundColor(AppTheme.primary(for: colorScheme))
                 Text("收線長度微調")
                     .font(.system(size: 16, weight: .medium))
+                    .foregroundColor(AppTheme.textPrimary(for: colorScheme))
                 Spacer()
 
                 let offsetMmInt = Int(round(bleVM.lengthOffsetMm * 10))
                 let formattedValue = String(format: "%@%d mm", offsetMmInt > 0 ? "+" : "", offsetMmInt)
                 Text(formattedValue)
-                    .foregroundColor(.blue)
+                    .foregroundColor(AppTheme.primary(for: colorScheme))
                     .font(.system(size: 18, weight: .bold, design: .rounded))
             }
 
@@ -282,29 +290,29 @@ struct SettingView: View {
                     }
                 }
             )
-            .accentColor(.blue)
-            .disabled(bleVM.isMotorEnabled || isInputFocused)
-            .opacity((bleVM.isMotorEnabled || isInputFocused) ? 0.45 : 1.0)
+            .accentColor(AppTheme.primary(for: colorScheme))
+            .disabled(isInputFocused)
+            .opacity(isInputFocused ? 0.55 : 1.0)
 
             HStack {
-                Text("拉緊 (-50 mm / -5 cm)")
+                Text("拉緊 (-50 mm)")
                     .font(.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                 Spacer()
                 Text("基準 (0 mm)")
                     .font(.caption)
                     .fontWeight(.semibold)
-                    .foregroundColor(.primary)
+                    .foregroundColor(AppTheme.textPrimary(for: colorScheme))
                 Spacer()
-                Text("放鬆 (+50 mm / +5 cm)")
+                Text("放鬆 (+50 mm)")
                     .font(.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(AppTheme.textSecondary(for: colorScheme))
             }
 
             HStack(spacing: 8) {
                 Text("手動輸入目標值")
                     .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                     .fixedSize()
 
                 Spacer()
@@ -315,26 +323,25 @@ struct SettingView: View {
                     }) {
                         Text(inputOffsetString.hasPrefix("-") ? "-" : "+")
                             .font(.system(size: 16, weight: .bold))
-                            .foregroundColor(.blue)
+                            .foregroundColor(AppTheme.primary(for: colorScheme))
                             .frame(width: 32, height: 32)
-                            .background(Color.blue.opacity(0.12))
+                            .background(AppTheme.primary(for: colorScheme).opacity(0.12))
                             .cornerRadius(8)
                     }
-                    .disabled(bleVM.isMotorEnabled)
 
                     TextField("0 ~ 50", text: $inputOffsetString)
                         .keyboardType(.numberPad)
                         .focused($isInputFocused)
-                        .disabled(bleVM.isMotorEnabled)
                         .multilineTextAlignment(.trailing)
+                        .foregroundColor(AppTheme.textPrimary(for: colorScheme))
                         .frame(width: 70)
                         .padding(.vertical, 6)
                         .padding(.horizontal, 8)
-                        .background(Color(UIColor.secondarySystemBackground))
+                        .background(AppTheme.background(for: colorScheme))
                         .cornerRadius(8)
                         .overlay(
                             RoundedRectangle(cornerRadius: 8)
-                                .stroke(isInputFocused ? Color.blue : Color.clear, lineWidth: 1.5)
+                                .stroke(isInputFocused ? AppTheme.primary(for: colorScheme) : Color.clear, lineWidth: 1.5)
                         )
                         .onChange(of: isInputFocused) { _, newValue in
                             if !newValue {
@@ -344,7 +351,7 @@ struct SettingView: View {
 
                     Text("mm")
                         .font(.system(size: 13, weight: .medium))
-                        .foregroundColor(.secondary)
+                        .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                         .fixedSize()
 
                     if isInputFocused {
@@ -356,14 +363,13 @@ struct SettingView: View {
                                 .foregroundColor(.white)
                                 .padding(.horizontal, 10)
                                 .padding(.vertical, 6)
-                                .background(Color.blue)
+                                .background(AppTheme.primary(for: colorScheme))
                                 .cornerRadius(8)
                         }
                         .fixedSize()
                         .transition(.opacity.combined(with: .scale))
                     }
                 }
-                .opacity(bleVM.isMotorEnabled ? 0.45 : 1.0)
             }
             .padding(.top, 4)
 
@@ -374,7 +380,7 @@ struct SettingView: View {
                     Text("馬達運轉抑制中，已暫停長度微調（待命中即可調整）")
                         .font(.caption2)
                 }
-                .foregroundColor(.orange)
+                .foregroundColor(AppTheme.accent(for: colorScheme))
                 .padding(.top, 2)
                 .transition(.opacity)
             }
@@ -386,40 +392,40 @@ struct SettingView: View {
                 HStack(spacing: 6) {
                     Image(systemName: "info.circle.fill")
                         .font(.system(size: 13))
-                        .foregroundColor(.blue)
+                        .foregroundColor(AppTheme.primary(for: colorScheme))
                     Text("收線長度微調使用說明")
                         .font(.system(size: 13, weight: .bold))
-                        .foregroundColor(.blue)
+                        .foregroundColor(AppTheme.primary(for: colorScheme))
                 }
 
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("• Slider 每次代表一筆『相對調整』命令；向左為拉緊、向右為放鬆，以 5 mm 為步進，放開後送出一次並自動回到 0。")
+                    Text("• 0mm 為系統預設基準長度，向左滑動為拉緊以增加支撐，向右滑動為放線放鬆（以5mm為微調單位）。")
                         .font(.system(size: 11))
-                        .foregroundColor(.secondary)
+                        .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                         .lineSpacing(2)
 
-                    Text("• Slider 與手動輸入的單次命令範圍皆為 -50 至 +50 mm（-5 至 +5 cm）；STM32 仍會依實際線長安全範圍拒絕超行程命令。")
+                    Text("• 可透過滑桿拖曳或手動輸入數值、兩者操作互斥以防衝與，輸入範圍為 -50至+50mm。")
                         .font(.system(size: 11))
-                        .foregroundColor(.secondary)
+                        .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                         .lineSpacing(2)
 
-                    Text("• 請於馬達待命（未啟動）時進行調整；當馬達正啟動抑制震顫時，控制項目將暫時鎖定以確保安全。")
+                    Text("• 請於馬達待命（未啟動）時進行調整，當馬達正啟動制廠頭時，控制項目將暫時鎖定以確保安全。")
                         .font(.system(size: 11))
-                        .foregroundColor(.secondary)
+                        .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                         .lineSpacing(2)
 
-                    Text("• 手套內建防拉扯與最大行程保護機制，請安心依照實際配戴感受進行微調。")
+                    Text("• 手套內建防拉扯與最大行程保護機制，請安心依照電際配戴感受進行微調。")
                         .font(.system(size: 11))
-                        .foregroundColor(.secondary)
+                        .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                         .lineSpacing(2)
                 }
             }
             .padding(14)
-            .background(Color(red: 0.95, green: 0.97, blue: 1.0))
+            .background(AppTheme.primary(for: colorScheme).opacity(0.08))
             .cornerRadius(12)
         }
         .padding(20)
-        .background(Color.white)
+        .background(AppTheme.cardBackground(for: colorScheme))
         .cornerRadius(20)
         .shadow(color: Color.black.opacity(0.05), radius: 10, y: 4)
         .padding(.horizontal, 25)
@@ -455,6 +461,7 @@ struct SettingView: View {
                                 ? "藍牙未授權" : "手機藍牙未開啟") : "智慧手套尚未連線"
                     )
                     .font(.system(size: 18, weight: .bold))
+                    .foregroundColor(AppTheme.textPrimary(for: colorScheme))
 
                     Text(bleVM.statusMessage)
                         .font(.system(size: 13))
@@ -498,25 +505,25 @@ struct SettingView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack(spacing: 6) {
                         Image(systemName: "checkmark.circle")
-                            .foregroundColor(.secondary)
+                            .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                             .font(.system(size: 12))
                         Text("確認手套電源已開啟")
                             .font(.system(size: 12))
-                            .foregroundColor(.secondary)
+                            .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                     }
                     HStack(spacing: 6) {
                         Image(systemName: "checkmark.circle")
-                            .foregroundColor(.secondary)
+                            .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                             .font(.system(size: 12))
                         Text("請將手機靠近手套設備")
                             .font(.system(size: 12))
-                            .foregroundColor(.secondary)
+                            .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .padding(25)
-            .background(Color.white)
+            .background(AppTheme.cardBackground(for: colorScheme))
             .cornerRadius(20)
             .shadow(color: Color.black.opacity(0.05), radius: 10, y: 4)
             .padding(.horizontal, 25)
@@ -531,7 +538,7 @@ struct SettingView: View {
             if !bleVM.isBluetoothPoweredOn {
                 HStack(spacing: 12) {
                     Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundColor(.orange)
+                        .foregroundColor(AppTheme.accent(for: colorScheme))
                         .font(.system(size: 18))
 
                     VStack(alignment: .leading, spacing: 2) {
@@ -540,7 +547,7 @@ struct SettingView: View {
                                 ? "尚未允許此 App 使用藍牙" : "偵測到手機藍牙已關閉"
                         )
                         .font(.system(size: 13, weight: .bold))
-                        .foregroundColor(.orange)
+                        .foregroundColor(AppTheme.accent(for: colorScheme))
 
                         Text(
                             bleVM.isBluetoothUnauthorized
@@ -548,14 +555,14 @@ struct SettingView: View {
                                 : "請點擊上方按鈕前往「設定」開啟藍牙; 若設定已開啟或顯示「想要使用藍牙進行新連線」, 請由右上角下滑開啟「控制中心」點亮藍牙。( 因 iOS 機制中控制中心未點亮僅是暫停新連線, 設定仍維持開啟 )"
                         )
                         .font(.system(size: 11.5))
-                        .foregroundColor(.secondary)
+                        .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                         .lineSpacing(3)
                         .fixedSize(horizontal: false, vertical: true)
                     }
                     Spacer()
                 }
                 .padding(14)
-                .background(Color.orange.opacity(0.1))
+                .background(AppTheme.accent(for: colorScheme).opacity(0.1))
                 .cornerRadius(12)
                 .padding(.horizontal, 25)
                 .transition(.opacity)

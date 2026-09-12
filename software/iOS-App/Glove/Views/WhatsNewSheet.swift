@@ -1,19 +1,20 @@
 import SwiftUI
 
-struct WhatsNewSheetView: View {
+struct WhatsNewSheet: View {
     let version: String
     let onDismiss: () -> Void
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         VStack(spacing: 20) {
             VStack(spacing: 6) {
                 Text("歡迎使用 SteadyHope")
                     .font(.system(size: 24, weight: .bold))
-                    .foregroundColor(.primary)
+                    .foregroundColor(AppTheme.textPrimary(for: colorScheme))
 
                 Text("版本 \(version) 全新功能上線")
                     .font(.system(size: 15, weight: .semibold))
-                    .foregroundColor(.blue)
+                    .foregroundColor(AppTheme.primary(for: colorScheme))
             }
             .padding(.top, 28)
 
@@ -21,14 +22,14 @@ struct WhatsNewSheetView: View {
                 VStack(alignment: .leading, spacing: 20) {
                     WhatsNewFeatureRow(
                         icon: "hand.wave.fill",
-                        iconColor: Color(hex: "3182ce"),
+                        iconColor: AppTheme.primary(for: colorScheme),
                         title: "智慧手套與震顫監控",
                         description: "藍牙自動連線與手套電量顯示，即時掌握手部震顫變化。"
                     )
 
                     WhatsNewFeatureRow(
                         icon: "pills.fill",
-                        iconColor: Color(hex: "dd6b20"),
+                        iconColor: AppTheme.accent(for: colorScheme),
                         title: "用藥排程與貼片管理",
                         description: "輕鬆記錄每日用藥時間、貼片用藥部位與皮膚狀況等資訊。"
                     )
@@ -56,7 +57,7 @@ struct WhatsNewSheetView: View {
 
                     WhatsNewFeatureRow(
                         icon: "checklist",
-                        iconColor: Color(hex: "2b6cb0"),
+                        iconColor: AppTheme.primary(for: colorScheme),
                         title: "健康評估與量表",
                         description: "提供快速快篩與每週健康量表，幫助長期追蹤身體狀態。"
                     )
@@ -77,7 +78,7 @@ struct WhatsNewSheetView: View {
 
                     WhatsNewFeatureRow(
                         icon: "book.fill",
-                        iconColor: Color(hex: "d69e2e"),
+                        iconColor: AppTheme.accent(for: colorScheme),
                         title: "內建系統操作說明",
                         description: "隨時查閱圖文並茂的操作指引，輕鬆掌握各項功能。"
                     )
@@ -93,12 +94,13 @@ struct WhatsNewSheetView: View {
                     .foregroundColor(.white)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 14)
-                    .background(Color.blue)
+                    .background(AppTheme.primary(for: colorScheme))
                     .cornerRadius(12)
             }
             .padding(.horizontal, 24)
             .padding(.bottom, 20)
         }
+        .background(AppTheme.cardBackground(for: colorScheme))
     }
 }
 
@@ -108,6 +110,7 @@ struct WhatsNewFeatureRow: View {
     let iconColor: Color
     let title: String
     let description: String
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         HStack(alignment: .top, spacing: 14) {
@@ -121,11 +124,11 @@ struct WhatsNewFeatureRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
                     .font(.system(size: 15, weight: .bold))
-                    .foregroundColor(.primary)
+                    .foregroundColor(AppTheme.textPrimary(for: colorScheme))
 
                 Text(description)
                     .font(.system(size: 12.5))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                     .lineSpacing(2)
             }
         }

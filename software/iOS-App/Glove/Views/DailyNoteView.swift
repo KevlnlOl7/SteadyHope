@@ -5,6 +5,7 @@ struct DailyNoteView: View {
     @StateObject private var viewModel: DailyNoteViewModel
     @ObservedObject var loginVM: LoginViewModel
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.colorScheme) private var colorScheme
 
     /// 日期選取與彈窗狀態
     @State private var selectedDate: Date = Date()
@@ -51,13 +52,14 @@ struct DailyNoteView: View {
 
     var body: some View {
         ZStack {
-            Color(red: 0.97, green: 0.97, blue: 0.98)
+            AppTheme.background(for: colorScheme)
                 .ignoresSafeArea()
 
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("心情留言板")
                         .font(.system(size: 28, weight: .bold))
+                        .foregroundColor(AppTheme.textPrimary(for: colorScheme))
                         .padding(.horizontal, 15)
                         .padding(.top, 5)
 
@@ -109,9 +111,11 @@ struct DailyNoteView: View {
                 HStack {
                     Text("選擇日期")
                         .font(.system(size: 17, weight: .bold))
+                        .foregroundColor(AppTheme.textPrimary(for: colorScheme))
                     Spacer()
                     Button("完成") { showFullDatePicker = false }
                         .font(.system(size: 16, weight: .semibold))
+                        .foregroundColor(AppTheme.primary(for: colorScheme))
                 }
                 .padding()
 
@@ -121,10 +125,12 @@ struct DailyNoteView: View {
                     displayedComponents: [.date]
                 )
                 .datePickerStyle(.graphical)
+                .tint(AppTheme.primary(for: colorScheme))
                 .padding(.horizontal)
 
                 Spacer()
             }
+            .background(AppTheme.background(for: colorScheme))
             .presentationDetents([.height(460)])
         }
         .task {
@@ -142,7 +148,7 @@ struct DailyNoteView: View {
             HStack(alignment: .firstTextBaseline) {
                 Text(selectedDate.toString(format: "yyyy 年 M 月"))
                     .font(.system(size: 15, weight: .semibold))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                     .padding(.leading, 2)
 
                 Spacer()
@@ -152,9 +158,9 @@ struct DailyNoteView: View {
                 } label: {
                     Image(systemName: "arrow.clockwise")
                         .font(.system(size: 15, weight: .semibold))
-                        .foregroundColor(.gray)
+                        .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                         .padding(8)
-                        .background(Color.white)
+                        .background(AppTheme.cardBackground(for: colorScheme))
                         .clipShape(Circle())
                 }
             }
@@ -175,7 +181,7 @@ struct DailyNoteView: View {
                         VStack(spacing: 4) {
                             Text(weekdayString(for: date))
                                 .font(.system(size: 11))
-                                .foregroundColor(isSelected ? .white : .gray)
+                                .foregroundColor(isSelected ? .white : AppTheme.textSecondary(for: colorScheme))
 
                             Text(date.toString(format: "d"))
                                 .font(
@@ -188,19 +194,16 @@ struct DailyNoteView: View {
                                     isSelected
                                         ? .white
                                         : (isToday
-                                            ? Color(
-                                                red: 0.1,
-                                                green: 0.45,
-                                                blue: 0.85
-                                            ) : .primary)
+                                            ? AppTheme.primary(for: colorScheme)
+                                            : AppTheme.textPrimary(for: colorScheme))
                                 )
                         }
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 10)
                         .background(
                             isSelected
-                                ? Color(red: 0.25, green: 0.52, blue: 0.95)
-                                : Color.white
+                                ? AppTheme.primary(for: colorScheme)
+                                : AppTheme.cardBackground(for: colorScheme)
                         )
                         .cornerRadius(12)
                     }
@@ -212,14 +215,9 @@ struct DailyNoteView: View {
                 } label: {
                     Image(systemName: "calendar")
                         .font(.system(size: 15, weight: .medium))
-                        .foregroundColor(
-                            Color(red: 0.25, green: 0.52, blue: 0.95)
-                        )
+                        .foregroundColor(AppTheme.primary(for: colorScheme))
                         .frame(width: 38, height: 50)
-                        .background(
-                            Color(red: 0.25, green: 0.52, blue: 0.95)
-                                .opacity(0.1)
-                        )
+                        .background(AppTheme.primary(for: colorScheme).opacity(0.1))
                         .cornerRadius(12)
                 }
             }
@@ -235,7 +233,7 @@ struct DailyNoteView: View {
                     ? "今天心情：" : "\(selectedDate.toString(format: "MM/dd")) 心情："
             )
             .font(.system(size: 18, weight: .bold))
-            .foregroundColor(Color(red: 0.15, green: 0.15, blue: 0.15))
+            .foregroundColor(AppTheme.textPrimary(for: colorScheme))
 
             if filteredMoods.isEmpty {
                 HStack {
@@ -245,7 +243,7 @@ struct DailyNoteView: View {
                             ? "今天尚未記錄心情" : "該日期尚未記錄心情"
                     )
                     .font(.system(size: 14))
-                    .foregroundColor(.gray)
+                    .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                     Spacer()
                 }
                 .padding(.vertical, 16)
@@ -268,10 +266,11 @@ struct DailyNoteView: View {
 
     /// 單一心情圖示項目
     private func moodItem(daily: DailyNote, moodName: String) -> some View {
-        VStack(spacing: 6) {
+        let moodColor = viewModel.getMoodColor(for: moodName, colorScheme: colorScheme)
+        return VStack(spacing: 6) {
             Text(daily.date.toString(format: "HH:mm"))
                 .font(.system(size: 10, weight: .semibold))
-                .foregroundColor(.secondary)
+                .foregroundColor(AppTheme.textSecondary(for: colorScheme))
 
             Image(systemName: viewModel.getMoodIcon(for: moodName))
                 .font(.system(size: 26))
@@ -281,9 +280,17 @@ struct DailyNoteView: View {
         }
         .frame(width: 72)
         .padding(.vertical, 12)
-        .background(viewModel.getMoodColor(for: moodName).opacity(0.15))
-        .foregroundColor(viewModel.getMoodColor(for: moodName))
+        .background(
+            colorScheme == .dark
+                ? AppTheme.cardBackground(for: colorScheme)
+                : moodColor.opacity(0.15)
+        )
+        .foregroundColor(moodColor)
         .cornerRadius(12)
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke( colorScheme == .dark ? moodColor.opacity(0.35) : Color.clear, lineWidth: 1)
+        )
     }
 
     /// 留言看板區塊
@@ -292,7 +299,7 @@ struct DailyNoteView: View {
             HStack {
                 Text("留言看板")
                     .font(.system(size: 16, weight: .bold))
-                    .foregroundColor(Color(red: 0.2, green: 0.2, blue: 0.2))
+                    .foregroundColor(AppTheme.textPrimary(for: colorScheme))
 
                 Spacer()
 
@@ -307,7 +314,7 @@ struct DailyNoteView: View {
                     .foregroundColor(.white)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 6)
-                    .background(Color(red: 0.25, green: 0.52, blue: 0.95))
+                    .background(AppTheme.primary(for: colorScheme))
                     .cornerRadius(16)
                 }
             }
@@ -332,11 +339,11 @@ struct DailyNoteView: View {
                 VStack(spacing: 6) {
                     Image(systemName: "doc.text.magnifyingglass")
                         .font(.system(size: 32))
-                        .foregroundColor(.gray.opacity(0.5))
+                        .foregroundColor(AppTheme.textSecondary(for: colorScheme).opacity(0.5))
 
                     Text("該日期無留言紀錄")
                         .font(.system(size: 13))
-                        .foregroundColor(.gray)
+                        .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 30)
@@ -388,6 +395,7 @@ struct DailyNoteView: View {
 struct DailyNoteCardView: View {
     let item: DailyNote
     @ObservedObject var viewModel: DailyNoteViewModel
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -398,7 +406,11 @@ struct DailyNoteCardView: View {
                         Text(moodName)
                     }
                     .font(.system(size: 11, weight: .semibold))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(
+                        colorScheme == .dark
+                            ? viewModel.getMoodColor(for: moodName, colorScheme: colorScheme)
+                            : AppTheme.textSecondary(for: colorScheme)
+                    )
                 }
 
                 Spacer()
@@ -411,15 +423,15 @@ struct DailyNoteCardView: View {
                     .font(.system(size: 9, weight: .bold))
                     .padding(.horizontal, 5)
                     .padding(.vertical, 2)
-                    .background(Color.gray.opacity(0.15))
-                    .foregroundColor(.gray)
+                    .background(colorScheme == .dark ? Color.white.opacity(0.18) : Color.black.opacity(0.08))
+                    .foregroundColor(colorScheme == .dark ? .white : Color(hex: "4A5568"))
                     .cornerRadius(4)
                 }
             }
 
             Text(item.content)
                 .font(.system(size: 14))
-                .foregroundColor(Color(red: 0.15, green: 0.15, blue: 0.15))
+                .foregroundColor(colorScheme == .dark ? .white : Color(hex: "2C323A"))
                 .lineSpacing(4)
                 .multilineTextAlignment(.leading)
 
@@ -432,12 +444,13 @@ struct DailyNoteCardView: View {
                     .padding(.vertical, 2)
                     .background(
                         item.sender == viewModel.currentUserRole
-                            ? Color.orange.opacity(0.15)
-                            : Color.blue.opacity(0.15)
+                            ? AppTheme.accent(for: colorScheme).opacity(colorScheme == .dark ? 0.35 : 0.2)
+                            : AppTheme.primary(for: colorScheme).opacity(colorScheme == .dark ? 0.3 : 0.18)
                     )
                     .foregroundColor(
                         item.sender == viewModel.currentUserRole
-                            ? .orange : .blue
+                            ? AppTheme.accent(for: colorScheme)
+                            : AppTheme.primary(for: colorScheme)
                     )
                     .cornerRadius(4)
 
@@ -445,14 +458,18 @@ struct DailyNoteCardView: View {
 
                 Text(item.date.toString(format: "MM/dd HH:mm"))
                     .font(.system(size: 10))
-                    .foregroundColor(.gray)
+                    .foregroundColor(colorScheme == .dark ? Color.white.opacity(0.8) : Color(hex: "64748B"))
             }
         }
         .padding(14)
         .frame(minHeight: 130, maxHeight: 180, alignment: .topLeading)
-        .background(Color(hex: item.colorHex))
+        .background(viewModel.getNoteCardColor(for: item.colorHex, colorScheme: colorScheme))
         .cornerRadius(16)
-        .shadow(color: Color.black.opacity(0.05), radius: 5, x: 0, y: 3)
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(AppTheme.cardBorder(for: colorScheme), lineWidth: 1)
+        )
+        .softCardShadow()
     }
 }
 
@@ -461,6 +478,7 @@ struct DailyNoteDetailPopup: View {
     let item: DailyNote
     @ObservedObject var viewModel: DailyNoteViewModel
     let modelContext: ModelContext
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -473,12 +491,13 @@ struct DailyNoteDetailPopup: View {
                             .padding(.vertical, 2)
                             .background(
                                 item.sender == viewModel.currentUserRole
-                                    ? Color.orange.opacity(0.2)
-                                    : Color.blue.opacity(0.2)
+                                    ? AppTheme.accent(for: colorScheme).opacity(colorScheme == .dark ? 0.35 : 0.2)
+                                    : AppTheme.primary(for: colorScheme).opacity(colorScheme == .dark ? 0.3 : 0.18)
                             )
                             .foregroundColor(
                                 item.sender == viewModel.currentUserRole
-                                    ? .orange : .blue
+                                    ? AppTheme.accent(for: colorScheme)
+                                    : AppTheme.primary(for: colorScheme)
                             )
                             .cornerRadius(6)
 
@@ -487,15 +506,15 @@ struct DailyNoteDetailPopup: View {
                                 .font(.system(size: 10, weight: .bold))
                                 .padding(.horizontal, 6)
                                 .padding(.vertical, 2)
-                                .background(Color.gray.opacity(0.2))
-                                .foregroundColor(.gray)
+                                .background(colorScheme == .dark ? Color.white.opacity(0.18) : Color.black.opacity(0.08))
+                                .foregroundColor(colorScheme == .dark ? .white : Color(hex: "4A5568"))
                                 .cornerRadius(4)
                         }
                     }
 
                     Text(item.date.toString(format: "MM/dd HH:mm"))
                         .font(.system(size: 12))
-                        .foregroundColor(.gray)
+                        .foregroundColor(colorScheme == .dark ? Color.white.opacity(0.8) : Color(hex: "64748B"))
                 }
 
                 Spacer()
@@ -506,7 +525,11 @@ struct DailyNoteDetailPopup: View {
                         Text(moodName)
                     }
                     .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(
+                        colorScheme == .dark
+                            ? viewModel.getMoodColor(for: moodName, colorScheme: colorScheme)
+                            : AppTheme.textSecondary(for: colorScheme)
+                    )
                 }
             }
 
@@ -515,7 +538,7 @@ struct DailyNoteDetailPopup: View {
             ScrollView {
                 Text(item.content)
                     .font(.system(size: 26, weight: .medium))
-                    .foregroundColor(Color(red: 0.1, green: 0.1, blue: 0.1))
+                    .foregroundColor(colorScheme == .dark ? .white : Color(hex: "18191B"))
                     .lineSpacing(6)
                     .multilineTextAlignment(.leading)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -536,7 +559,7 @@ struct DailyNoteDetailPopup: View {
                         .padding(.vertical, 8)
                     }
                     .buttonStyle(.bordered)
-                    .tint(.blue)
+                    .tint(AppTheme.primary(for: colorScheme))
 
                     Button(role: .destructive) {
                         Task {
@@ -562,9 +585,13 @@ struct DailyNoteDetailPopup: View {
         }
         .padding(24)
         .frame(width: 320, height: 420)
-        .background(Color(hex: item.colorHex))
+        .background(viewModel.getNoteCardColor(for: item.colorHex, colorScheme: colorScheme))
         .cornerRadius(24)
-        .shadow(color: Color.black.opacity(0.15), radius: 20, x: 0, y: 10)
+        .overlay(
+            RoundedRectangle(cornerRadius: 24)
+                .stroke(AppTheme.cardBorder(for: colorScheme), lineWidth: 1)
+        )
+        .softCardShadow()
     }
 }
 
@@ -573,6 +600,7 @@ struct AddDailyNoteSheet: View {
     @ObservedObject var viewModel: DailyNoteViewModel
     @ObservedObject var loginVM: LoginViewModel
     let modelContext: ModelContext
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         NavigationView {
@@ -582,6 +610,7 @@ struct AddDailyNoteSheet: View {
                     ZStack(alignment: .bottomTrailing) {
                         TextEditor(text: $viewModel.newNoteText)
                             .frame(height: 200)
+                            .foregroundColor(AppTheme.textPrimary(for: colorScheme))
                             .onChange(of: viewModel.newNoteText) { _, newValue in
                                 viewModel.handleNoteTextChange(newValue)
                             }
@@ -590,7 +619,7 @@ struct AddDailyNoteSheet: View {
                             .font(.system(size: 12))
                             .foregroundColor(
                                 viewModel.newNoteText.count >= 100
-                                    ? .red : .gray
+                                    ? .red : AppTheme.textSecondary(for: colorScheme)
                             )
                             .padding(.trailing, 8)
                             .padding(.bottom, 8)
@@ -614,10 +643,11 @@ struct AddDailyNoteSheet: View {
                         Toggle(isOn: $viewModel.isCaregiverOnly) {
                             HStack(spacing: 6) {
                                 Image(systemName: "lock.shield")
-                                    .foregroundColor(.blue)
+                                    .foregroundColor(AppTheme.primary(for: colorScheme))
                                 Text("僅限照護者家屬查看")
                             }
                         }
+                        .tint(AppTheme.primary(for: colorScheme))
                     }
                 }
 
@@ -627,45 +657,39 @@ struct AddDailyNoteSheet: View {
                             moods: viewModel.moods,
                             selectedMood: $viewModel.sheetSelectedMoodName,
                             getMoodIcon: { viewModel.getMoodIcon(for: $0) },
-                            getMoodColor: { viewModel.getMoodColor(for: $0) }
+                            getMoodColor: { viewModel.getMoodColor(for: $0, colorScheme: colorScheme) }
                         )
                     }
                 }
 
                 Section(header: Text("選擇貼紙顏色")) {
                     HStack(spacing: 16) {
-                        ColorPickerButton(
-                            color: Color(red: 1.0, green: 0.94, blue: 0.8),
-                            selectedColor: $viewModel.noteColor
-                        )
-                        ColorPickerButton(
-                            color: Color(red: 0.9, green: 0.96, blue: 1.0),
-                            selectedColor: $viewModel.noteColor
-                        )
-                        ColorPickerButton(
-                            color: Color(red: 0.92, green: 0.98, blue: 0.93),
-                            selectedColor: $viewModel.noteColor
-                        )
-                        ColorPickerButton(
-                            color: Color(red: 0.98, green: 0.92, blue: 0.95),
-                            selectedColor: $viewModel.noteColor
-                        )
+                        ForEach(viewModel.notePalette(for: colorScheme), id: \.self) { color in
+                            ColorPickerButton(
+                                color: color,
+                                selectedColor: $viewModel.noteColor
+                            )
+                        }
                     }
                     .padding(.vertical, 4)
                 }
             }
+            .scrollContentBackground(.hidden)
+            .background(AppTheme.background(for: colorScheme))
             .navigationTitle("新增留言貼紙")
             .navigationBarItems(
                 leading: Button("取消") {
                     hideKeyboard()
                     viewModel.cancelAddingNote()
-                },
+                }
+                .foregroundColor(AppTheme.primary(for: colorScheme)),
                 trailing: Button("發送") {
                     hideKeyboard()
                     Task {
                         await viewModel.sendNote(modelContext: modelContext)
                     }
                 }
+                .foregroundColor(AppTheme.primary(for: colorScheme))
                 .disabled(!viewModel.canSendNote)
             )
         }
@@ -677,6 +701,7 @@ struct EditDailyNoteSheet: View {
     @ObservedObject var viewModel: DailyNoteViewModel
     @ObservedObject var loginVM: LoginViewModel
     let modelContext: ModelContext
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         NavigationView {
@@ -686,6 +711,7 @@ struct EditDailyNoteSheet: View {
                     ZStack(alignment: .bottomTrailing) {
                         TextEditor(text: $viewModel.editNoteText)
                             .frame(height: 200)
+                            .foregroundColor(AppTheme.textPrimary(for: colorScheme))
                             .onChange(of: viewModel.editNoteText) { _, newValue in
                                 viewModel.handleEditTextChange(newValue)
                             }
@@ -694,7 +720,7 @@ struct EditDailyNoteSheet: View {
                             .font(.system(size: 12))
                             .foregroundColor(
                                 viewModel.editNoteText.count >= 100
-                                    ? .red : .gray
+                                    ? .red : AppTheme.textSecondary(for: colorScheme)
                             )
                             .padding(.trailing, 8)
                             .padding(.bottom, 8)
@@ -721,10 +747,11 @@ struct EditDailyNoteSheet: View {
                         Toggle(isOn: $viewModel.editIsCaregiverOnly) {
                             HStack(spacing: 6) {
                                 Image(systemName: "lock.shield")
-                                    .foregroundColor(.blue)
+                                    .foregroundColor(AppTheme.primary(for: colorScheme))
                                 Text("僅限照護者家屬查看")
                             }
                         }
+                        .tint(AppTheme.primary(for: colorScheme))
                     }
                 }
 
@@ -734,39 +761,32 @@ struct EditDailyNoteSheet: View {
                             moods: viewModel.moods,
                             selectedMood: $viewModel.editSelectedMoodName,
                             getMoodIcon: { viewModel.getMoodIcon(for: $0) },
-                            getMoodColor: { viewModel.getMoodColor(for: $0) }
+                            getMoodColor: { viewModel.getMoodColor(for: $0, colorScheme: colorScheme) }
                         )
                     }
                 }
 
                 Section(header: Text("修改貼紙顏色")) {
                     HStack(spacing: 16) {
-                        ColorPickerButton(
-                            color: Color(red: 1.0, green: 0.94, blue: 0.8),
-                            selectedColor: $viewModel.editNoteColor
-                        )
-                        ColorPickerButton(
-                            color: Color(red: 0.9, green: 0.96, blue: 1.0),
-                            selectedColor: $viewModel.editNoteColor
-                        )
-                        ColorPickerButton(
-                            color: Color(red: 0.92, green: 0.98, blue: 0.93),
-                            selectedColor: $viewModel.editNoteColor
-                        )
-                        ColorPickerButton(
-                            color: Color(red: 0.98, green: 0.92, blue: 0.95),
-                            selectedColor: $viewModel.editNoteColor
-                        )
+                        ForEach(viewModel.notePalette(for: colorScheme), id: \.self) { color in
+                            ColorPickerButton(
+                                color: color,
+                                selectedColor: $viewModel.editNoteColor
+                            )
+                        }
                     }
                     .padding(.vertical, 4)
                 }
             }
+            .scrollContentBackground(.hidden)
+            .background(AppTheme.background(for: colorScheme))
             .navigationTitle("編輯留言貼紙")
             .navigationBarItems(
                 leading: Button("取消") {
                     hideKeyboard()
                     viewModel.editingNote = nil
-                },
+                }
+                .foregroundColor(AppTheme.primary(for: colorScheme)),
                 trailing: Button("儲存") {
                     hideKeyboard()
                     Task {
@@ -775,6 +795,7 @@ struct EditDailyNoteSheet: View {
                         )
                     }
                 }
+                .foregroundColor(AppTheme.primary(for: colorScheme))
                 .disabled(!viewModel.canSaveEditedNote)
             )
         }
@@ -783,17 +804,17 @@ struct EditDailyNoteSheet: View {
 
 /// 語音輸入提示橫幅
 struct SpeechTipBanner: View {
+    @Environment(\.colorScheme) private var colorScheme
+
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: "mic.fill")
                 .font(.system(size: 13, weight: .semibold))
-                .foregroundColor(
-                    Color(red: 0.25, green: 0.52, blue: 0.95)
-                )
+                .foregroundColor(AppTheme.primary(for: colorScheme))
 
             Text("點擊鍵盤右下角麥克風圖示，即可直接語音轉文字輸入")
                 .font(.system(size: 12.5))
-                .foregroundColor(.secondary)
+                .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
 
@@ -802,7 +823,7 @@ struct SpeechTipBanner: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
         .frame(maxWidth: .infinity)
-        .background(Color(red: 0.25, green: 0.52, blue: 0.95).opacity(0.08))
+        .background(AppTheme.primary(for: colorScheme).opacity(0.08))
         .cornerRadius(12)
     }
 }
@@ -813,6 +834,7 @@ struct MoodPickerView: View {
     @Binding var selectedMood: String?
     let getMoodIcon: (String) -> String
     let getMoodColor: (String) -> Color
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         HStack(spacing: 12) {
@@ -832,11 +854,11 @@ struct MoodPickerView: View {
                     .background(
                         selectedMood == moodName
                             ? getMoodColor(moodName).opacity(0.2)
-                            : Color(red: 0.96, green: 0.96, blue: 0.96)
+                            : AppTheme.background(for: colorScheme)
                     )
                     .foregroundColor(
                         selectedMood == moodName
-                            ? getMoodColor(moodName) : .gray
+                            ? getMoodColor(moodName) : AppTheme.textSecondary(for: colorScheme)
                     )
                     .cornerRadius(16)
                 }

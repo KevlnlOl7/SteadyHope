@@ -10,6 +10,7 @@ struct PDFPreviewView: View {
     let fileName: String
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         NavigationStack {
@@ -18,6 +19,7 @@ struct PDFPreviewView: View {
                 PDFKitRepresentable(pdfData: pdfData)
                     .edgesIgnoringSafeArea(.bottom)
             }
+            .background(AppTheme.background(for: colorScheme))
             .navigationTitle("報告預覽")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -25,6 +27,7 @@ struct PDFPreviewView: View {
                     Button("關閉") {
                         dismiss()
                     }
+                    .foregroundColor(AppTheme.primary(for: colorScheme))
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button(action: presentShareSheet) {
@@ -32,6 +35,7 @@ struct PDFPreviewView: View {
                             Image(systemName: "square.and.arrow.up")
                             Text("匯出")
                         }
+                        .foregroundColor(AppTheme.primary(for: colorScheme))
                     }
                 }
             }

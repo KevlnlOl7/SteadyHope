@@ -11,6 +11,16 @@ extension View {
         )
     }
 
+    /// 套用卡片專用的柔和陰影效果
+    func softCardShadow() -> some View {
+        self.shadow(
+            color: Color.black.opacity(0.05),
+            radius: 5,
+            x: 0,
+            y: 5
+        )
+    }
+    
     /// 產生通用的用藥紀錄單列視圖元件
     /// - Parameters:
     ///   - date: 格式化後的日期字串 (例如: "3/25")

@@ -42,7 +42,7 @@ struct NavigationBarView: View {
     var body: some View {
         NavigationStack {
             ZStack(alignment: .bottom) {
-                Color(red: 0.97, green: 0.97, blue: 0.97)
+                AppTheme.background(for: colorScheme)
                     .ignoresSafeArea()
                     .onTapGesture {
                         hideKeyboard()
@@ -160,9 +160,9 @@ struct NavigationBarView: View {
             }) {
                 Image(systemName: "line.3.horizontal")
                     .font(.system(size: 20, weight: .bold))
-                    .foregroundColor(.primary)
+                    .foregroundColor(AppTheme.textPrimary(for: colorScheme))
                     .padding(10)
-                    .background(Color.white)
+                    .background(AppTheme.cardBackground(for: colorScheme))
                     .clipShape(Circle())
                     .shadow(color: Color.black.opacity(0.06), radius: 4, y: 2)
             }
@@ -182,26 +182,17 @@ struct NavigationBarView: View {
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: "sparkles")
-                    .font(.title3)
+                    .font(.system(size: 15, weight: .semibold))
                 Text("小安")
-                    .font(.subheadline)
-                    .fontWeight(.bold)
+                    .font(.system(size: 14, weight: .bold))
             }
-            .foregroundColor(.white)
+            .foregroundColor(AppTheme.background(for: colorScheme))
             .padding(.horizontal, 16)
-            .padding(.vertical, 11)
-            .background(
-                LinearGradient(
-                    colors: [
-                        AppTheme.accent(for: colorScheme), Color(hex: "F2B278"),
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-            )
+            .padding(.vertical, 10)
+            .background(AppTheme.accent(for: colorScheme))
             .clipShape(Capsule())
             .shadow(
-                color: AppTheme.accent(for: colorScheme).opacity(0.35),
+                color: Color.black.opacity(colorScheme == .dark ? 0.35 : 0.12),
                 radius: 6,
                 x: 0,
                 y: 3
@@ -251,12 +242,13 @@ struct NavigationBarView: View {
                 Spacer()
                 Image(systemName: "person.badge.shield.exclamationmark")
                     .font(.system(size: 60))
-                    .foregroundColor(.gray)
+                    .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                 Text("尚未綁定被照護者")
                     .font(.headline)
+                    .foregroundColor(AppTheme.textPrimary(for: colorScheme))
                 Text("請點擊左上角選單前往「帳號設定」進行配對。")
                     .font(.subheadline)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 30)
                 Spacer()

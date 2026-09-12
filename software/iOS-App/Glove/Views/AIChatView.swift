@@ -91,7 +91,7 @@ extension AIChatView {
         HStack(spacing: 10) {
             HStack(spacing: 8) {
                 Image(systemName: "magnifyingglass")
-                    .foregroundColor(.secondary)
+                    .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                     .font(.body)
 
                 TextField("搜尋訊息...", text: $viewModel.searchText)
@@ -103,7 +103,7 @@ extension AIChatView {
                         viewModel.searchText = ""
                     } label: {
                         Image(systemName: "xmark.circle.fill")
-                            .foregroundColor(.secondary)
+                            .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                             .font(.body)
                     }
                 }
@@ -145,7 +145,7 @@ extension AIChatView {
                         .font(.system(size: 20, weight: .semibold))
                         .foregroundColor(
                             viewModel.matchedMessages.isEmpty
-                                ? .gray.opacity(0.4)
+                                ? AppTheme.textSecondary(for: colorScheme).opacity(0.4)
                                 : AppTheme.primary(for: colorScheme)
                         )
                 }
@@ -158,7 +158,7 @@ extension AIChatView {
                         .font(.system(size: 20, weight: .semibold))
                         .foregroundColor(
                             viewModel.matchedMessages.isEmpty
-                                ? .gray.opacity(0.4)
+                                ? AppTheme.textSecondary(for: colorScheme).opacity(0.4)
                                 : AppTheme.primary(for: colorScheme)
                         )
                 }
@@ -169,7 +169,7 @@ extension AIChatView {
                         "\(viewModel.currentSearchIndex + 1) / \(viewModel.matchedMessages.count)"
                     )
                     .font(.footnote)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                 }
             }
 
@@ -287,9 +287,7 @@ extension AIChatView {
             Text("不論是想聊聊或詢問健康問題，\n我都隨時在這裡陪您喔！")
                 .font(.subheadline)
                 .multilineTextAlignment(.center)
-                .foregroundColor(
-                    AppTheme.textPrimary(for: colorScheme).opacity(0.6)
-                )
+                .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                 .lineSpacing(4)
         }
         .frame(maxWidth: .infinity)
@@ -306,9 +304,7 @@ extension AIChatView {
 
             Text("小安正在認真想答案喔...")
                 .font(.footnote)
-                .foregroundColor(
-                    AppTheme.textPrimary(for: colorScheme).opacity(0.7)
-                )
+                .foregroundColor(AppTheme.textSecondary(for: colorScheme))
 
             ProgressView()
                 .scaleEffect(0.8)
@@ -349,9 +345,7 @@ extension AIChatView {
                     .foregroundColor(AppTheme.accent(for: colorScheme))
                 Text("小安提供的資訊僅供衛教參考，無法取代專業醫療診斷。\n若有任何症狀或用藥問題，請務必諮詢您的主治醫師。")
                     .font(.caption2)
-                    .foregroundColor(
-                        AppTheme.textPrimary(for: colorScheme).opacity(0.6)
-                    )
+                    .foregroundColor(AppTheme.textSecondary(for: colorScheme))
             }
             .padding(.horizontal, 10)
             .padding(.bottom, 4)
@@ -397,7 +391,7 @@ extension AIChatView {
             } label: {
                 let btnColor =
                     isTextEmpty
-                    ? Color.gray.opacity(0.4)
+                    ? AppTheme.textSecondary(for: colorScheme).opacity(0.4)
                     : AppTheme.accent(for: colorScheme)
                 Image(systemName: "paperplane.fill")
                     .font(.system(size: 16, weight: .bold))
@@ -421,6 +415,7 @@ extension AIChatView {
         VStack(spacing: 16) {
             Text("選擇對話日期")
                 .font(.headline)
+                .foregroundColor(AppTheme.textPrimary(for: colorScheme))
                 .padding(.top, 16)
 
             DatePicker(
@@ -484,14 +479,12 @@ struct DateHeaderView: View {
         Text(dateString(for: date))
             .font(.caption2)
             .fontWeight(.semibold)
-            .foregroundColor(
-                AppTheme.textPrimary(for: colorScheme).opacity(0.6)
-            )
+            .foregroundColor(AppTheme.textSecondary(for: colorScheme))
             .padding(.horizontal, 12)
             .padding(.vertical, 4)
             .background(
                 Capsule()
-                    .fill(AppTheme.textPrimary(for: colorScheme).opacity(0.08))
+                    .fill(AppTheme.textSecondary(for: colorScheme).opacity(0.12))
             )
     }
 }
@@ -519,7 +512,7 @@ struct ChatBubble: View {
                 // 訊息發送時間
                 Text(message.timestamp.toString(format: "HH:mm"))
                     .font(.caption2)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(AppTheme.textSecondary(for: colorScheme))
 
                 // 使用者對話氣泡
                 Text(message.text)
@@ -555,16 +548,14 @@ struct ChatBubble: View {
                     Text("小安")
                         .font(.caption2)
                         .fontWeight(.bold)
-                        .foregroundColor(
-                            AppTheme.textPrimary(for: colorScheme).opacity(0.6)
-                        )
+                        .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                         .padding(.leading, 4)
 
                     // 支援 Markdown 與關鍵字高亮之回覆內文
                     HighlightText(
                         text: message.text,
                         highlight: isCurrentMatch ? highlightText : "",
-                        highlightColor: .orange,
+                        highlightColor: AppTheme.accent(for: colorScheme),
                         isUser: false
                     )
                     .lineSpacing(4)
@@ -587,7 +578,7 @@ struct ChatBubble: View {
 
                 Text(message.timestamp.toString(format: "HH:mm"))
                     .font(.caption2)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(AppTheme.textSecondary(for: colorScheme))
 
                 Spacer(minLength: 16)
             }
@@ -611,6 +602,8 @@ struct HighlightText: View {
     /// 是否為使用者所發送
     let isUser: Bool
 
+    @Environment(\.colorScheme) private var colorScheme
+
     var body: some View {
         // 將逸出換行字元還原並切分為逐行陣列
         let rawText = text.replacingOccurrences(of: "\\n", with: "\n")
@@ -633,6 +626,7 @@ struct HighlightText: View {
 
                     Text(parseInlineAndHighlight(cleanLine))
                         .font(.title3.bold())
+                        .foregroundColor(AppTheme.textPrimary(for: colorScheme))
                         .padding(.top, 4)
                         .padding(.bottom, 2)
                 } else if trimmedLine.hasPrefix("-") {
@@ -648,15 +642,18 @@ struct HighlightText: View {
                         HStack(alignment: .top, spacing: 6) {
                             Text("•")
                                 .font(.title)
+                                .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                                 .frame(height: 16)
 
                             Text(parseInlineAndHighlight(cleanLine))
+                                .foregroundColor(AppTheme.textPrimary(for: colorScheme))
                         }
                         .padding(.leading, leadingSpaceCount > 0 ? 24 : 4)
                     }
                 } else {
                     // 一般文字行
                     Text(parseInlineAndHighlight(trimmedLine))
+                        .foregroundColor(AppTheme.textPrimary(for: colorScheme))
                 }
             }
         }
@@ -687,7 +684,7 @@ struct HighlightText: View {
                 )
             {
                 attr[matchRange].backgroundColor = highlightColor.opacity(0.35)
-                attr[matchRange].foregroundColor = isUser ? .white : .primary
+                attr[matchRange].foregroundColor = isUser ? .white : AppTheme.textPrimary(for: colorScheme)
 
                 if matchRange.upperBound < attr.endIndex {
                     searchRange = matchRange.upperBound..<attr.endIndex
