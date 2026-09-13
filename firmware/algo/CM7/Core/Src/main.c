@@ -187,14 +187,31 @@ typedef char BatteryStatus_t_must_be_4_bytes[
  * 0x05: Manual POSITIVE relative adjustment
  *       Example: [0x05][0x00][0x06] = +6 mm
  *
- * The magnitude bytes are always positive. Direction is selected by command.
+ * 0x06: Initial baseline cable length in mm.
+ *       App Slider represents 0..14 cm TAKE-UP from the 400 mm mechanical Home.
+ *       Therefore accepted baseline is 260..400 mm.
+ *       Example: [0x06][0x01][0x90] = 400 mm = 0 cm take-up
+ *                [0x06][0x01][0x04] = 260 mm = 14 cm take-up
+ *
+ * 0x07: Automatic suppression mode
+ *       [0x07][0x00][0x00] = MANUAL (Gate cannot auto-start motor)
+ *       [0x07][0x00][0x01] = AUTO   (Gate may auto-start motor)
+ *
+ * 0x02..0x05 keep their original relative-adjustment meanings.
  */
 #define CONTROL_PACKET_SIZE                 3U
 #define CMD_ADJUST_LENGTH_NEGATIVE_MM       0x02U
 #define CMD_ADJUST_LENGTH_POSITIVE_MM       0x03U
 #define CMD_MANUAL_LENGTH_NEGATIVE_MM       0x04U
 #define CMD_MANUAL_LENGTH_POSITIVE_MM       0x05U
+#define CMD_SET_BASELINE_LENGTH_MM          0x06U
+#define CMD_SET_AUTOMATIC_MODE              0x07U
 #define CONTROL_MAX_MAGNITUDE_MM            50U
+#define CONTROL_MIN_INITIAL_BASELINE_MM     260U
+#define CONTROL_MAX_INITIAL_BASELINE_MM     400U
+#define CONTROL_MAX_QUEUED_DELTA_MM          900U
+#define APP_MODE_MANUAL                     0U
+#define APP_MODE_AUTO                       1U
 
 /* Cable / spool calibration supplied from the final mechanism test.
  *
@@ -391,6 +408,18 @@ volatile int16_t lastLengthDeltaMm = 0;
  * is not overwritten by the 100 Hz tremor state machine. */
 volatile float appRequestedLengthMm = INITIAL_CABLE_LENGTH_MM;
 volatile uint8_t appAdjustmentResumeHolding = 0U;
+
+/* App authority / queued command state.
+ * appAutoModeEnabled = 0 keeps automatic Gate actuation disabled while still
+ * allowing App motion, Encoder updates, telemetry and every hardware safety check.
+ */
+volatile uint8_t appAutoModeEnabled = APP_MODE_MANUAL;
+volatile int32_t queuedLengthDeltaMm = 0;
+volatile uint8_t queuedLengthDeltaPending = 0U;
+volatile float queuedBaselineLengthMm = INITIAL_CABLE_LENGTH_MM;
+volatile uint8_t queuedBaselinePending = 0U;
+volatile uint32_t queuedLengthRequestCount = 0U;
+volatile uint32_t queuedBaselineRequestCount = 0U;
 
 /* Generic encoder-distance motion diagnostics.  All position moves use
  * abs(encoder_count - positionMoveStartCount) as the travelled distance. */
@@ -617,6 +646,7 @@ static uint8_t App_StartPendingAdjustment(
     int32_t currentCount,
     uint8_t resumeHolding
 );
+static void App_PromoteQueuedAdjustment(uint8_t resumeHolding);
 
 /* USER CODE END PFP */
 
@@ -1017,36 +1047,49 @@ HAL_StatusTypeDef Sensor_GyroOnly_Init(void)
 
 static int16_t Control_DecodeValue(uint8_t command, uint16_t rawValue)
 {
-  /*
-   * New App protocol:
-   *
-   *   0x02 00 06 -> -6 mm (preset negative)
-   *   0x03 00 06 -> +6 mm (preset positive)
-   *   0x04 00 06 -> -6 mm (manual negative input)
-   *   0x05 00 06 -> +6 mm (manual positive input)
-   *   0x04 00 32 -> -50 mm (manual negative input)
-   *   0x05 00 32 -> +50 mm (manual positive input)
-   *
-   * Byte1..Byte2 is always sent as a positive big-endian magnitude.
-   */
-  if (rawValue > CONTROL_MAX_MAGNITUDE_MM)
+  switch (command)
   {
-    return (int16_t)(CONTROL_MAX_MAGNITUDE_MM + 1U);
-  }
+    case CMD_ADJUST_LENGTH_NEGATIVE_MM:
+    case CMD_MANUAL_LENGTH_NEGATIVE_MM:
+      if (rawValue > CONTROL_MAX_MAGNITUDE_MM)
+      {
+        return INT16_MAX;
+      }
+      return -(int16_t)rawValue;
 
-  if ((command == CMD_ADJUST_LENGTH_NEGATIVE_MM) ||
-      (command == CMD_MANUAL_LENGTH_NEGATIVE_MM))
-  {
-    return -(int16_t)rawValue;
-  }
+    case CMD_ADJUST_LENGTH_POSITIVE_MM:
+    case CMD_MANUAL_LENGTH_POSITIVE_MM:
+      if (rawValue > CONTROL_MAX_MAGNITUDE_MM)
+      {
+        return INT16_MAX;
+      }
+      return (int16_t)rawValue;
 
-  return (int16_t)rawValue;
+    case CMD_SET_BASELINE_LENGTH_MM:
+      if ((rawValue < CONTROL_MIN_INITIAL_BASELINE_MM) ||
+          (rawValue > CONTROL_MAX_INITIAL_BASELINE_MM))
+      {
+        return INT16_MAX;
+      }
+      return (int16_t)rawValue;
+
+    case CMD_SET_AUTOMATIC_MODE:
+      if (rawValue > APP_MODE_AUTO)
+      {
+        return INT16_MAX;
+      }
+      return (int16_t)rawValue;
+
+    default:
+      return INT16_MAX;
+  }
 }
 
 static uint8_t Control_ApplyCommand(uint8_t command, int16_t value)
 {
   float candidateTargetMm;
   float commandBaseMm;
+  int32_t newQueuedDelta;
 
   switch (command)
   {
@@ -1054,62 +1097,153 @@ static uint8_t Control_ApplyCommand(uint8_t command, int16_t value)
     case CMD_ADJUST_LENGTH_POSITIVE_MM:
     case CMD_MANUAL_LENGTH_NEGATIVE_MM:
     case CMD_MANUAL_LENGTH_POSITIVE_MM:
-      /*
-       * value has already been decoded:
-       *   0x02 00 06 -> value = -6 mm -> TAKE-UP 6 mm (preset)
-       *   0x03 00 06 -> value = +6 mm -> RELEASE 6 mm (preset)
-       *   0x04 00 06 -> value = -6 mm -> TAKE-UP 6 mm (manual App input)
-       *   0x05 00 06 -> value = +6 mm -> RELEASE 6 mm (manual App input)
-       *   0x04 00 32 -> value = -50 mm
-       *   0x05 00 32 -> value = +50 mm
-       */
-      if ((value < -(int16_t)CONTROL_MAX_MAGNITUDE_MM) ||
+      if ((value == INT16_MAX) ||
+          (value < -(int16_t)CONTROL_MAX_MAGNITUDE_MM) ||
           (value > (int16_t)CONTROL_MAX_MAGNITUDE_MM))
       {
         lengthAdjustRejectedCount++;
         return 0U;
       }
 
-      if ((tremorPositionState != TREMOR_POSITION_IDLE) &&
-          (tremorPositionState != TREMOR_POSITION_HOLDING))
+      if (tremorPositionState == TREMOR_POSITION_FAULT)
       {
         lengthAdjustBlocked = 1U;
         lengthAdjustRejectedCount++;
         return 0U;
       }
 
-      commandBaseMm = currentLengthMm;
-      candidateTargetMm = commandBaseMm + (float)value;
-
-      if ((candidateTargetMm < LENGTH_MIN_MM) ||
-          (candidateTargetMm > LENGTH_MAX_MM))
+      if (value == 0)
       {
-        lengthAdjustRejectedCount++;
-        return 0U;
+        lastLengthDeltaMm = 0;
+        return 1U;
       }
 
-      if ((tremorPositionState == TREMOR_POSITION_HOLDING) &&
-          (candidateTargetMm > baseCableLengthMm))
+      /* IDLE/HOLDING can accept the relative target immediately.  If another
+       * App command is already pending but has not started, accumulate from its
+       * requested target instead of the previous physical sample. */
+      if ((tremorPositionState == TREMOR_POSITION_IDLE) ||
+          (tremorPositionState == TREMOR_POSITION_HOLDING))
       {
-        lengthAdjustBlocked = 1U;
-        lengthAdjustRejectedCount++;
-        return 0U;
-      }
+        commandBaseMm =
+            (lengthAdjustPending != 0U) ? appRequestedLengthMm : currentLengthMm;
+        candidateTargetMm = commandBaseMm + (float)value;
 
-      appRequestedLengthMm = candidateTargetMm;
-      targetLengthMm = appRequestedLengthMm;
-      lengthErrorMm = targetLengthMm - currentLengthMm;
-      lastLengthDeltaMm = value;
+        if ((candidateTargetMm < LENGTH_MIN_MM) ||
+            (candidateTargetMm > LENGTH_MAX_MM))
+        {
+          lengthAdjustBlocked = 1U;
+          lengthAdjustRejectedCount++;
+          return 0U;
+        }
 
-      if (value != 0)
-      {
+        /* During an active tremor HOLD, a positive adjustment may relax the
+         * held tension, but never beyond the pre-tremor baseline/home. */
+        if ((tremorPositionState == TREMOR_POSITION_HOLDING) &&
+            (candidateTargetMm > baseCableLengthMm))
+        {
+          lengthAdjustBlocked = 1U;
+          lengthAdjustRejectedCount++;
+          return 0U;
+        }
+
+        appRequestedLengthMm = candidateTargetMm;
+        targetLengthMm = appRequestedLengthMm;
+        lengthErrorMm = targetLengthMm - currentLengthMm;
+        lastLengthDeltaMm = value;
         lengthAdjustPending = 1U;
         lengthAdjustBlocked = 0U;
         lengthAdjustRequestCount++;
+        return 1U;
+      }
+
+      /* PULLING / RETURNING / APP_ADJUSTING: never interrupt the current
+       * encoder-distance move.  Queue the relative request and execute it when
+       * the state machine next reaches HOLDING or IDLE. */
+      newQueuedDelta = queuedLengthDeltaMm + (int32_t)value;
+      if ((newQueuedDelta < -(int32_t)CONTROL_MAX_QUEUED_DELTA_MM) ||
+          (newQueuedDelta > (int32_t)CONTROL_MAX_QUEUED_DELTA_MM))
+      {
+        lengthAdjustBlocked = 1U;
+        lengthAdjustRejectedCount++;
+        return 0U;
+      }
+
+      queuedLengthDeltaMm = newQueuedDelta;
+      queuedLengthDeltaPending = (newQueuedDelta != 0) ? 1U : 0U;
+      lastLengthDeltaMm = value;
+      lengthAdjustBlocked = 0U;
+      lengthAdjustRequestCount++;
+      queuedLengthRequestCount++;
+      return 1U;
+
+    case CMD_SET_BASELINE_LENGTH_MM:
+      if ((value == INT16_MAX) ||
+          (value < (int16_t)CONTROL_MIN_INITIAL_BASELINE_MM) ||
+          (value > (int16_t)CONTROL_MAX_INITIAL_BASELINE_MM))
+      {
+        lengthAdjustRejectedCount++;
+        return 0U;
+      }
+
+      if (tremorPositionState == TREMOR_POSITION_FAULT)
+      {
+        lengthAdjustBlocked = 1U;
+        lengthAdjustRejectedCount++;
+        return 0U;
+      }
+
+      /* A baseline calibration always owns the device in MANUAL.  This makes
+       * the command safe even if the App sends 0x06 before 0x07=MANUAL reaches
+       * the UART.  Automatic Gate actuation resumes only after 0x07=1. */
+      appAutoModeEnabled = APP_MODE_MANUAL;
+      suppression_start_allowed = 0U;
+      queuedBaselineLengthMm = (float)value;
+      queuedBaselineRequestCount++;
+
+      if (tremorPositionState == TREMOR_POSITION_IDLE)
+      {
+        appRequestedLengthMm = queuedBaselineLengthMm;
+        targetLengthMm = appRequestedLengthMm;
+        lengthErrorMm = targetLengthMm - currentLengthMm;
+        queuedBaselinePending = 0U;
+        lengthAdjustBlocked = 0U;
+
+        if (Encoder_MmToCounts(appRequestedLengthMm - currentLengthMm) > 0)
+        {
+          lengthAdjustPending = 1U;
+          lengthAdjustRequestCount++;
+        }
+        else
+        {
+          currentLengthMm = appRequestedLengthMm;
+          baseCableLengthMm = currentLengthMm;
+          lengthErrorMm = 0.0f;
+          lengthAdjustPending = 0U;
+        }
       }
       else
       {
-        lengthAdjustPending = 0U;
+        /* Latest absolute baseline wins; it will be promoted after return to IDLE. */
+        queuedBaselinePending = 1U;
+      }
+
+      return 1U;
+
+    case CMD_SET_AUTOMATIC_MODE:
+      if ((value != (int16_t)APP_MODE_MANUAL) &&
+          (value != (int16_t)APP_MODE_AUTO))
+      {
+        return 0U;
+      }
+
+      appAutoModeEnabled = (uint8_t)value;
+      lengthAdjustBlocked = 0U;
+
+      if (appAutoModeEnabled == APP_MODE_MANUAL)
+      {
+        /* Do not ForceSafe here: App/Encoder position moves still need the same
+         * guarded TB6612 output path.  gate_trigger is forced to zero below. */
+        suppression_start_allowed = 0U;
       }
 
       return 1U;
@@ -1411,6 +1545,63 @@ static uint8_t App_StartPendingAdjustment(
   return 1U;
 }
 
+static void App_PromoteQueuedAdjustment(uint8_t resumeHolding)
+{
+  float candidateTargetMm;
+  int32_t queuedDelta;
+
+  /* Absolute baseline commands are only legal to promote from IDLE.  A 0x06
+   * command already forced MANUAL, so PULLING/HOLDING will first return home. */
+  if ((resumeHolding == 0U) && (queuedBaselinePending != 0U))
+  {
+    appRequestedLengthMm = queuedBaselineLengthMm;
+    targetLengthMm = appRequestedLengthMm;
+    lengthErrorMm = targetLengthMm - currentLengthMm;
+    queuedBaselinePending = 0U;
+    lengthAdjustBlocked = 0U;
+
+    if (Encoder_MmToCounts(appRequestedLengthMm - currentLengthMm) > 0)
+    {
+      lengthAdjustPending = 1U;
+      lengthAdjustRequestCount++;
+    }
+    else
+    {
+      currentLengthMm = appRequestedLengthMm;
+      baseCableLengthMm = currentLengthMm;
+      lengthErrorMm = 0.0f;
+      lengthAdjustPending = 0U;
+    }
+    return;
+  }
+
+  if (queuedLengthDeltaPending == 0U)
+  {
+    return;
+  }
+
+  queuedDelta = queuedLengthDeltaMm;
+  queuedLengthDeltaMm = 0;
+  queuedLengthDeltaPending = 0U;
+  candidateTargetMm = currentLengthMm + (float)queuedDelta;
+
+  if ((candidateTargetMm < LENGTH_MIN_MM) ||
+      (candidateTargetMm > LENGTH_MAX_MM) ||
+      ((resumeHolding != 0U) && (candidateTargetMm > baseCableLengthMm)))
+  {
+    lengthAdjustBlocked = 1U;
+    lengthAdjustRejectedCount++;
+    return;
+  }
+
+  appRequestedLengthMm = candidateTargetMm;
+  targetLengthMm = appRequestedLengthMm;
+  lengthErrorMm = targetLengthMm - currentLengthMm;
+  lastLengthDeltaMm = (int16_t)queuedDelta;
+  lengthAdjustPending = 1U;
+  lengthAdjustBlocked = 0U;
+}
+
 static void TremorPositionController_Init(void)
 {
   tremorPositionState = TREMOR_POSITION_IDLE;
@@ -1433,6 +1624,14 @@ static void TremorPositionController_Init(void)
   targetLengthMm = INITIAL_CABLE_LENGTH_MM;
   currentLengthMm = INITIAL_CABLE_LENGTH_MM;
   lengthErrorMm = 0.0f;
+
+  appAutoModeEnabled = APP_MODE_MANUAL;
+  queuedLengthDeltaMm = 0;
+  queuedLengthDeltaPending = 0U;
+  queuedBaselineLengthMm = INITIAL_CABLE_LENGTH_MM;
+  queuedBaselinePending = 0U;
+  queuedLengthRequestCount = 0U;
+  queuedBaselineRequestCount = 0U;
 }
 
 static uint8_t TremorPositionController_Update(
@@ -1474,6 +1673,10 @@ static uint8_t TremorPositionController_Update(
       tremorPositionErrorCounts = 0;
       lengthAdjustActive = 0U;
       targetLengthMm = baseCableLengthMm;
+
+      /* Promote queued commands first.  Absolute baseline has priority in IDLE,
+       * followed by queued relative fine tuning. */
+      App_PromoteQueuedAdjustment(0U);
 
       /* App adjustment is allowed in IDLE and is handled before a new Gate. */
       if (lengthAdjustPending != 0U)
@@ -1572,8 +1775,10 @@ static uint8_t TremorPositionController_Update(
         return 0U;
       }
 
-      /* App may fine-tune the held cable length.  Home remains unchanged so
-       * Gate-off still returns to the pre-tremor baseline. */
+      /* A fine-tune request received during PULLING can now be promoted safely.
+       * Home remains unchanged so Gate-off still returns to the pre-tremor baseline. */
+      App_PromoteQueuedAdjustment(1U);
+
       if (lengthAdjustPending != 0U)
       {
         (void)App_StartPendingAdjustment(currentCount, 1U);
@@ -2104,7 +2309,8 @@ static void ControlPipeline_100HzFreshSample(double raw_gyro_dps)
   /* Gate is now a TRIGGER only.  tremorEstimate / compensationRequestDps sign
    * is still available for diagnostics but no longer commands motor direction. */
   gate_trigger =
-      ((suppression_permission == 1U) &&
+      ((appAutoModeEnabled == APP_MODE_AUTO) &&
+       (suppression_permission == 1U) &&
        (suppression_output.actuation_permitted == 1U) &&
        (gate_enabled_debug == 1U))
       ? 1U : 0U;
