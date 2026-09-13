@@ -18,13 +18,23 @@ final class BluetoothViewModel: NSObject, ObservableObject {
     /// 裝置電量與硬體致動狀態
     @Published var batteryLevel: Int = 0
     @Published var isMotorEnabled: Bool = false
+    @Published var isAutomaticSuppressionEnabled = false
 
     /// 即時震顫分析數據
     @Published var dominantFrequencyText: String = "--"
     @Published var tremorStrengthRms: Double = 0.0
 
-    /// 長度調整控制與常數設定（Slider 當次相對調整量，UI 範圍為 -5 至 +5 cm，送出前轉為 -50 至 +50 mm）
+    /// 長度調整控制與常數設定
+    @Published var initialCableLengthMm = 400.0
+    @Published var initialTakeUpCm = 0.0
     @Published var lengthOffsetMm: Double = 0.0
+    static let initialCableHomeMm = 400.0
+    static let initialTakeUpDefaultCm = 0.0
+    static let initialTakeUpMinCm = 0.0
+    static let initialTakeUpMaxCm = 14.0
+    static let initialCableLengthDefaultMm = initialCableHomeMm
+    static let initialCableLengthMinMm = initialCableHomeMm - (initialTakeUpMaxCm * 10.0)
+    static let initialCableLengthMaxMm = initialCableHomeMm
     static let maxLengthAdjustmentMm: Int = 50
     static let maxLengthAdjustmentCm: Double = 5.0
 
@@ -36,7 +46,11 @@ final class BluetoothViewModel: NSObject, ObservableObject {
     /// 私有化建構子，配置分析管線回呼並自動評估藍牙狀態
     private override init() {
         super.init()
+
+        // 綁定資料中心分析管線
         DataViewModel.shared.bindPipeline(pipeline)
+
+        // 指定底層藍牙事件委派
         bluetoothManager.delegate = self
 
         // 監聽管線發出之相對長度調整命令並轉發至硬體
@@ -201,6 +215,51 @@ final class BluetoothViewModel: NSObject, ObservableObject {
             bluetoothManager.sendManualLengthInput(offsetMm)
         }
     }
+
+    /// 設定初次穿戴時的初始預拉緊長度基準
+    /// - Parameter takeUpCm: 預收緊長度（單位：公分 cm）
+    func sendInitialTakeUpCm(_ takeUpCm: Double) {
+        guard isConnected else {
+            AppLog.error("略過初始收緊指令：手套尚未連線完成。")
+            return
+        }
+
+        let clampedCm = min(
+            max(takeUpCm, Self.initialTakeUpMinCm),
+            Self.initialTakeUpMaxCm
+        )
+        let roundedTakeUpMm = Int(round(clampedCm * 10.0))
+        let baselineMm = Int(Self.initialCableHomeMm) - roundedTakeUpMm
+
+        initialTakeUpCm = Double(roundedTakeUpMm) / 10.0
+        initialCableLengthMm = Double(baselineMm)
+
+        bluetoothManager.sendBaselineLength(magnitudeMm: baselineMm)
+    }
+
+    /// 依據目標纜繩絕對長度發送初始基準校正設定
+    /// - Parameter lengthMm: 目標纜繩長度（單位：毫米 mm）
+    func sendInitialCableLengthMm(_ lengthMm: Double) {
+        let clamped = min(
+            max(lengthMm, Self.initialCableLengthMinMm),
+            Self.initialCableLengthMaxMm
+        )
+        let takeUpCm = (Self.initialCableHomeMm - clamped) / 10.0
+        sendInitialTakeUpCm(takeUpCm)
+    }
+
+    /// 設定智慧手套是否開啟全自動即時震顫抑制模式
+    /// - Parameter enabled: true 為開啟自動抑制，false 為關閉
+    func setAutomaticSuppression(_ enabled: Bool) {
+        guard isConnected else {
+            AppLog.error("略過模式切換：手套尚未連線完成。")
+            isAutomaticSuppressionEnabled = false
+            return
+        }
+
+        isAutomaticSuppressionEnabled = enabled
+        bluetoothManager.sendAutomaticMode(enabled)
+    }
 }
 
 extension BluetoothViewModel: BluetoothManagerDelegate {
@@ -232,6 +291,7 @@ extension BluetoothViewModel: BluetoothManagerDelegate {
             isScanning = false
             statusMessage = "手套已連線"
 
+            // 初次收到有效數據點時建立全新工作階段識別碼
             DataViewModel.shared.currentSessionId = UUID().uuidString
         }
 
@@ -306,9 +366,11 @@ extension BluetoothViewModel: BluetoothManagerDelegate {
                 isMotorEnabled = false
                 isAutomaticSuppressionEnabled = false
 
+                // 斷線時重設管線以防歷史資料污染下一個工作階段
                 pipeline.resetPipeline()
                 DataViewModel.shared.currentSessionId = UUID().uuidString
             } else {
+                // 重新連線時建立全新工作階段識別碼並恢復預設設定
                 DataViewModel.shared.currentSessionId = UUID().uuidString
                 isAutomaticSuppressionEnabled = false
                 bluetoothManager.sendAutomaticMode(false)

@@ -10,6 +10,8 @@ struct SettingView: View {
     @State private var inputOffsetString: String = ""
     @State private var isDraggingSlider: Bool = false
 
+    @State private var isShowingInitializationSheet: Bool = false
+    
     /// 判斷當前藍牙連線是否處於失敗或未尋獲裝置狀態
     private var isFailed: Bool {
         bleVM.statusMessage.contains("失敗")
@@ -111,6 +113,9 @@ struct SettingView: View {
             }
             .animation(.easeInOut(duration: 0.3), value: bleVM.isConnected)
             .animation(.easeInOut(duration: 0.3), value: bleVM.isBluetoothPoweredOn)
+        }
+        .sheet(isPresented: $isShowingInitializationSheet) {
+            GloveInitializationSheet()
         }
         .contentShape(Rectangle())
         .onTapGesture {
@@ -222,13 +227,23 @@ struct SettingView: View {
                 }
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(bleVM.isMotorEnabled ? "馬達已啟動 (抑制震顫中)" : "馬達待命中 (未啟動)")
-                        .font(.system(size: 14, weight: .bold))
-                        .foregroundColor(bleVM.isMotorEnabled ? .green : .primary)
+                    Text(
+                        bleVM.isMotorEnabled
+                            ? "馬達已啟動"
+                            : (bleVM.isAutomaticSuppressionEnabled ? "自動抑震監測中" : "手動微調模式")
+                    )
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundColor(bleVM.isMotorEnabled ? .green : AppTheme.textPrimary(for: colorScheme))
 
-                    Text(bleVM.isMotorEnabled ? "智慧手套正在即時輸出動態阻尼拉力" : "手套處於監測狀態，偵測到顯著震顫時將自動介入")
-                        .font(.system(size: 11))
-                        .foregroundColor(.secondary)
+                    Text(
+                        bleVM.isMotorEnabled
+                            ? "手套正在調整拉力或回到定位"
+                            : (bleVM.isAutomaticSuppressionEnabled
+                                ? "手套處於監測狀態，偵測到顯著震顫時將自動介入；您也可以隨時使用下方微調"
+                                : "已暫停自動抑震；您仍可手動微調鬆緊度，防護機制維持運作")
+                    )
+                    .font(.system(size: 11))
+                    .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                 }
 
                 Spacer()
@@ -243,7 +258,8 @@ struct SettingView: View {
             .shadow(color: Color.black.opacity(0.03), radius: 6, y: 2)
             .padding(.horizontal, 25)
             .animation(.easeInOut(duration: 0.25), value: bleVM.isMotorEnabled)
-
+            automaticModeCard
+            initializationCard
             lengthAdjustmentCard
                 .id("LengthInputCard")
         }
@@ -254,7 +270,93 @@ struct SettingView: View {
             )
         )
     }
+    
+    /// 手套初始化入口卡片
+    private var initializationCard: some View {
+        Button(action: {
+            isShowingInitializationSheet = true
+        }) {
+            HStack(spacing: 14) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(AppTheme.primary(for: colorScheme).opacity(0.12))
+                        .frame(width: 42, height: 42)
 
+                    Image(systemName: "slider.horizontal.2.square")
+                        .foregroundColor(AppTheme.primary(for: colorScheme))
+                        .font(.system(size: 20, weight: .semibold))
+                }
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("初始化手套配戴長度")
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundColor(AppTheme.textPrimary(for: colorScheme))
+
+                    Text("重新校準初始拉力與基準舒適鬆緊度")
+                        .font(.system(size: 12))
+                        .foregroundColor(AppTheme.textSecondary(for: colorScheme))
+                }
+
+                Spacer()
+
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(AppTheme.textSecondary(for: colorScheme))
+            }
+            .padding(16)
+            .background(AppTheme.cardBackground(for: colorScheme))
+            .cornerRadius(16)
+            .shadow(color: Color.black.opacity(0.04), radius: 8, y: 3)
+            .padding(.horizontal, 25)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var automaticModeCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("抑震控制模式")
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundColor(AppTheme.textPrimary(for: colorScheme))
+                    Text(bleVM.isAutomaticSuppressionEnabled ? "開啟自動抑震功能" : "暫停自動抑震功能，可進入初始化視窗進行調整")
+                        .font(.system(size: 12))
+                        .foregroundColor(AppTheme.textSecondary(for: colorScheme))
+                }
+
+                Spacer()
+
+                Text(bleVM.isAutomaticSuppressionEnabled ? "AUTO" : "MANUAL")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundColor(bleVM.isAutomaticSuppressionEnabled ? .green : AppTheme.accent(for: colorScheme))
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background((bleVM.isAutomaticSuppressionEnabled ? Color.green : AppTheme.accent(for: colorScheme)).opacity(0.12))
+                    .clipShape(Capsule())
+            }
+
+            Button(action: {
+                bleVM.setAutomaticSuppression(!bleVM.isAutomaticSuppressionEnabled)
+            }) {
+                HStack(spacing: 8) {
+                    Image(systemName: bleVM.isAutomaticSuppressionEnabled ? "pause.circle.fill" : "play.circle.fill")
+                    Text(bleVM.isAutomaticSuppressionEnabled ? "暫停自動抑震並進入微調" : "啟用自動抑震")
+                        .font(.system(size: 14, weight: .bold))
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 12)
+                .foregroundColor(.white)
+                .background(bleVM.isAutomaticSuppressionEnabled ? AppTheme.accent(for: colorScheme) : AppTheme.primary(for: colorScheme))
+                .cornerRadius(12)
+            }
+        }
+        .padding(16)
+        .background(AppTheme.cardBackground(for: colorScheme))
+        .cornerRadius(16)
+        .shadow(color: Color.black.opacity(0.04), radius: 8, y: 3)
+        .padding(.horizontal, 25)
+    }
+    
     /// 收線長度微調滑桿控制、手動數值輸入與操作限制說明卡片
     private var lengthAdjustmentCard: some View {
         VStack(alignment: .leading, spacing: 16) {
