@@ -197,9 +197,30 @@ final class LoginViewModel: ObservableObject {
             if currentUser.role == 0, let stage = request.diseaseStage {
                 currentUser.diseaseStage = stage
             }
+            if let avatar = request.avatarData {
+                currentUser.avatarData = avatar
+            }
             self.userData = currentUser
             try? modelContext?.save()
         }
+    }
+
+    /// 上傳並更新使用者頭貼
+    /// - Parameters:
+    ///   - image: 欲設定的 UIImage 物件
+    ///   - modelContext: SwiftData 上下文環境（選填）
+    func updateAvatar(image: UIImage, modelContext: ModelContext? = nil) async throws {
+        // 壓縮圖片為 JPEG 格式（品質 0.7）以維持在 200KB~500KB 加速網路傳輸
+        guard let compressedData = image.jpegData(compressionQuality: 0.7) else {
+            throw NSError(
+                domain: "ImageCompressionError",
+                code: -1,
+                userInfo: [NSLocalizedDescriptionKey: "圖片壓縮處理失敗"]
+            )
+        }
+
+        let request = UpdateProfileRequestDTO(avatarData: compressedData)
+        try await updateProfile(request: request, modelContext: modelContext)
     }
 
     /// 使用者登出並清除本機快取與權限

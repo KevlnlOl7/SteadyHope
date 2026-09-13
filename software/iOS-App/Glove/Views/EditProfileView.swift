@@ -1,9 +1,15 @@
+import PhotosUI
 import SwiftUI
 
 struct EditProfileView: View {
     @ObservedObject var loginVM: LoginViewModel
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.modelContext) private var modelContext
+    
+    /// 頭貼編輯狀態
+    @State private var selectedPhotoItem: PhotosPickerItem? = nil
+    @State private var selectedImage: UIImage? = nil
     
     /// 表單編輯狀態
     @State private var name: String = ""
@@ -88,10 +94,21 @@ struct EditProfileView: View {
         .sheet(isPresented: $showDatePickerSheet) {
             datePickerSheetView
         }
+        .onChange(of: selectedPhotoItem) { _, newItem in
+            guard let newItem else { return }
+            Task {
+                if let data = try? await newItem.loadTransferable(type: Data.self),
+                   let uiImage = UIImage(data: data) {
+                    await MainActor.run {
+                        self.selectedImage = uiImage
+                    }
+                }
+            }
+        }
         .alert("更新成功", isPresented: $showSuccessAlert) {
             Button("確定") {
                 if isAttemptingPasswordChange {
-                    loginVM.logout()
+                    loginVM.logout(modelContext: modelContext)
                 } else {
                     dismiss()
                 }
@@ -105,16 +122,56 @@ struct EditProfileView: View {
     }
     
     /// 頂部頭像與基本資訊看板
+    @ViewBuilder
     private var profileHeaderCard: some View {
+        let avatarData = loginVM.userData?.avatarData
+        let isCaregiver = loginVM.userData?.role == 1
+
         HStack(spacing: 16) {
-            ZStack {
-                Circle()
-                    .fill(AppTheme.primary(for: colorScheme).opacity(0.15))
-                    .frame(width: 64, height: 64)
-                Image(systemName: loginVM.userData?.role == 1 ? "person.badge.shield.checkmark.fill" : "person.fill")
-                    .font(.system(size: 30))
-                    .foregroundColor(AppTheme.primary(for: colorScheme))
+            PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
+                ZStack(alignment: .bottomTrailing) {
+                    Group {
+                        if let selectedImage = selectedImage {
+                            Image(uiImage: selectedImage)
+                                .resizable()
+                                .scaledToFill()
+                        } else if let avatarData = avatarData,
+                                  let uiImage = UIImage(data: avatarData) {
+                            Image(uiImage: uiImage)
+                                .resizable()
+                                .scaledToFill()
+                        } else {
+                            Image(systemName: isCaregiver ? "person.badge.shield.checkmark.fill" : "person.fill")
+                                .font(.system(size: 30))
+                                .foregroundColor(AppTheme.primary(for: colorScheme))
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                .background(AppTheme.primary(for: colorScheme).opacity(0.15))
+                        }
+                    }
+                    .frame(width: 68, height: 68)
+                    .clipShape(Circle())
+                    .overlay(
+                        Circle()
+                            .stroke(AppTheme.primary(for: colorScheme).opacity(0.25), lineWidth: 1.5)
+                    )
+                    
+                    Circle()
+                        .fill(AppTheme.primary(for: colorScheme))
+                        .frame(width: 22, height: 22)
+                        .overlay(
+                            Image(systemName: "camera.fill")
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundColor(colorScheme == .dark ? AppTheme.background(for: colorScheme) : .white)
+                        )
+                        .overlay(
+                            Circle()
+                                .stroke(AppTheme.cardBackground(for: colorScheme), lineWidth: 2)
+                        )
+                        .offset(x: 2, y: 2)
+                }
             }
+            .buttonStyle(.plain)
+            .disabled(isLoading)
             
             VStack(alignment: .leading, spacing: 4) {
                 Text(loginVM.userData?.userName ?? "用戶")
@@ -165,7 +222,6 @@ struct EditProfileView: View {
                     .foregroundColor(AppTheme.textPrimary(for: colorScheme))
             }
             
-            /// 姓名輸入欄位
             VStack(alignment: .leading, spacing: 6) {
                 Text("姓名")
                     .font(.caption.bold())
@@ -178,7 +234,6 @@ struct EditProfileView: View {
                     .cornerRadius(10)
             }
             
-            /// 性別切換選項
             VStack(alignment: .leading, spacing: 6) {
                 Text("性別")
                     .font(.caption.bold())
@@ -190,7 +245,6 @@ struct EditProfileView: View {
                 }
             }
             
-            /// 疾病分期設定 (僅限病患角色)
             if loginVM.userData?.role == 0 {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("疾病階段")
@@ -233,7 +287,6 @@ struct EditProfileView: View {
                 }
             }
             
-            /// 出生日期選擇觸發按鈕
             VStack(alignment: .leading, spacing: 6) {
                 Text("出生日期")
                     .font(.caption.bold())
@@ -431,11 +484,43 @@ struct EditProfileView: View {
         return true
     }
     
-    /// 執行儲存個人資料與密碼設定
+    /// 執行縮放並壓縮圖片為 JPEG Data
+    private func compressImage(_ image: UIImage, maxDimension: CGFloat = 800) -> Data? {
+        let size = image.size
+        let ratio = min(maxDimension / size.width, maxDimension / size.height)
+        
+        let targetSize: CGSize
+        if ratio < 1.0 {
+            targetSize = CGSize(width: size.width * ratio, height: size.height * ratio)
+        } else {
+            targetSize = size
+        }
+        
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1.0
+        let renderer = UIGraphicsImageRenderer(size: targetSize, format: format)
+        let resized = renderer.image { _ in
+            image.draw(in: CGRect(origin: .zero, size: targetSize))
+        }
+        
+        return resized.jpegData(compressionQuality: 0.7)
+    }
+    
+    /// 執行儲存個人資料、頭貼與密碼設定
     private func saveProfile() {
         guard isFormValid else { return }
         isLoading = true
         errorMessage = nil
+        
+        var avatarDataToSend: Data? = nil
+        if let selectedImage = selectedImage {
+            guard let compressed = compressImage(selectedImage) else {
+                self.errorMessage = "圖片壓縮處理失敗，請重新選取"
+                self.isLoading = false
+                return
+            }
+            avatarDataToSend = compressed
+        }
         
         let requestDTO = UpdateProfileRequestDTO(
             name: name.trimmingCharacters(in: .whitespaces),
@@ -443,12 +528,13 @@ struct EditProfileView: View {
             gender: gender,
             diseaseStage: loginVM.userData?.role == 0 ? diseaseStage : nil,
             oldPassword: isAttemptingPasswordChange ? oldPassword : nil,
-            newPassword: isAttemptingPasswordChange ? newPassword : nil
+            newPassword: isAttemptingPasswordChange ? newPassword : nil,
+            avatarData: avatarDataToSend
         )
         
         Task {
             do {
-                try await loginVM.updateProfile(request: requestDTO)
+                try await loginVM.updateProfile(request: requestDTO, modelContext: modelContext)
                 self.isLoading = false
                 self.showSuccessAlert = true
             } catch {

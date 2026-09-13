@@ -30,8 +30,11 @@ class UserData {
     /// 綁定用配對碼（僅在特定狀態或產生配對時存在）
     var pairingCode: String?
 
+    // 頭貼欄位
+    @Attribute(.externalStorage) var avatarData: Data?
+    
     /// 初始化使用者資料模型
-    init( userID: Int, userName: String, email: String, gender: Int, birthday: Date, diseaseStage: String, role: Int, pairingCode: String? = nil) {
+    init( userID: Int, userName: String, email: String, gender: Int, birthday: Date, diseaseStage: String, role: Int, pairingCode: String? = nil, avatarData: Data? = nil) {
         self.userID = userID
         self.userName = userName
         self.email = email
@@ -40,5 +43,6 @@ class UserData {
         self.diseaseStage = diseaseStage
         self.role = role
         self.pairingCode = pairingCode
+        self.avatarData = avatarData
     }
 }

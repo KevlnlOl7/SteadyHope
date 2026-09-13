@@ -10,6 +10,7 @@ struct UserDataDTO: Codable {
     let diseaseStage: String?
     let role: Int
     let pairingCode: String?
+    let avatarData: Data?
 
     // 處理後端 JSON 欄位命名對應
     enum CodingKeys: String, CodingKey {
@@ -21,6 +22,7 @@ struct UserDataDTO: Codable {
         case diseaseStage = "diseaseStage"
         case role = "role"
         case pairingCode = "pairingCode"
+        case avatarData = "avatarData"
     }
 
     /// 將 DTO 轉換為本機實體模型
@@ -33,7 +35,8 @@ struct UserDataDTO: Codable {
             birthday: self.birthday ?? Date(),
             diseaseStage: self.diseaseStage ?? "尚未設定",
             role: self.role,
-            pairingCode: self.pairingCode
+            pairingCode: self.pairingCode,
+            avatarData: self.avatarData
         )
     }
 }
@@ -46,4 +49,5 @@ struct UpdateProfileRequestDTO: Codable {
     var diseaseStage: String?
     var oldPassword: String?
     var newPassword: String?
+    var avatarData: Data?
 }

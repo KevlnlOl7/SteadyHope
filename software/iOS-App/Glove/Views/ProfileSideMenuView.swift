@@ -89,11 +89,21 @@ struct ProfileSideMenuView: View {
     /// 使用者頭像與身分資訊
     private var headerView: some View {
         NavigationLink(destination: EditProfileView(loginVM: loginVM)) {
-
             VStack(alignment: .leading, spacing: 8) {
-                Image(systemName: "person.crop.circle.fill")
-                    .font(.system(size: 56))
-                    .foregroundColor(AppTheme.textSecondary(for: colorScheme))
+                if let avatarData = loginVM.userData?.avatarData,
+                   let uiImage = UIImage(data: avatarData) {
+                    Image(uiImage: uiImage)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: 56, height: 56)
+                        .clipShape(Circle())
+                } else {
+                    Image(systemName: "person.crop.circle.fill")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 56, height: 56)
+                        .foregroundColor(AppTheme.textSecondary(for: colorScheme))
+                }
 
                 Text(loginVM.userData?.userName ?? "用戶")
                     .font(.system(size: 20, weight: .bold))
@@ -119,7 +129,7 @@ struct ProfileSideMenuView: View {
         }
         .buttonStyle(.plain)
         .padding(.horizontal, 20)
-        .padding(.top, 40)
+        .padding(.top, 20)
         .padding(.bottom, 16)
     }
 
