@@ -33,59 +33,55 @@ final class BluetoothViewModel: NSObject, ObservableObject {
     let bluetoothManager = BluetoothManager()
     private var scanTimeoutTask: Task<Void, Never>?
 
-    /// 私有初始化建構子，限制僅能透過單例模式存取
+    /// 私有化建構子，配置分析管線回呼並自動評估藍牙狀態
     private override init() {
         super.init()
-        DataViewModel.shared.bindPipeline(self.pipeline)
+        DataViewModel.shared.bindPipeline(pipeline)
         bluetoothManager.delegate = self
 
-        // 綁定 Slider 相對長度微調回呼（指令標頭：0x02 / 0x03）
+        // 監聽管線發出之相對長度調整命令並轉發至硬體
         pipeline.onSendLengthAdjustment = { [weak self] offset in
             self?.bluetoothManager.sendLengthAdjustment(offset)
         }
 
-        // 綁定手動輸入相對長度微調回呼（指令標頭：0x04 / 0x05）
+        // 監聽管線發出之手動絕對長度命令並轉發至硬體
         pipeline.onSendManualLengthInput = { [weak self] offset in
             self?.bluetoothManager.sendManualLengthInput(offset)
         }
 
         setupPipelineCallbacks()
 
+        // 若藍牙已啟用且尚未連線，則自動啟動掃描
         if bluetoothManager.isBluetoothEnabled && !isConnected {
-            self.startScan()
+            startScan()
         }
     }
 
-    /// 設定震顫訊號管線之各項即時分析與馬達狀態變更回呼函式
+    /// 設定分析管線與 UI 狀態連動之即時回呼機制
     private func setupPipelineCallbacks() {
         pipeline.onLiveAnalysisUpdated = { [weak self] result, points in
             Task { @MainActor [weak self] in
-                guard let self = self else { return }
+                guard let self else { return }
 
                 if let lastPoint = points.last {
-                    self.isMotorEnabled = (lastPoint.motorEnabled == 1)
+                    self.isMotorEnabled = lastPoint.motorEnabled == 1
                 }
 
                 if result.dataValid {
                     self.tremorStrengthRms = result.tremorStrengthRmsDps
-                    if result.frequencyReliable,
-                        let freq = result.dominantFrequencyHz
-                    {
-                        self.dominantFrequencyText = String(
-                            format: "%.2f Hz",
-                            freq
-                        )
+
+                    if result.frequencyReliable, let frequency = result.dominantFrequencyHz {
+                        self.dominantFrequencyText = String(format: "%.2f Hz", frequency)
                     } else {
                         self.dominantFrequencyText = "--"
                     }
                 } else {
-                    self.dominantFrequencyText = "資料不足"
+                    self.dominantFrequencyText = "--"
                     self.tremorStrengthRms = 0.0
                 }
             }
         }
 
-        // 馬達狀態變更時即時同步狀態，無需等待完整分析視窗累積
         pipeline.onMotorEnabledChanged = { [weak self] enabled in
             Task { @MainActor [weak self] in
                 self?.isMotorEnabled = enabled
@@ -93,43 +89,45 @@ final class BluetoothViewModel: NSObject, ObservableObject {
         }
     }
 
-    /// 啟動藍牙裝置掃描，具備權限檢查、開關判定與逾時防呆機制
+    /// 啟動藍牙搜尋與配對手套裝置
     func startScan() {
         if bluetoothManager.isBluetoothUnauthorized {
-            self.isBluetoothUnauthorized = true
-            self.isBluetoothPoweredOn = false
-            self.statusMessage = "請先允許藍牙權限"
-            self.openSettings()
+            isBluetoothUnauthorized = true
+            isBluetoothPoweredOn = false
+            statusMessage = "請先允許藍牙權限"
+            openSettings()
             return
         }
 
         guard bluetoothManager.isBluetoothEnabled else {
-            self.isBluetoothPoweredOn = false
-            self.isBluetoothUnauthorized = false
-            self.isConnected = false
-            self.isScanning = false
-            self.statusMessage = "手機藍牙未開啟"
+            isBluetoothPoweredOn = false
+            isBluetoothUnauthorized = false
+            isConnected = false
+            isScanning = false
+            statusMessage = "手機藍牙未開啟"
+            pipeline.resetPipeline()
             bluetoothManager.triggerSystemPowerAlert()
             return
         }
 
         guard !isConnected else {
-            self.statusMessage = "手套已連線"
+            statusMessage = "手套已連線"
             return
         }
 
         AppLog.debug("啟動掃描...")
-        self.isBluetoothPoweredOn = true
-        self.isBluetoothUnauthorized = false
-        self.isScanning = true
-        self.statusMessage = "搜尋手套中..."
+        isBluetoothPoweredOn = true
+        isBluetoothUnauthorized = false
+        isScanning = true
+        statusMessage = "搜尋手套中..."
 
         bluetoothManager.startScanning()
 
         scanTimeoutTask?.cancel()
         scanTimeoutTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 8 * 1_000_000_000)
-            guard let self = self, !Task.isCancelled else { return }
+
+            guard let self, !Task.isCancelled else { return }
 
             if !self.isConnected {
                 AppLog.error("掃描逾時未連線。")
@@ -143,23 +141,27 @@ final class BluetoothViewModel: NSObject, ObservableObject {
     /// 中斷當前藍牙連線並重設相關運作狀態
     func disconnect() {
         scanTimeoutTask?.cancel()
-        self.isScanning = false
-        self.isMotorEnabled = false
-        self.isConnected = false
-        self.statusMessage = "未連線"
+        isScanning = false
+        isMotorEnabled = false
+        isAutomaticSuppressionEnabled = false
+        isConnected = false
+        statusMessage = "未連線"
+
+        pipeline.resetPipeline()
+        DataViewModel.shared.currentSessionId = UUID().uuidString
+
         bluetoothManager.disconnect()
     }
 
-    /// 引導使用者開啟系統設定頁面以調整藍牙權限
+    /// 開啟系統設定頁面引導使用者開啟藍牙權限
     func openSettings() {
-        if let url = URL(string: UIApplication.openSettingsURLString) {
-            if UIApplication.shared.canOpenURL(url) {
-                UIApplication.shared.open(url)
-            }
+        if let url = URL(string: UIApplication.openSettingsURLString),
+           UIApplication.shared.canOpenURL(url) {
+            UIApplication.shared.open(url)
         }
     }
 
-    /// 提交滑桿選定之相對長度調整量，將公分（cm）轉為公釐（mm）後透過藍牙發送
+    /// 提交滑桿所選取之長度微調相對命令至硬體端，送出後自動將滑桿數值歸零
     func commitSliderLengthAdjustment() {
         guard isConnected else {
             AppLog.error("略過 Slider 指令：手套尚未連線完成。")
@@ -203,39 +205,43 @@ final class BluetoothViewModel: NSObject, ObservableObject {
 
 extension BluetoothViewModel: BluetoothManagerDelegate {
 
-    /// 接收藍牙手套電量資訊更新之委派方法
+    /// 接收手套硬體端回傳之電池狀態推播更新
     /// - Parameters:
-    ///   - manager: 觸發更新之藍牙管理實體
-    ///   - battery: 包含電量百分比與充電狀態之結構
-    public func bluetoothManager(_ manager: BluetoothManager, didUpdateBattery battery: BatteryStatus) {
+    ///   - manager: 發送回呼之藍牙管理器實體
+    ///   - battery: 包含電量百分比之 BatteryStatus 物件
+    public func bluetoothManager(
+        _ manager: BluetoothManager,
+        didUpdateBattery battery: BatteryStatus
+    ) {
         Task { @MainActor in
             self.batteryLevel = Int(battery.percent)
         }
     }
 
-    /// 接收藍牙手套批次震顫取樣點之委派方法
+    /// 接收手套硬體端連續串流傳入之原始三軸震顫資料點
     /// - Parameters:
-    ///   - manager: 觸發更新之藍牙管理實體
-    ///   - points: 剛解析完成之震顫取樣點陣列
+    ///   - manager: 發送回呼之藍牙管理器實體
+    ///   - points: 最新解析出之 TremorDataPoint 感測訊號陣列
     public func bluetoothManager(
         _ manager: BluetoothManager,
         didReceivePoints points: [TremorDataPoint]
     ) {
-        if !self.isConnected {
-            Task { @MainActor in
-                self.scanTimeoutTask?.cancel()
-                self.isConnected = true
-                self.isScanning = false
-                self.statusMessage = "手套已連線"
-            }
+        if !isConnected {
+            scanTimeoutTask?.cancel()
+            isConnected = true
+            isScanning = false
+            statusMessage = "手套已連線"
+
+            DataViewModel.shared.currentSessionId = UUID().uuidString
         }
+
         pipeline.bluetoothManager(manager, didReceivePoints: points)
     }
 
-    /// 接收手機系統藍牙硬體狀態變更之委派方法
+    /// 監聽系統底層 CoreBluetooth 狀態改變並同步處理 UI 提示與連線狀態
     /// - Parameters:
-    ///   - manager: 觸發更新之藍牙管理實體
-    ///   - state: CoreBluetooth 當前狀態列舉值
+    ///   - manager: 發送回呼之藍牙管理器實體
+    ///   - state: 系統最新之 CBManagerState 狀態
     public func bluetoothManager(
         _ manager: BluetoothManager,
         didUpdateState state: CBManagerState
@@ -243,55 +249,72 @@ extension BluetoothViewModel: BluetoothManagerDelegate {
         Task { @MainActor in
             switch state {
             case .poweredOn:
-                self.isBluetoothPoweredOn = true
-                self.isBluetoothUnauthorized = false
-                if !self.isConnected && !self.isScanning {
-                    self.startScan()
+                isBluetoothPoweredOn = true
+                isBluetoothUnauthorized = false
+                if !isConnected && !isScanning {
+                    startScan()
                 }
+
             case .unauthorized:
-                self.isBluetoothPoweredOn = false
-                self.isBluetoothUnauthorized = true
-                self.isConnected = false
-                self.isScanning = false
-                self.statusMessage = "未取得藍牙權限"
-                self.scanTimeoutTask?.cancel()
+                isBluetoothPoweredOn = false
+                isBluetoothUnauthorized = true
+                isConnected = false
+                isScanning = false
+                statusMessage = "未取得藍牙權限"
+                scanTimeoutTask?.cancel()
+                pipeline.resetPipeline()
+                DataViewModel.shared.currentSessionId = UUID().uuidString
+
             case .poweredOff:
-                self.isBluetoothPoweredOn = false
-                self.isBluetoothUnauthorized = false
-                self.isConnected = false
-                self.isScanning = false
-                self.statusMessage = "手機藍牙未開啟"
-                self.scanTimeoutTask?.cancel()
+                isBluetoothPoweredOn = false
+                isBluetoothUnauthorized = false
+                isConnected = false
+                isScanning = false
+                statusMessage = "手機藍牙未開啟"
+                scanTimeoutTask?.cancel()
+                pipeline.resetPipeline()
+                DataViewModel.shared.currentSessionId = UUID().uuidString
+
             default:
-                self.isBluetoothPoweredOn = false
-                self.isConnected = false
-                self.isScanning = false
-                self.statusMessage = "藍牙準備中..."
+                isBluetoothPoweredOn = false
+                isConnected = false
+                isScanning = false
+                statusMessage = "藍牙準備中..."
+                pipeline.resetPipeline()
+                DataViewModel.shared.currentSessionId = UUID().uuidString
             }
         }
     }
 
-    /// 接收手套連線或斷開連線狀態變更之委派方法
+    /// 監聽手套藍牙連線或中斷連線事件回呼
     /// - Parameters:
-    ///   - manager: 觸發更新之藍牙管理實體
-    ///   - isConnected: 藍牙連線狀態旗標
+    ///   - manager: 發送回呼之藍牙管理器實體
+    ///   - connected: 裝置當前是否處於連線狀態
     public func bluetoothManager(
         _ manager: BluetoothManager,
-        didUpdateConnection isConnected: Bool
+        didUpdateConnection connected: Bool
     ) {
         Task { @MainActor in
-            self.scanTimeoutTask?.cancel()
-            self.isConnected = isConnected
-            self.isScanning = false
-            self.statusMessage = isConnected ? "手套已連線" : "已斷開連線"
+            scanTimeoutTask?.cancel()
+            isConnected = connected
+            isScanning = false
+            statusMessage = connected ? "手套已連線" : "已斷開連線"
 
-            if !isConnected {
-                self.dominantFrequencyText = "--"
-                self.tremorStrengthRms = 0.0
-                self.isMotorEnabled = false
+            if !connected {
+                dominantFrequencyText = "--"
+                tremorStrengthRms = 0.0
+                isMotorEnabled = false
+                isAutomaticSuppressionEnabled = false
+
+                pipeline.resetPipeline()
+                DataViewModel.shared.currentSessionId = UUID().uuidString
+            } else {
+                DataViewModel.shared.currentSessionId = UUID().uuidString
+                isAutomaticSuppressionEnabled = false
+                bluetoothManager.sendAutomaticMode(false)
             }
 
-            self.lengthOffsetMm = 0.0
+            lengthOffsetMm = 0.0
         }
     }
 }

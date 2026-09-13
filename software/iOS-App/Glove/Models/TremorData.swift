@@ -1,44 +1,39 @@
 import Foundation
 
-/// 藍牙低功耗 (BLE) 感測手套傳輸之單筆震顫原始資料點
-public struct TremorDataPoint {
-    
-    /// 藍牙封包類型標頭辨識碼 (0x01 代表震顫資料)
+/// 藍牙低功耗 (BLE) 感測手套傳輸之單筆震顫原始資料點模型
+public struct TremorDataPoint: Sendable {
+    /// BLE 封包協定型別識別碼（0x01）
     public static let bleType: UInt8 = 0x01
-
-    /// 單筆取樣點資料位元組大小 (固定為 16 位元組)
+    /// 單筆原始感測數據佔用之位元組大小（16 位元組）
     public static let sampleSize = 16
 
-    /// 採樣封包序號
+    /// 封包傳輸遞增流水號，用於檢查封包連續性與掉包狀況
     public var sequence: UInt32
-
-    /// 採樣硬體時間戳記 (毫秒)
+    /// 硬體內部採樣時鐘時間戳記（單位：毫秒 ms）
     public var sampleTickMs: UInt32
-
-    /// X 軸角速度 (deg/s)
+    /// X 軸陀螺儀角速度數值（單位：度/秒 dps）
     public var gyroXDps: Double
-
-    /// Y 軸角速度 (deg/s)
+    /// Y 軸陀螺儀角速度數值（單位：度/秒 dps）
     public var gyroYDps: Double
-
-    /// Z 軸角速度 (deg/s)
+    /// Z 軸陀螺儀角速度數值（單位：度/秒 dps）
     public var gyroZDps: Double
-
-    /// 感測器狀態有效性旗標 (1 代表有效，0 代表異常)
+    /// 感測器硬體狀態有效旗標（1 為正常，0 為異常或飽和）
     public var sensorValid: UInt8
-
-    /// 馬達致動狀態旗標 (1 代表啟動，0 代表關閉)
+    /// 震顫抑制馬達當前運轉狀態（1 為啟動介入，0 為關閉待命）
     public var motorEnabled: UInt8
+    /// 系統接收或解析時對應之絕對時間戳記
+    public var recordedAt: Date?
 
-    /// 初始化震顫原始資料點
+    /// 初始化單筆震顫原始資料點
     /// - Parameters:
-    ///   - sequence: 採樣封包序號
-    ///   - sampleTickMs: 採樣硬體時間戳記 (毫秒)
-    ///   - gyroXDps: X 軸角速度 (deg/s)
-    ///   - gyroYDps: Y 軸角速度 (deg/s)
-    ///   - gyroZDps: Z 軸角速度 (deg/s)
-    ///   - sensorValid: 感測器狀態有效性旗標
-    ///   - motorEnabled: 馬達致動狀態旗標
+    ///   - sequence: 封包流水號
+    ///   - sampleTickMs: 硬體時鐘毫秒數
+    ///   - gyroXDps: X 軸角速度 (dps)
+    ///   - gyroYDps: Y 軸角速度 (dps)
+    ///   - gyroZDps: Z 軸角速度 (dps)
+    ///   - sensorValid: 感測器狀態旗標
+    ///   - motorEnabled: 馬達狀態旗標
+    ///   - recordedAt: 系統絕對時間
     public init(
         sequence: UInt32,
         sampleTickMs: UInt32,
@@ -46,7 +41,8 @@ public struct TremorDataPoint {
         gyroYDps: Double,
         gyroZDps: Double,
         sensorValid: UInt8,
-        motorEnabled: UInt8
+        motorEnabled: UInt8,
+        recordedAt: Date? = nil
     ) {
         self.sequence = sequence
         self.sampleTickMs = sampleTickMs
@@ -55,29 +51,21 @@ public struct TremorDataPoint {
         self.gyroZDps = gyroZDps
         self.sensorValid = sensorValid
         self.motorEnabled = motorEnabled
+        self.recordedAt = recordedAt
     }
 
-    /// 解析 ESP32 傳遞之完整 BLE IMU Notify 批次二進位封包
-    /// - Parameter data: 接收到的原始二進位資料 (包含 Byte 0 之型態標頭 0x01)
-    /// - Returns: 解析完成之 TremorDataPoint 物件陣列，若長度或格式不合則回傳空陣列
+    /// 解析來自 BLE 特徵值之批次二進位原始封包
+    /// - Parameter data: 藍牙接收到的原始資料封包
+    /// - Returns: 解析完成之 TremorDataPoint 資料點陣列
     public static func parseBatch(from data: Data) -> [TremorDataPoint] {
-        guard data.count >= 1 + sampleSize else {
-            return []
-        }
-
-        guard data[0] == bleType else {
-            return []
-        }
+        guard data.count >= 1 + sampleSize else { return [] }
+        guard data[0] == bleType else { return [] }
 
         let payloadCount = data.count - 1
-        guard payloadCount % sampleSize == 0 else {
-            return []
-        }
+        guard payloadCount % sampleSize == 0 else { return [] }
 
         let sampleCount = payloadCount / sampleSize
-        guard sampleCount > 0 else {
-            return []
-        }
+        guard sampleCount > 0 else { return [] }
 
         var results: [TremorDataPoint] = []
         results.reserveCapacity(sampleCount)
@@ -97,7 +85,6 @@ public struct TremorDataPoint {
                 TremorDataPoint(
                     sequence: sequence,
                     sampleTickMs: tick,
-                    // 硬體規範：原始感測數值除以 16 轉換為實際角速度 (deg/s)
                     gyroXDps: Double(gxRaw) / 16.0,
                     gyroYDps: Double(gyRaw) / 16.0,
                     gyroZDps: Double(gzRaw) / 16.0,
@@ -144,42 +131,52 @@ public struct TremorDataPoint {
     }
 }
 
-/// 震顫訊號演算法分析判定結果
-public struct TremorAnalysisResult {
-    
-    /// 輸入資料完整性與時序是否有效
+/// 震顫訊號數位訊號處理與頻譜分析判定結果資料模型
+public struct TremorAnalysisResult: Sendable {
+    /// 訊號資料品質是否有效且符合運算標準
     public var dataValid: Bool
-
-    /// 頻率辨識是否符合防呆門檻且具備可靠度
+    /// 主頻率計算結果是否具備足夠顯著性與可信度
     public var frequencyReliable: Bool
-
-    /// 辨識出之主要震顫頻率 (Hz)
+    /// 檢測出之主要震顫頻率數值（單位：Hz），若無法可靠判定則為 nil
     public var dominantFrequencyHz: Double?
-
-    /// 典型震顫頻段 (4-6 Hz) 之向量均方根強度 (RMS, deg/s)
+    /// 震顫分析頻帶內之震顫強度均方根值（單位：度/秒 dps）
     public var tremorStrengthRmsDps: Double
-
-    /// FFT 頻譜中能量最高之候選頻率 Bin 索引
+    /// 全頻帶三軸向量合成之均方根值（單位：度/秒 dps）
+    public var vectorRmsDps: Double
+    /// 典型震顫頻帶能量佔全頻譜能量之比例
+    public var tremorBandFraction: Double
+    /// 頻譜主峰值之能量集中度指標
+    public var peakConcentration: Double
+    /// 離散傅立葉轉換頻譜中最大能量候選頻點索引值
     public var candidateBin: Int?
 
-    /// 初始化震顫演算法分析結果
+    /// 初始化震顫訊號演算法分析判定結果
     /// - Parameters:
-    ///   - dataValid: 輸入資料完整性與時序是否有效
-    ///   - frequencyReliable: 頻率辨識是否符合防呆門檻且具備可靠度
-    ///   - dominantFrequencyHz: 辨識出之主要震顫頻率 (Hz)
-    ///   - tremorStrengthRmsDps: 典型震顫頻段之均方根強度 (RMS, deg/s)
-    ///   - candidateBin: FFT 頻譜中能量最高之候選頻率 Bin 索引
+    ///   - dataValid: 資料是否有效
+    ///   - frequencyReliable: 頻率是否可信
+    ///   - dominantFrequencyHz: 主頻率數值 (Hz)
+    ///   - tremorStrengthRmsDps: 震顫強度 RMS (dps)
+    ///   - vectorRmsDps: 全頻帶向量 RMS (dps)
+    ///   - tremorBandFraction: 震顫頻帶能量佔比
+    ///   - peakConcentration: 峰值能量集中度
+    ///   - candidateBin: 最大候選頻點索引
     public init(
         dataValid: Bool,
         frequencyReliable: Bool,
         dominantFrequencyHz: Double? = nil,
         tremorStrengthRmsDps: Double,
+        vectorRmsDps: Double = 0.0,
+        tremorBandFraction: Double = 0.0,
+        peakConcentration: Double = 0.0,
         candidateBin: Int? = nil
     ) {
         self.dataValid = dataValid
         self.frequencyReliable = frequencyReliable
         self.dominantFrequencyHz = dominantFrequencyHz
         self.tremorStrengthRmsDps = tremorStrengthRmsDps
+        self.vectorRmsDps = vectorRmsDps
+        self.tremorBandFraction = tremorBandFraction
+        self.peakConcentration = peakConcentration
         self.candidateBin = candidateBin
     }
 }

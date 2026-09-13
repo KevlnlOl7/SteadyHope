@@ -161,10 +161,22 @@ struct DataView: View {
     private var headerView: some View {
         HStack {
             VStack(alignment: .leading, spacing: 6) {
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                HStack(alignment: .center, spacing: 8) {
                     Text(titleText)
                         .font(.system(size: 26, weight: .bold))
                         .foregroundColor(AppTheme.textPrimary(for: colorScheme))
+
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            activeInfoSheet = .dataAndRules
+                        }
+                    } label: {
+                        Image(systemName: "exclamationmark.circle")
+                            .font(.system(size: 20))
+                            .foregroundColor(AppTheme.primary(for: colorScheme))
+                    }
+                    .buttonStyle(.plain)
+
                     if isCaregiver {
                         Text("受照護者")
                             .font(.caption2)
@@ -220,7 +232,7 @@ struct DataView: View {
                 Text("歷史紀錄待補填提醒")
                     .font(.system(size: 13, weight: .bold))
                     .foregroundColor(AppTheme.textPrimary(for: colorScheme))
-                Text("尚有 \(reminderCandidateCount) 筆震顫紀錄未填寫情境。補齊後可協助醫師掌握發作規律。")
+                Text("尚有 \(reminderCandidateCount) 筆動作紀錄未填寫情境。補齊後可協助醫師掌握發作規律。")
                     .font(.caption2)
                     .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                     .fixedSize(horizontal: false, vertical: true)
@@ -370,7 +382,7 @@ struct DataView: View {
         .padding(.horizontal, 20)
     }
 
-    /// 簡易模式數據看板視圖與文案狀態計算
+    /// 簡易模式數據看板視圖
     private var simpleDashboardCardsView: some View {
         VStack(spacing: 12) {
             HStack(spacing: 12) {
@@ -492,7 +504,7 @@ struct DataView: View {
         isChartCleared = false
 
         if let event = dataVM.filteredEvents.min(by: { abs($0.timestamp.timeIntervalSince(point.timestamp)) < abs($1.timestamp.timeIntervalSince(point.timestamp)) }),
-          abs(event.timestamp.timeIntervalSince(point.timestamp)) <= 5.0 {
+           abs(event.timestamp.timeIntervalSince(point.timestamp)) <= 5.0 {
             dataVM.expandedEventID = event.id
             DispatchQueue.main.async {
                 withAnimation(.easeOut(duration: 0.25)) {
@@ -502,14 +514,14 @@ struct DataView: View {
         }
     }
 
-    /// 震顫事件分區視圖
+    /// 動作分析紀錄分區視圖
     private var tremorEventsSectionView: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Image(systemName: "list.bullet.rectangle.portrait.fill").foregroundColor(AppTheme.primary(for: colorScheme))
                 let targetPrefix = isCaregiver ? "\(loginVM.partnerName) 的" : ""
                 let dateStr = isViewingToday ? "今日" : dataVM.selectedFilterDate.toString(format: "yyyy/MM/dd")
-                Text("\(targetPrefix)\(dateStr)震顫紀錄 (\(dataVM.filteredEvents.count) 筆)")
+                Text("\(targetPrefix)\(dateStr)動作分析紀錄 (\(dataVM.filteredEvents.count) 筆)")
                     .font(.system(size: 18, weight: .bold))
                     .foregroundColor(AppTheme.textPrimary(for: colorScheme))
                 Spacer()
@@ -521,7 +533,7 @@ struct DataView: View {
                     Image(systemName: "checkmark.shield.fill")
                         .font(.system(size: 32))
                         .foregroundColor(.green.opacity(0.6))
-                    Text(isViewingToday ? "今日尚無捕捉到顯著震顫事件" : "該日無顯著震顫事件紀錄")
+                    Text(isViewingToday ? "今日尚無分析紀錄" : "該日無動作分析紀錄")
                         .font(.subheadline)
                         .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                 }
@@ -578,12 +590,10 @@ struct DataView: View {
         }
     }
 
-    /// 圖片預覽彈窗視圖建構
     private func imagePreview(image: UIImage, onClose: @escaping () -> Void) -> some View {
         ImagePreview(image: image, onClose: onClose)
     }
 
-    /// 依狀態文字對應指示燈色彩
     private func statusColor(_ status: String) -> Color {
         switch status {
         case "照護者家屬": return AppTheme.primary(for: colorScheme)
@@ -595,9 +605,8 @@ struct DataView: View {
     }
 }
 
-/// RMS 走勢圖表封裝容器視圖，提供手勢縮放、拖曳平移、時間選取與事件標記渲染機制
+/// RMS 走勢圖表容器：折線穿過事件波峰，只有事件顯示為橘/紅點
 private struct RMSTrendChartViewContainer: View {
-    /// 外部傳入之數據源與代理器
     let history: [DataViewModel.RMSTrendPoint]
     let events: [TremorEvent]
     let selectedDate: Date
@@ -612,7 +621,6 @@ private struct RMSTrendChartViewContainer: View {
     let onReturnToNow: () -> Void
     @Environment(\.colorScheme) private var colorScheme
 
-    /// 圖表可視範圍、滾動位置與縮放拖曳狀態
     @State private var visibleDuration: TimeInterval = 60
     @State private var zoomBaseDuration: TimeInterval = 60
     @State private var chartScrollPosition: Date = Date()
@@ -621,23 +629,17 @@ private struct RMSTrendChartViewContainer: View {
     @State private var isPinching: Bool = false
     @State private var dragStartScrollPosition: Date? = nil
 
-    /// 圖表時間選取器彈窗與選取狀態
     @State private var showTimePicker: Bool = false
     @State private var selectedChartTime: Date = Date()
     @State private var hasSelectedSpecificTime: Bool = false
 
-    /// 圖表手勢點選命中與選取狀態
+    @State private var chartSelectedEventID: UUID? = nil
     @State private var chartSelectedDate: Date? = nil
-    @State private var chartTappedPointID: UUID? = nil
-    @State private var chartTappedPointTimestamp: Date? = nil
-    @State private var lastTappedDate: Date? = nil
 
-    /// 圖表尺寸與時間範圍常數
     private let minimumVisibleDuration: TimeInterval = 3
     private let maximumVisibleDuration: TimeInterval = 24 * 60 * 60
     private let chartHeight: CGFloat = 285
 
-    /// 時區與邊界時間計算屬性
     private var taipeiCalendar: Calendar {
         var calendar = Calendar.current
         calendar.timeZone = TimeZone(identifier: "Asia/Taipei") ?? .current
@@ -655,7 +657,6 @@ private struct RMSTrendChartViewContainer: View {
         if isViewingToday {
             return min(tomorrow, Date())
         }
-
         return tomorrow
     }
 
@@ -666,7 +667,6 @@ private struct RMSTrendChartViewContainer: View {
         return dayEnd.addingTimeInterval(-1)
     }
 
-    /// 可視範圍與左右滾動邊界計算屬性
     private var clampedVisibleDuration: TimeInterval {
         min(max(visibleDuration, minimumVisibleDuration), maximumVisibleDuration)
     }
@@ -682,13 +682,6 @@ private struct RMSTrendChartViewContainer: View {
     private var visibleEndDate: Date {
         let calculatedEnd = clampedChartScrollPosition.addingTimeInterval(clampedVisibleDuration)
         return min(calculatedEnd, dayEnd)
-    }
-
-    /// 圖表可視與緩衝數據集合
-    private var visibleHistory: [DataViewModel.RMSTrendPoint] {
-        history.filter {
-            $0.timestamp >= clampedChartScrollPosition && $0.timestamp <= visibleEndDate
-        }
     }
 
     private var bufferedHistory: [DataViewModel.RMSTrendPoint] {
@@ -711,16 +704,34 @@ private struct RMSTrendChartViewContainer: View {
         }
     }
 
-    /// 圖表座標軸動態刻度與標籤計算屬性
-    private var dynamicMaxY: Double {
-        let values = bufferedHistory
-            .map(\.rmsValue)
-            .filter { $0.isFinite && !$0.isNaN }
+    /// 線串接點核心：將分析紀錄作為波峰節點併入折線取樣序列
+    private var chartLineHistory: [DataViewModel.RMSTrendPoint] {
+        var combined = bufferedHistory
+        for event in bufferedEvents {
+            if !combined.contains(where: { abs($0.timestamp.timeIntervalSince(event.timestamp)) <= 0.6 }) {
+                combined.append(
+                    DataViewModel.RMSTrendPoint(
+                        timestamp: event.timestamp,
+                        timeLabel: event.timeLabel,
+                        rmsValue: event.rmsValue,
+                        isMotorActive: event.isMotorActive,
+                        rawWindowData: event.rawWindowData
+                    )
+                )
+            }
+        }
+        return combined.sorted { $0.timestamp < $1.timestamp }
+    }
 
-        guard let maximum = values.max() else {
+    /// 同時考量走勢背景與事件波峰之高度，避免被壓在 0.5 底部
+    private var dynamicMaxY: Double {
+        let hValues = bufferedHistory.map(\.rmsValue).filter { $0.isFinite && !$0.isNaN }
+        let eValues = bufferedEvents.map(\.rmsValue).filter { $0.isFinite && !$0.isNaN }
+        let allValues = hValues + eValues
+
+        guard let maximum = allValues.max(), maximum > 0 else {
             return 0.5
         }
-
         return max(0.5, maximum * 1.15)
     }
 
@@ -761,7 +772,6 @@ private struct RMSTrendChartViewContainer: View {
             }
             current += step
         }
-
         return ticks
     }
 
@@ -776,23 +786,16 @@ private struct RMSTrendChartViewContainer: View {
         }
     }
 
-    /// 標題時間與即時狀態追蹤判定屬性
     private var visibleHeaderTime: Date {
         let center = clampedChartScrollPosition.addingTimeInterval(clampedVisibleDuration * 0.5)
         return min(max(center, dayStart), dayLastSecond)
-    }
-
-    private var isAtCurrentTime: Bool {
-        guard isViewingToday else { return false }
-        let now = Date()
-        return visibleEndDate >= now.addingTimeInterval(-2)
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             chartHeaderView
 
-            if history.isEmpty {
+            if history.isEmpty && events.isEmpty {
                 emptyChartView
             } else {
                 HStack {
@@ -811,86 +814,10 @@ private struct RMSTrendChartViewContainer: View {
         .padding()
         .background(AppTheme.cardBackground(for: colorScheme))
         .cornerRadius(20)
-        .softCardShadow()
         .padding(.horizontal, 20)
+        .shadow(color: Color.black.opacity(0.05), radius: 8, y: 4)
         .sheet(isPresented: $showTimePicker) {
-            NavigationStack {
-                VStack(spacing: 20) {
-                    Text("選擇圖表時間")
-                        .font(.headline)
-                        .foregroundColor(AppTheme.textPrimary(for: colorScheme))
-
-                    DatePicker(
-                        "時間",
-                        selection: $selectedChartTime,
-                        in: dayStart...dayLastSecond,
-                        displayedComponents: [.hourAndMinute]
-                    )
-                    .datePickerStyle(.wheel)
-                    .labelsHidden()
-
-                    Text(selectedChartTime.toString(format: "yyyy/MM/dd HH:mm"))
-                        .font(.system(size: 16, weight: .semibold, design: .rounded))
-                        .foregroundColor(AppTheme.primary(for: colorScheme))
-
-                    if isViewingToday {
-                        Button {
-                            hasSelectedSpecificTime = false
-                            selectedChartTime = Date()
-                            clearChartSelection()
-                            isChartCleared = false
-                            onReturnToNow()
-                            showTimePicker = false
-
-                            DispatchQueue.main.async {
-                                moveToDate(Date(), animated: false)
-                            }
-                        } label: {
-                            HStack(spacing: 6) {
-                                Image(systemName: "arrow.clockwise.circle.fill")
-                                Text("回到現在")
-                            }
-                            .font(.system(size: 15, weight: .bold))
-                            .foregroundColor(AppTheme.primary(for: colorScheme))
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 11)
-                            .background(AppTheme.primary(for: colorScheme).opacity(0.10))
-                            .cornerRadius(10)
-                        }
-                        .buttonStyle(.plain)
-                        .padding(.horizontal, 20)
-                    }
-
-                    Spacer()
-                }
-                .padding()
-                .background(AppTheme.background(for: colorScheme))
-                .navigationTitle("查看時間")
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("取消") {
-                            showTimePicker = false
-                        }
-                        .foregroundColor(AppTheme.primary(for: colorScheme))
-                    }
-
-                    ToolbarItem(placement: .confirmationAction) {
-                        Button("前往") {
-                            hasSelectedSpecificTime = true
-                            clearChartSelection()
-
-                            let safeTime = min(max(selectedChartTime, dayStart), dayLastSecond)
-                            selectedChartTime = safeTime
-                            moveToDate(safeTime, animated: true)
-                            showTimePicker = false
-                        }
-                        .fontWeight(.bold)
-                        .foregroundColor(AppTheme.primary(for: colorScheme))
-                    }
-                }
-            }
-            .presentationDetents([.medium])
+            timePickerNavigationStack
         }
         .onAppear {
             initializeScrollPositionIfNeeded()
@@ -905,22 +832,93 @@ private struct RMSTrendChartViewContainer: View {
         .onChange(of: history.last?.timestamp) { _, _ in
             guard isViewingToday else { return }
             guard !hasSelectedSpecificTime else { return }
-
             moveToDate(Date(), animated: false)
         }
         .onChange(of: jumpTargetDate.wrappedValue) { _, newDate in
             guard let newDate else { return }
-
             clearChartSelection()
             moveToDate(newDate, animated: true)
-
             DispatchQueue.main.async {
                 jumpTargetDate.wrappedValue = nil
             }
         }
     }
 
-    /// 圖表本體與手勢互動區塊視圖
+    private var timePickerNavigationStack: some View {
+        NavigationStack {
+            VStack(spacing: 20) {
+                Text("選擇圖表時間")
+                    .font(.headline)
+                    .foregroundColor(AppTheme.textPrimary(for: colorScheme))
+
+                DatePicker(
+                    "時間",
+                    selection: $selectedChartTime,
+                    in: dayStart...dayLastSecond,
+                    displayedComponents: [.hourAndMinute]
+                )
+                .datePickerStyle(.wheel)
+                .labelsHidden()
+
+                Text(selectedChartTime.toString(format: "yyyy/MM/dd HH:mm"))
+                    .font(.system(size: 16, weight: .semibold, design: .rounded))
+                    .foregroundColor(AppTheme.primary(for: colorScheme))
+
+                if isViewingToday {
+                    Button {
+                        hasSelectedSpecificTime = false
+                        selectedChartTime = Date()
+                        clearChartSelection()
+                        isChartCleared = false
+                        onReturnToNow()
+                        showTimePicker = false
+                        DispatchQueue.main.async {
+                            moveToDate(Date(), animated: false)
+                        }
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "arrow.clockwise.circle.fill")
+                            Text("回到現在")
+                        }
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundColor(AppTheme.primary(for: colorScheme))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 11)
+                        .background(AppTheme.primary(for: colorScheme).opacity(0.10))
+                        .cornerRadius(10)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.horizontal, 20)
+                }
+                Spacer()
+            }
+            .padding()
+            .background(AppTheme.background(for: colorScheme))
+            .navigationTitle("查看時間")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("取消") { showTimePicker = false }
+                        .foregroundColor(AppTheme.primary(for: colorScheme))
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("前往") {
+                        hasSelectedSpecificTime = true
+                        clearChartSelection()
+                        let safeTime = min(max(selectedChartTime, dayStart), dayLastSecond)
+                        selectedChartTime = safeTime
+                        moveToDate(safeTime, animated: true)
+                        showTimePicker = false
+                    }
+                    .fontWeight(.bold)
+                    .foregroundColor(AppTheme.primary(for: colorScheme))
+                }
+            }
+        }
+        .presentationDetents([.medium])
+    }
+
+    /// 圖表本體繪圖區塊
     @ViewBuilder
     private var mainChartArea: some View {
         let currentMaxY = self.dynamicMaxY
@@ -938,7 +936,10 @@ private struct RMSTrendChartViewContainer: View {
                         )
                         .foregroundStyle(Color.orange.opacity(0.10))
                     }
+                }
 
+                // 折線連貫波峰
+                ForEach(chartLineHistory) { point in
                     if point.rmsValue.isFinite && !point.rmsValue.isNaN {
                         LineMark(
                             x: .value("時間", point.timestamp),
@@ -948,24 +949,17 @@ private struct RMSTrendChartViewContainer: View {
                         .lineStyle(StrokeStyle(lineWidth: 2))
                         .interpolationMethod(.linear)
                     }
-
-                    if isTappedPoint(point) {
-                        PointMark(
-                            x: .value("時間", point.timestamp),
-                            y: .value("強度", max(0, point.rmsValue))
-                        )
-                        .foregroundStyle(Color.red)
-                        .symbolSize(100)
-                    }
                 }
 
+                // 只有分析紀錄繪製橘點/紅點
                 ForEach(bufferedEvents) { event in
+                    let isSelected = (event.id == chartSelectedEventID)
                     PointMark(
                         x: .value("事件時間", event.timestamp),
                         y: .value("事件強度", max(0, event.rmsValue))
                     )
-                    .foregroundStyle(isEventCorrespondingToTappedPoint(event) ? Color.red : Color.orange)
-                    .symbolSize(isEventCorrespondingToTappedPoint(event) ? 100 : 34)
+                    .foregroundStyle(isSelected ? Color.red : Color.orange)
+                    .symbolSize(isSelected ? 90 : 38)
                 }
             }
             .chartXScale(domain: clampedChartScrollPosition...visibleEndDate)
@@ -1008,7 +1002,6 @@ private struct RMSTrendChartViewContainer: View {
                         guard let date = proxy.value(atX: location.x, as: Date.self),
                               let value = proxy.value(atY: location.y, as: Double.self)
                         else { return }
-
                         handleChartTap(at: date, yValue: value)
                     }
             }
@@ -1019,14 +1012,11 @@ private struct RMSTrendChartViewContainer: View {
                             isPinching = true
                             zoomAnchorDate = visibleHeaderTime
                         }
-
                         let magnification = max(value.magnification, 0.05)
                         let newDuration = min(max(zoomBaseDuration / magnification, minimumVisibleDuration), maximumVisibleDuration)
                         visibleDuration = newDuration
-
                         let maxLeading = max(dayStart, dayEnd.addingTimeInterval(-newDuration))
                         let newLeading = zoomAnchorDate.addingTimeInterval(-newDuration * 0.5)
-
                         chartScrollPosition = min(max(newLeading, dayStart), maxLeading)
                     }
                     .onEnded { _ in
@@ -1039,20 +1029,15 @@ private struct RMSTrendChartViewContainer: View {
                 DragGesture(minimumDistance: 4)
                     .onChanged { value in
                         guard !isPinching else { return }
-
                         let width = max(geometry.size.width, 1)
                         let secondsPerPoint = clampedVisibleDuration / width
-
                         if dragStartScrollPosition == nil {
                             dragStartScrollPosition = chartScrollPosition
                         }
-
                         guard let startPosition = dragStartScrollPosition else { return }
-
                         let deltaSeconds = Double(value.translation.width) * secondsPerPoint
                         let proposedLeading = startPosition.addingTimeInterval(-deltaSeconds)
                         let maxLeading = max(dayStart, dayEnd.addingTimeInterval(-clampedVisibleDuration))
-
                         chartScrollPosition = min(max(proposedLeading, dayStart), maxLeading)
                     }
                     .onEnded { _ in
@@ -1063,7 +1048,6 @@ private struct RMSTrendChartViewContainer: View {
         .frame(height: chartHeight)
     }
 
-    /// 圖表頂部標題列視圖
     private var chartHeaderView: some View {
         HStack {
             HStack(spacing: 6) {
@@ -1107,14 +1091,13 @@ private struct RMSTrendChartViewContainer: View {
         }
     }
 
-    /// 圖表無數據佔位視圖
     private var emptyChartView: some View {
         VStack(spacing: 8) {
             Image(systemName: "chart.line.uptrend.xyaxis")
                 .font(.system(size: 30))
                 .foregroundColor(AppTheme.textSecondary(for: colorScheme).opacity(0.6))
 
-            Text("\(selectedDate.toString(format: "MM/dd")) 尚無連續走勢資料")
+            Text("\(selectedDate.toString(format: "MM/dd")) 尚無走勢資料")
                 .font(.subheadline)
                 .foregroundColor(AppTheme.textSecondary(for: colorScheme))
 
@@ -1127,16 +1110,13 @@ private struct RMSTrendChartViewContainer: View {
         .cornerRadius(15)
     }
 
-    /// 滾動位置初始化處理
     private func initializeScrollPositionIfNeeded() {
         guard !hasInitializedScrollPosition else { return }
         hasInitializedScrollPosition = true
 
         if let jumpDate = jumpTargetDate.wrappedValue {
             moveToDate(jumpDate, animated: false)
-            DispatchQueue.main.async {
-                jumpTargetDate.wrappedValue = nil
-            }
+            DispatchQueue.main.async { jumpTargetDate.wrappedValue = nil }
         } else if isViewingToday {
             moveToDate(Date(), animated: false)
         } else if let latest = history.last?.timestamp {
@@ -1146,7 +1126,6 @@ private struct RMSTrendChartViewContainer: View {
         }
     }
 
-    /// 移動圖表可視範圍至指定時間
     private func moveToDate(_ target: Date, animated: Bool) {
         let safeTarget = min(max(target, dayStart), dayEnd)
         let maxLeading = max(dayStart, dayEnd.addingTimeInterval(-clampedVisibleDuration))
@@ -1157,90 +1136,51 @@ private struct RMSTrendChartViewContainer: View {
         let clampedLeading = min(max(leading, dayStart), maxLeading)
 
         if animated {
-            withAnimation(.easeInOut(duration: 0.25)) {
-                chartScrollPosition = clampedLeading
-            }
+            withAnimation(.easeInOut(duration: 0.25)) { chartScrollPosition = clampedLeading }
         } else {
             chartScrollPosition = clampedLeading
         }
     }
 
-    /// 限制圖表滾動範圍於指定日期區間內
     private func keepScrollPositionInsideDay() {
         let maxLeading = max(dayStart, dayEnd.addingTimeInterval(-clampedVisibleDuration))
         chartScrollPosition = min(max(chartScrollPosition, dayStart), maxLeading)
     }
 
-    /// 清空圖表點選選取標記
     private func clearChartSelection() {
-        chartTappedPointID = nil
-        chartTappedPointTimestamp = nil
-        lastTappedDate = nil
+        chartSelectedEventID = nil
         chartSelectedDate = nil
     }
 
-    /// 處理圖表點擊選取與最近鄰點匹配演算法
+    /// 點選僅鎖定分析紀錄點
     private func handleChartTap(at tappedDate: Date, yValue: Double) {
-        lastTappedDate = tappedDate
         let maxY = dynamicMaxY
         let xTolerance = dynamicHitTolerance
-        let yTolerance = max(maxY * 0.20, 15.0)
-
-        let significantPoints = bufferedHistory
-            .filter {
-                $0.rmsValue.isFinite &&
-                !$0.rmsValue.isNaN &&
-                $0.rmsValue >= 0.20 &&
-                abs($0.rmsValue - yValue) <= yTolerance
-            }
-            .sorted {
-                abs($0.timestamp.timeIntervalSince(tappedDate)) < abs($1.timestamp.timeIntervalSince(tappedDate))
-            }
+        let yTolerance = max(maxY * 0.35, 25.0)
 
         let validEvents = bufferedEvents
-            .filter {
-                let clampedRMS = max(0, min($0.rmsValue, maxY))
-                return abs(clampedRMS - yValue) <= yTolerance
+            .filter { event in
+                let clampedRMS = max(0, min(event.rmsValue, maxY))
+                let yDiff = abs(clampedRMS - yValue)
+                let xDiff = abs(event.timestamp.timeIntervalSince(tappedDate))
+                return xDiff <= xTolerance && yDiff <= yTolerance
             }
             .sorted {
                 abs($0.timestamp.timeIntervalSince(tappedDate)) < abs($1.timestamp.timeIntervalSince(tappedDate))
             }
 
-        let nearestPoint = significantPoints.first
-        let nearestEvent = validEvents.first
+        if let nearestEvent = validEvents.first {
+            chartSelectedEventID = nearestEvent.id
+            chartSelectedDate = nearestEvent.timestamp
 
-        let pointDistance = nearestPoint.map { abs($0.timestamp.timeIntervalSince(tappedDate)) } ?? .greatestFiniteMagnitude
-        let eventDistance = nearestEvent.map { abs($0.timestamp.timeIntervalSince(tappedDate)) } ?? .greatestFiniteMagnitude
+            let point = DataViewModel.RMSTrendPoint(
+                timestamp: nearestEvent.timestamp,
+                timeLabel: nearestEvent.timeLabel,
+                rmsValue: nearestEvent.rmsValue,
+                isMotorActive: nearestEvent.isMotorActive,
+                rawWindowData: nearestEvent.rawWindowData
+            )
 
-        if let point = nearestPoint,
-           pointDistance <= xTolerance,
-           pointDistance <= eventDistance {
-            chartTappedPointID = point.id
-            chartTappedPointTimestamp = point.timestamp
-            chartSelectedDate = point.timestamp
-            onPointSelected(point)
-            return
-        }
-
-        if let event = nearestEvent,
-           eventDistance <= xTolerance {
-            if let point = significantPoints.min(by: {
-                abs($0.timestamp.timeIntervalSince(event.timestamp)) < abs($1.timestamp.timeIntervalSince(event.timestamp))
-            }) {
-                chartTappedPointID = point.id
-                chartTappedPointTimestamp = point.timestamp
-                chartSelectedDate = point.timestamp
-                onPointSelected(point)
-            }
-            return
-        }
-
-        let fallbackTolerance = min(xTolerance * 1.5, 15.0)
-        if let point = significantPoints.first,
-           abs(point.timestamp.timeIntervalSince(tappedDate)) <= fallbackTolerance {
-            chartTappedPointID = point.id
-            chartTappedPointTimestamp = point.timestamp
-            chartSelectedDate = point.timestamp
             onPointSelected(point)
             return
         }
@@ -1249,35 +1189,20 @@ private struct RMSTrendChartViewContainer: View {
         onChartSelectionCleared()
     }
 
-    /// 依可視時間跨度動態計算之點選容許誤差
     private var dynamicHitTolerance: TimeInterval {
         switch clampedVisibleDuration {
-        case ...10: return 1.0
-        case ...30: return 3.0
-        case ...60: return 5.0
-        case ...120: return 8.0
-        case ...300: return 12.0
-        case ...600: return 20.0
-        case ...1800: return 30.0
-        case ...3600: return 60.0
-        case ...21600: return 120.0
+        case ...10: return 1.5
+        case ...30: return 4.0
+        case ...60: return 7.0
+        case ...120: return 12.0
+        case ...300: return 18.0
+        case ...600: return 30.0
+        case ...1800: return 45.0
+        case ...3600: return 90.0
         default: return 180.0
         }
     }
 
-    /// 判斷數據點是否為當前選取點
-    private func isTappedPoint(_ point: DataViewModel.RMSTrendPoint) -> Bool {
-        guard let chartTappedPointID else { return false }
-        return point.id == chartTappedPointID
-    }
-
-    /// 判斷事件是否與當前選取點之時間相符
-    private func isEventCorrespondingToTappedPoint(_ event: TremorEvent) -> Bool {
-        guard let tappedTimestamp = chartTappedPointTimestamp else { return false }
-        return abs(tappedTimestamp.timeIntervalSince(event.timestamp)) <= 0.5
-    }
-
-    /// 圖表底部圖例說明視圖
     private var chartFooterLegendView: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 16) {
@@ -1285,7 +1210,7 @@ private struct RMSTrendChartViewContainer: View {
                     Circle()
                         .fill(Color.orange)
                         .frame(width: 7, height: 7)
-                    Text("顯著震顫(點擊跳轉至下方事件)")
+                    Text("動作分析紀錄(點擊跳轉)")
                         .font(.caption2)
                         .fontWeight(.medium)
                         .foregroundColor(AppTheme.textSecondary(for: colorScheme))
@@ -1295,9 +1220,8 @@ private struct RMSTrendChartViewContainer: View {
                     RoundedRectangle(cornerRadius: 2)
                         .fill(Color.orange.opacity(0.3))
                         .frame(width: 9, height: 9)
-                    Text("馬達啟動區間")
+                    Text("馬達命令作用區間")
                         .font(.caption2)
-                        .fontWeight(.medium)
                         .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                 }
 
@@ -1307,7 +1231,6 @@ private struct RMSTrendChartViewContainer: View {
                         .frame(width: 7, height: 7)
                     Text("目前選取")
                         .font(.caption2)
-                        .fontWeight(.medium)
                         .foregroundColor(AppTheme.textSecondary(for: colorScheme))
                 }
             }

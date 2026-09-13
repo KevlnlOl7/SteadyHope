@@ -65,49 +65,44 @@ final class DataViewModel: ObservableObject {
         }
     }
 
-    /// 上一次捕捉顯著震顫事件之冷卻時間戳記
-    private var lastCapturedTime: Date?
+    /// 上次儲存分析快照之時間戳記，用於限制後端同步頻率
+    private var lastAnalysisRecordTime: Date?
 
-    /// 標記是否已完成藍牙管線閉包綁定
-    private var isPipelineBound: Bool = false
+    /// 標記是否已綁定硬體資料流管線
+    private var isPipelineBound = false
 
-    /// 原始資料上傳佇列暫存緩衝區
+    /// 累積待批次上傳之原始感測數據點緩衝區
     private var rawUploadBuffer: [TremorDataPoint] = []
 
-    /// 原始資料批次上傳之起始基準時間
-    private var rawUploadBufferBaseDate: Date? = nil
-
-    /// 原始資料達到此門檻點數時觸發上傳流程（固定為 400 筆）
+    /// 觸發原始數據批次上傳之資料筆數門檻值
     private let uploadBatchThreshold = 400
 
-    /// 硬體取樣時序間隔（以 50 Hz 計算，即每筆取樣間隔 20 毫秒）
-    private let rawSampleInterval: TimeInterval = 0.02
+    /// 100 Hz 取樣率下之單筆原始採樣間隔時間（秒）
+    private let rawSampleInterval: TimeInterval = 0.01
 
     /// 台北標準時區實體
     private let taipeiTimeZone = TimeZone(identifier: "Asia/Taipei") ?? .current
 
-    /// 預設台北時區之日曆實體
+    /// 綁定台北時區之日曆實體
     private let calendar: Calendar = {
         var c = Calendar.current
         c.timeZone = TimeZone(identifier: "Asia/Taipei") ?? .current
         return c
     }()
 
-    /// 初始化 DataViewModel 實體
-    /// - Parameter repository: 震顫資料儲存庫實體，若未傳入則預設使用內建之 TremorRepository
+    /// 初始化震顫資料檢視模型並注入儲存庫
+    /// - Parameter repository: 符合 TremorRepositoryProtocol 之資料儲存庫實體
     init(repository: TremorRepositoryProtocol? = nil) {
-        if let repo = repository {
-            self.repository = repo
+        if let repository {
+            self.repository = repository
         } else {
-            self.repository = TremorRepository(
-                tokenProvider: {
-                    AuthManager.shared.getToken()
-                }
-            )
+            self.repository = TremorRepository(tokenProvider: {
+                AuthManager.shared.getToken()
+            })
         }
     }
 
-    /// RMS 走勢圖表渲染用之單一數據點模型
+    /// RMS 連續強度走勢圖中之單一資料點模型
     struct RMSTrendPoint: Identifiable {
         /// 數據點唯一識別碼
         let id = UUID()
@@ -178,73 +173,103 @@ final class DataViewModel: ObservableObject {
         return max(0.5, (values.max() ?? 0.5) * 1.2)
     }
 
-    /// 截取指定時間點前後特定秒數區間內之 RMS 歷程資料點
+    /// 截取指定時間點周圍之走勢數據點，提供事件卡片繪製局部走勢，並加入單點防呆避免圖表空白
     /// - Parameters:
-    ///   - targetDate: 目標時間點
-    ///   - seconds: 前後截取之時間半徑（秒），預設為 3 秒
-    /// - Returns: 截取範圍內之走勢數據點陣列
-    func getHistory(surrounding targetDate: Date, seconds: TimeInterval = 3) -> [RMSTrendPoint] {
-        rmsTrendHistory.filter {
+    ///   - targetDate: 目標基準時間
+    ///   - seconds: 欲向前與向後涵蓋之秒數範圍
+    /// - Returns: 符合範圍之時間排序走勢點陣列
+    func getHistory(
+        surrounding targetDate: Date,
+        seconds: TimeInterval = 10
+    ) -> [RMSTrendPoint] {
+        let matched = rmsTrendHistory.filter {
             abs($0.timestamp.timeIntervalSince(targetDate)) <= seconds
         }
+
+        if !matched.isEmpty {
+            return matched.sorted { $0.timestamp < $1.timestamp }
+        }
+
+        if let event = tremorEvents.first(where: { abs($0.timestamp.timeIntervalSince(targetDate)) <= 1.0 }) {
+            return [
+                RMSTrendPoint(
+                    timestamp: event.timestamp,
+                    timeLabel: event.timeLabel,
+                    rmsValue: event.rmsValue,
+                    isMotorActive: event.isMotorActive,
+                    rawWindowData: event.rawWindowData,
+                    userTag: event.userTag,
+                    selectedImages: event.selectedImages,
+                    isSaved: event.isSaved
+                )
+            ]
+        }
+
+        return []
     }
 
-    /// 從後端非同步載入歷史顯著分析事件，並與本地走勢原始取樣比對補齊視窗資料
-    /// - Parameter matchedHistory: 提供比對原始取樣視窗之走勢點陣列，預設為空陣列
+    /// 從伺服器載入歷史震顫分析紀錄並結合鄰近原始波形建構事件模型
+    /// - Parameter matchedHistory: 可供比對之本機 RMS 走勢快取點陣列
     func loadAnalysisEvents(matchedHistory: [RMSTrendPoint] = []) async {
         do {
             let records = try await repository.fetchAnalysisHistory()
             var seenIDs = Set<UUID>()
-            var uniqueEvents: [TremorEvent] = []
+            var analysisRecords: [TremorEvent] = []
 
             for record in records.sorted(by: { $0.recordedAt > $1.recordedAt }) {
-                guard seenIDs.insert(record.id).inserted else { continue }
+                guard seenIDs.insert(record.id).inserted else {
+                    continue
+                }
 
                 let date = record.recordedAt
                 let rawTag = record.activityTag.trimmingCharacters(in: .whitespacesAndNewlines)
                 let tag = rawTag.isEmpty ? "未標記" : rawTag
+
                 let matchedRaw = matchedHistory.min {
                     abs($0.timestamp.timeIntervalSince(date)) < abs($1.timestamp.timeIntervalSince(date))
-                }?.rawWindowData ?? []
+                }?
+                .rawWindowData ?? []
 
-                uniqueEvents.append(
+                guard record.dataValid else {
+                    continue
+                }
+
+                analysisRecords.append(
                     TremorEvent(
                         id: record.id,
                         timestamp: date,
                         timeLabel: date.toString(format: "yyyy-MM-dd HH:mm:ss"),
                         rmsValue: record.tremorStrengthRmsDps ?? 0.0,
-                        dominantFrequency: record.dominantFrequencyHz ?? 0.0,
+                        dominantFrequency: record.frequencyReliable ? (record.dominantFrequencyHz ?? 0.0) : 0.0,
                         rawWindowData: matchedRaw,
-                        isMotorActive: record.motorOnFraction > 0.0,
+                        isMotorActive: (record.motorOnFraction > 0.0),
                         userTag: tag,
                         isSaved: true
                     )
                 )
             }
 
-            tremorEvents = uniqueEvents
+            tremorEvents = analysisRecords
+            lastVibrationDate = "--"
+            lastVibrationTime = "--:--"
 
-            if let latestEvent = tremorEvents.first {
-                updateLastVibrationTime(from: latestEvent.timestamp)
-            } else {
-                lastVibrationDate = "--"
-                lastVibrationTime = "--:--"
-            }
         } catch {
-            AppLog.error("載入高震顫事件失敗: \(error.localizedDescription)")
+            AppLog.error("載入分析紀錄失敗: \(error.localizedDescription)")
             tremorEvents = []
             lastVibrationDate = "--"
             lastVibrationTime = "--:--"
         }
     }
 
-    /// 依據後端取回之時序原始取樣點，重建選定日期 24 小時之連續走勢資料
+    /// 從遠端伺服器載入指定日期的原始感測時序訊號並重建全天連續 RMS 走勢線
     func loadRawDataTrend() async {
         do {
             let timedRawPoints = try await repository.fetchTimedRawDataHistory()
             let sorted = timedRawPoints.sorted { $0.timestamp < $1.timestamp }
+
             let startOfDay = calendar.startOfDay(for: selectedFilterDate)
-            let endOfDay = startOfDay.addingTimeInterval(24 * 60 * 60)
+            let endOfDay = calendar.date(byAdding: .day, value: 1, to: startOfDay)
+                ?? startOfDay.addingTimeInterval(24 * 60 * 60)
 
             let dayPoints = sorted.filter {
                 $0.timestamp >= startOfDay && $0.timestamp < endOfDay
@@ -256,17 +281,20 @@ final class DataViewModel: ObservableObject {
                 computedHistory = buildFallbackTrendFromEvents()
             }
 
-            if calendar.isDateInToday(selectedFilterDate), let historicalLatest = computedHistory.last?.timestamp {
-                let livePoints = rmsTrendHistory.filter { $0.timestamp > historicalLatest }
+            if calendar.isDateInToday(selectedFilterDate),
+               let latest = computedHistory.last?.timestamp {
+                let livePoints = rmsTrendHistory.filter { $0.timestamp > latest }
                 computedHistory.append(contentsOf: livePoints)
             }
 
-            rmsTrendHistory = deduplicateTrendPoints(computedHistory)
-                .sorted { $0.timestamp < $1.timestamp }
+            rmsTrendHistory = deduplicateTrendPoints(computedHistory).sorted {
+                $0.timestamp < $1.timestamp
+            }
 
             await backfillEventRawWindowData()
             selectedPoint = nil
             updateDashboard()
+
         } catch {
             AppLog.error("載入原始走勢失敗: \(error.localizedDescription)")
             if rmsTrendHistory.isEmpty {
@@ -275,64 +303,87 @@ final class DataViewModel: ObservableObject {
         }
     }
 
-    /// 將連續原始數據依滑動視窗計算為歷史走勢點陣列
-    /// - Parameter points: 帶有時間戳記之原始資料點陣列
-    /// - Returns: 計算完成之 RMSTrendPoint 走勢點陣列
+    /// 根據連續原始資料點陣列以滑動視窗計算歷史 RMS 走勢點
+    /// - Parameter points: 帶有時間戳記之原始感測資料陣列
+    /// - Returns: 計算產生之 RMS 走勢點陣列
     private func buildHistoricalTrend(from points: [TremorTimedRawPoint]) -> [RMSTrendPoint] {
-        guard points.count >= 400 else { return [] }
-
         let windowSize = 400
-        let strideSize = 500
+        let strideSize = 50
+
+        guard points.count >= windowSize else {
+            return []
+        }
+
         var result: [RMSTrendPoint] = []
-        result.reserveCapacity(points.count / strideSize + 2)
+        result.reserveCapacity(max(points.count / strideSize, 1))
 
         var startIndex = 0
-        while startIndex + windowSize <= points.count {
-            let window = Array(points[startIndex..<(startIndex + windowSize)])
-            let resultValue = analyzer.analyze(data: window.map(\.point))
-            let timestamp = points[startIndex + windowSize - 1].timestamp
-            let isMotor = window.suffix(50).contains { $0.point.motorEnabled == 1 }
 
-            if resultValue.tremorStrengthRmsDps.isFinite {
-                result.append(
-                    RMSTrendPoint(
-                        timestamp: timestamp,
-                        timeLabel: timestamp.toString(format: "HH:mm:ss"),
-                        rmsValue: resultValue.tremorStrengthRmsDps,
-                        isMotorActive: isMotor,
-                        rawWindowData: window.map(\.point)
-                    )
-                )
+        while startIndex + windowSize <= points.count {
+            let endIndex = startIndex + windowSize
+            let window = Array(points[startIndex..<endIndex])
+            let rawWindow = window.map(\.point)
+            let resultValue = analyzer.analyze(data: rawWindow)
+
+            let timestamp = window.last?.timestamp ?? points[endIndex - 1].timestamp
+
+            guard resultValue.dataValid,
+                  resultValue.tremorStrengthRmsDps.isFinite,
+                  !resultValue.tremorStrengthRmsDps.isNaN else {
+                startIndex += strideSize
+                continue
             }
+
+            let latest50 = rawWindow.suffix(50)
+            let motorActive = latest50.contains { $0.motorEnabled == 1 }
+
+            result.append(
+                RMSTrendPoint(
+                    timestamp: timestamp,
+                    timeLabel: timestamp.toString(format: "HH:mm:ss"),
+                    rmsValue: resultValue.tremorStrengthRmsDps,
+                    isMotorActive: motorActive,
+                    rawWindowData: rawWindow
+                )
+            )
 
             startIndex += strideSize
         }
 
-        let tailStart = max(0, points.count - windowSize)
-        if result.last?.timestamp != points[tailStart + windowSize - 1].timestamp {
-            let window = Array(points[tailStart..<points.count])
-            let resultValue = analyzer.analyze(data: window.map(\.point))
-            let timestamp = points.last!.timestamp
-            let isMotor = window.suffix(50).contains { $0.point.motorEnabled == 1 }
+        let tailStart = points.count - windowSize
+        if tailStart >= 0 {
+            let tailTimestamp = points.last!.timestamp
+            let alreadyExists = result.contains { $0.timestamp == tailTimestamp }
 
-            if resultValue.tremorStrengthRmsDps.isFinite {
-                result.append(
-                    RMSTrendPoint(
-                        timestamp: timestamp,
-                        timeLabel: timestamp.toString(format: "HH:mm:ss"),
-                        rmsValue: resultValue.tremorStrengthRmsDps,
-                        isMotorActive: isMotor,
-                        rawWindowData: window.map(\.point)
+            if !alreadyExists {
+                let window = Array(points[tailStart..<points.count])
+                let rawWindow = window.map(\.point)
+                let resultValue = analyzer.analyze(data: rawWindow)
+
+                if resultValue.dataValid,
+                   resultValue.tremorStrengthRmsDps.isFinite,
+                   !resultValue.tremorStrengthRmsDps.isNaN {
+                    let latest50 = rawWindow.suffix(50)
+                    let motorActive = latest50.contains { $0.motorEnabled == 1 }
+
+                    result.append(
+                        RMSTrendPoint(
+                            timestamp: tailTimestamp,
+                            timeLabel: tailTimestamp.toString(format: "HH:mm:ss"),
+                            rmsValue: resultValue.tremorStrengthRmsDps,
+                            isMotorActive: motorActive,
+                            rawWindowData: rawWindow
+                        )
                     )
-                )
+                }
             }
         }
 
         return result.sorted { $0.timestamp < $1.timestamp }
     }
 
-    /// 當缺乏連續原始訊號時，以已記錄之震顫事件建構替代用走勢資料
-    /// - Returns: 以事件為基準之 RMSTrendPoint 陣列
+    /// 當缺乏密集原始訊號時，從事件快照資料建構備援之走勢點陣列
+    /// - Returns: 備援之 RMS 走勢點陣列
     private func buildFallbackTrendFromEvents() -> [RMSTrendPoint] {
         filteredEvents.map {
             RMSTrendPoint(
@@ -349,32 +400,39 @@ final class DataViewModel: ObservableObject {
         .sorted { $0.timestamp < $1.timestamp }
     }
 
-    /// 過濾走勢陣列中時間戳記過於接近之重複點
-    /// - Parameter points: 待去重之 RMSTrendPoint 陣列
-    /// - Returns: 去除重複後之 RMSTrendPoint 陣列
+    /// 對走勢點進行 0.5 秒時間窗口去重，避免相同時間點過度密集繪製
+    /// - Parameter points: 待處理之走勢點陣列
+    /// - Returns: 去重後之走勢點陣列
     private func deduplicateTrendPoints(_ points: [RMSTrendPoint]) -> [RMSTrendPoint] {
         var result: [RMSTrendPoint] = []
         var seenBuckets = Set<Int64>()
 
         for point in points.sorted(by: { $0.timestamp < $1.timestamp }) {
             let bucket = Int64((point.timestamp.timeIntervalSince1970 * 2.0).rounded(.toNearestOrAwayFromZero))
+
             if seenBuckets.insert(bucket).inserted {
                 result.append(point)
             }
         }
+
         return result
     }
 
-    /// 從走勢紀錄中尋找最接近之分析視窗原始取樣，回填至缺少 rawWindowData 之震顫事件中
+    /// 從連續走勢快取中回補事件紀錄缺失之原始視窗訊號
     private func backfillEventRawWindowData() async {
-        guard !tremorEvents.isEmpty, !rmsTrendHistory.isEmpty else { return }
+        guard !tremorEvents.isEmpty, !rmsTrendHistory.isEmpty else {
+            return
+        }
 
         tremorEvents = tremorEvents.map { event in
-            guard event.rawWindowData.isEmpty else { return event }
+            guard event.rawWindowData.isEmpty else {
+                return event
+            }
+
             let matched = rmsTrendHistory.min {
-                abs($0.timestamp.timeIntervalSince(event.timestamp)) <
-                abs($1.timestamp.timeIntervalSince(event.timestamp))
-            }?.rawWindowData ?? []
+                abs($0.timestamp.timeIntervalSince(event.timestamp)) < abs($1.timestamp.timeIntervalSince(event.timestamp))
+            }?
+            .rawWindowData ?? []
 
             return TremorEvent(
                 id: event.id,
@@ -391,24 +449,31 @@ final class DataViewModel: ObservableObject {
         }
     }
 
-    /// 對外統一載入震顫歷史資料之進入點（針對當前選定篩選日期執行）
+    /// 載入當前選定篩選日期之完整震顫歷史紀錄與走勢資料
     func loadTremorHistory() async {
         await loadTremorHistory(for: selectedFilterDate)
     }
 
-    /// 載入特定日期之震顫分析事件與走勢紀錄
-    /// - Parameter date: 欲載入資料之目標日期
+    /// 依指定日期依序載入分析事件與原始數據走勢
+    /// - Parameter date: 查詢目標日期實體
     private func loadTremorHistory(for date: Date) async {
         selectedPoint = nil
         await loadAnalysisEvents(matchedHistory: rmsTrendHistory)
-        guard calendar.isDate(date, inSameDayAs: selectedFilterDate) else { return }
+
+        guard calendar.isDate(date, inSameDayAs: selectedFilterDate) else {
+            return
+        }
+
         await loadRawDataTrend()
     }
 
-    /// 綁定藍牙數據管線之各項事件回呼閉包
-    /// - Parameter pipeline: 藍牙資料串流管線實體
+    /// 綁定藍牙數據流管線，接管即時資料更新、批次上傳與即時分析排程
+    /// - Parameter pipeline: 藍牙端傳入之 TremorPipeline 實體
     func bindPipeline(_ pipeline: TremorPipeline) {
-        guard !isPipelineBound else { return }
+        guard !isPipelineBound else {
+            return
+        }
+
         isPipelineBound = true
 
         pipeline.onStatusChanged = { [weak self] status in
@@ -417,39 +482,25 @@ final class DataViewModel: ObservableObject {
             }
         }
 
-        pipeline.onNewRawBatchAppended = { [weak self] new50Points in
+        pipeline.onNewRawBatchAppended = { [weak self] newPoints in
             Task { @MainActor [weak self] in
-                guard let self else { return }
-                guard !new50Points.isEmpty else { return }
+                guard let self, !newPoints.isEmpty else { return }
 
-                if self.rawUploadBuffer.isEmpty {
-                    let batchReceivedAt = Date()
-                    let firstSampleOffset = Double(max(new50Points.count - 1, 0)) * self.rawSampleInterval
-                    self.rawUploadBufferBaseDate = batchReceivedAt.addingTimeInterval(-firstSampleOffset)
-                }
-
-                self.rawUploadBuffer.append(contentsOf: new50Points)
+                self.rawUploadBuffer.append(contentsOf: newPoints)
 
                 while self.rawUploadBuffer.count >= self.uploadBatchThreshold {
-                    let batchToUpload = Array(self.rawUploadBuffer.prefix(self.uploadBatchThreshold))
+                    let batch = Array(self.rawUploadBuffer.prefix(self.uploadBatchThreshold))
                     self.rawUploadBuffer.removeFirst(self.uploadBatchThreshold)
 
-                    let baseDate = self.rawUploadBufferBaseDate
-                        ?? Date().addingTimeInterval(-Double(max(batchToUpload.count - 1, 0)) * self.rawSampleInterval)
-
-                    if self.rawUploadBuffer.isEmpty {
-                        self.rawUploadBufferBaseDate = nil
-                    } else {
-                        self.rawUploadBufferBaseDate = baseDate.addingTimeInterval(
-                            Double(batchToUpload.count) * self.rawSampleInterval
-                        )
-                    }
+                    let sessionId = self.currentSessionId
+                    let baseDate = batch.first?.recordedAt ?? Date()
+                    let repository = self.repository
 
                     Task {
                         do {
-                            try await self.repository.syncRawData(
-                                sessionId: self.currentSessionId,
-                                rawPoints: batchToUpload,
+                            try await repository.syncRawData(
+                                sessionId: sessionId,
+                                rawPoints: batch,
                                 baseDate: baseDate
                             )
                         } catch {
@@ -463,99 +514,123 @@ final class DataViewModel: ObservableObject {
         pipeline.onAnalysisUpdated = { [weak self] result, window400Data in
             Task { @MainActor [weak self] in
                 guard let self else { return }
-
-                let now = Date()
-                let rms = result.tremorStrengthRmsDps
-                let timeStr = now.toString(format: "HH:mm:ss")
-                let isMotor = window400Data.suffix(50).contains(where: { $0.motorEnabled == 1 })
-
-                AppLog.debug("收到分析點 - RMS: \(rms), Freq: \(result.dominantFrequencyHz ?? 0)")
-
+                guard !window400Data.isEmpty else { return }
+                
+                let sampleTime = window400Data.last?.recordedAt ?? Date()
+                let timeStr = sampleTime.toString(format: "HH:mm:ss")
+                
+                let latest50 = Array(window400Data.suffix(50))
+                let motorFraction: Double?
+                let isMotorActive: Bool
+                
+                if latest50.count == 50,
+                   latest50.allSatisfy({ $0.motorEnabled == 0 || $0.motorEnabled == 1 }) {
+                    let activeCount = latest50.filter { $0.motorEnabled == 1 }.count
+                    motorFraction = Double(activeCount) / 50.0
+                    isMotorActive = activeCount > 0
+                } else {
+                    motorFraction = nil
+                    isMotorActive = false
+                }
+                
                 if self.selectedPoint == nil {
                     if result.dataValid {
-                        self.tremorStrengthText = String(format: "%.2f", rms)
-
+                        self.tremorStrengthText = String(format: "%.2f", result.tremorStrengthRmsDps)
+                        
                         if result.frequencyReliable,
-                           let freq = result.dominantFrequencyHz,
-                           freq.isFinite {
-                            self.dominantFrequencyText = String(format: "%.2f Hz", freq)
+                           let frequency = result.dominantFrequencyHz,
+                           frequency.isFinite {
+                            self.dominantFrequencyText = String(format: "%.2f Hz", frequency)
                         } else {
                             self.dominantFrequencyText = "--"
                         }
                     } else {
-                        self.tremorStrengthText = "0.00"
-                        self.dominantFrequencyText = "資料不足"
+                        self.tremorStrengthText = "資料不足"
+                        self.dominantFrequencyText = "--"
                     }
                 }
-
+                
                 if result.dataValid {
-                    var calendar = Calendar.current
-                    calendar.timeZone = TimeZone(identifier: "Asia/Taipei") ?? .current
-
-                    if calendar.isDateInToday(self.selectedFilterDate) {
+                    var liveCalendar = Calendar.current
+                    liveCalendar.timeZone = self.taipeiTimeZone
+                    
+                    if liveCalendar.isDateInToday(self.selectedFilterDate) {
                         let newPoint = RMSTrendPoint(
-                            timestamp: now,
+                            timestamp: sampleTime,
                             timeLabel: timeStr,
-                            rmsValue: rms,
-                            isMotorActive: isMotor,
+                            rmsValue: result.tremorStrengthRmsDps,
+                            isMotorActive: isMotorActive,
                             rawWindowData: window400Data
                         )
-
+                        
                         if let lastTime = self.rmsTrendHistory.last?.timestamp {
-                            if now.timeIntervalSince(lastTime) > 0 {
+                            if sampleTime.timeIntervalSince(lastTime) > 0 {
                                 self.rmsTrendHistory.append(newPoint)
                             }
                         } else {
                             self.rmsTrendHistory.append(newPoint)
                         }
-
-                        let maxLiveTrendPoints = 24 * 60 * 60 * 2
-                        if self.rmsTrendHistory.count > maxLiveTrendPoints {
-                            self.rmsTrendHistory.removeFirst(self.rmsTrendHistory.count - maxLiveTrendPoints)
+                        
+                        let maxLivePoints = 24 * 60 * 60 * 2
+                        if self.rmsTrendHistory.count > maxLivePoints {
+                            self.rmsTrendHistory.removeFirst(self.rmsTrendHistory.count - maxLivePoints)
                         }
                     }
                 }
-
-                if result.dataValid {
-                    let isCooldownPassed = self.lastCapturedTime == nil || now.timeIntervalSince(self.lastCapturedTime!) > 3.0
-
-                    if isCooldownPassed {
-                        self.lastCapturedTime = now
-
-                        var newEvent = TremorEvent(
-                            id: UUID(),
-                            timestamp: now,
-                            timeLabel: timeStr,
-                            rmsValue: rms,
-                            dominantFrequency: result.dominantFrequencyHz ?? 0.0,
-                            rawWindowData: window400Data,
-                            isMotorActive: isMotor
-                        )
-                        newEvent.userTag = "未標記"
-                        newEvent.isSaved = true
-
-                        self.tremorEvents.insert(newEvent, at: 0)
-                        self.updateLastVibrationTime(from: now)
-
-                        Task { [weak self, currentSessionId = self.currentSessionId] in
-                            do {
-                                try await self?.repository.syncEventAsAnalysisRecord(
-                                    event: newEvent,
-                                    sessionId: currentSessionId
-                                )
-                            } catch {
-                                AppLog.error("BLE 上傳失敗: \(error.localizedDescription)")
-                            }
-                        }
+                
+                guard result.dataValid else { return }
+                
+                let now = Date()
+                let shouldSave = self.lastAnalysisRecordTime == nil
+                || now.timeIntervalSince(self.lastAnalysisRecordTime!) >= 3.0
+                
+                guard shouldSave else { return }
+                self.lastAnalysisRecordTime = now
+                
+                let sessionId = self.currentSessionId
+                let analysisRecord = TremorAnalysisRecordDTO(
+                    id: UUID(),
+                    sessionId: sessionId,
+                    recordedAt: sampleTime,
+                    dominantFrequencyHz: result.frequencyReliable ? result.dominantFrequencyHz : nil,
+                    tremorStrengthRmsDps: result.dataValid ? result.tremorStrengthRmsDps : nil,
+                    motorOnFraction: motorFraction ?? 0.0,
+                    dataValid: true,
+                    frequencyReliable: result.frequencyReliable,
+                    activityTag: self.selectedActivityTag,
+                    note: nil
+                )
+                
+                // 同步加入本機事件清單，確保即時量測時圖表立即出現橘點與更新下方列表
+                let liveEvent = TremorEvent(
+                    id: analysisRecord.id,
+                    timestamp: sampleTime,
+                    timeLabel: timeStr,
+                    rmsValue: result.tremorStrengthRmsDps,
+                    dominantFrequency: result.frequencyReliable ? (result.dominantFrequencyHz ?? 0.0) : 0.0,
+                    rawWindowData: window400Data,
+                    isMotorActive: isMotorActive,
+                    motorOnFraction: motorFraction,
+                    userTag: self.selectedActivityTag,
+                    isSaved: true
+                )
+                self.tremorEvents.insert(liveEvent, at: 0)
+                
+                let repository = self.repository
+                Task {
+                    do {
+                        try await repository.syncAnalysisResult(record: analysisRecord)
+                    } catch {
+                        AppLog.error("分析紀錄上傳失敗: \(error.localizedDescription)")
                     }
                 }
             }
         }
     }
 
-    /// 儲存指定震顫事件的情境標籤與附加照片至伺服器並更新本地狀態
-    /// - Parameter event: 欲歸檔之震顫事件模型
-    /// - Returns: 若同步儲存成功則回傳 true，失敗則回傳 false
+    /// 儲存特定事件之活動情境標籤與照片並同步至後端資料庫
+    /// - Parameter event: 包含最新標籤資訊之 TremorEvent 實體
+    /// - Returns: 同步成功回傳 true，發生錯誤回傳 false
     func saveTremorEvent(_ event: TremorEvent) async -> Bool {
         guard let index = tremorEvents.firstIndex(where: { $0.id == event.id }) else {
             return false
@@ -570,43 +645,54 @@ final class DataViewModel: ObservableObject {
                 event: eventToSave,
                 sessionId: currentSessionId
             )
+
             tremorEvents[index].isSaved = true
             tremorEvents[index].userTag = eventToSave.userTag
             tremorEvents[index].selectedImages = eventToSave.selectedImages
+
             return true
+
         } catch {
-            AppLog.error("震顫事件標記失敗: \(error.localizedDescription)")
+            AppLog.error("分析紀錄標記失敗: \(error.localizedDescription)")
             return false
         }
     }
 
-    /// 依據當前選取點或最新數據點更新首頁儀表板之強度與頻率文字
+    /// 依據當前選定點或最新資料更新儀表板顯示數值與頻率文字
     private func updateDashboard() {
         guard let targetPoint = selectedPoint ?? rmsTrendHistory.last else {
-            self.dominantFrequencyText = "--"
-            self.tremorStrengthText = "0.00"
+            dominantFrequencyText = "--"
+            tremorStrengthText = "0.00"
             return
         }
 
-        self.tremorStrengthText = String(format: "%.2f", targetPoint.rmsValue)
+        guard targetPoint.rmsValue.isFinite, !targetPoint.rmsValue.isNaN else {
+            dominantFrequencyText = "--"
+            tremorStrengthText = "資料不足"
+            return
+        }
+
+        tremorStrengthText = String(format: "%.2f", targetPoint.rmsValue)
 
         if !targetPoint.rawWindowData.isEmpty {
-            let res = analyzer.analyze(data: targetPoint.rawWindowData)
-            if res.frequencyReliable, let freq = res.dominantFrequencyHz {
-                self.dominantFrequencyText = String(format: "%.2f Hz", freq)
+            let result = analyzer.analyze(data: targetPoint.rawWindowData)
+            if result.frequencyReliable, let frequency = result.dominantFrequencyHz {
+                dominantFrequencyText = String(format: "%.2f Hz", frequency)
             } else {
-                self.dominantFrequencyText = "--"
+                dominantFrequencyText = "--"
             }
         } else {
-            self.dominantFrequencyText = "--"
+            dominantFrequencyText = "--"
         }
     }
 
-    /// 將 400 筆原始三軸角速度數據點轉換為頻譜密度分析點陣列
-    /// - Parameter windowData: 400 筆原始取樣資料點
-    /// - Returns: 計算完成之 PSDPoint 陣列
+    /// 計算特定 400 筆感測視窗之功率譜密度（PSD）離散點陣列
+    /// - Parameter windowData: 包含 400 筆三軸角速度之原始數據陣列
+    /// - Returns: 0 至 15 Hz 區間之頻譜能量點陣列
     func calculatePSDData(from windowData: [TremorDataPoint]) -> [PSDPoint] {
-        guard windowData.count == 400 else { return [] }
+        guard windowData.count == 400 else {
+            return []
+        }
 
         let gyroX = windowData.map { $0.gyroXDps }
         let gyroY = windowData.map { $0.gyroYDps }
@@ -616,30 +702,35 @@ final class DataViewModel: ObservableObject {
         let psdY = analyzer.calculatePSD(signal: gyroY)
         let psdZ = analyzer.calculatePSD(signal: gyroZ)
 
-        var points = [PSDPoint]()
-        let df = 0.25
-        let maxBin = min(60, psdX.count)
-
-        for k in 0..<maxBin {
-            let totalPower = psdX[k] + psdY[k] + psdZ[k]
-            points.append(PSDPoint(frequencyHz: Double(k) * df, power: totalPower))
+        guard psdX.count >= 61, psdY.count >= 61, psdZ.count >= 61 else {
+            return []
         }
+
+        var points: [PSDPoint] = []
+        let df = 0.25
+
+        for k in 0...60 {
+            let totalPower = psdX[k] + psdY[k] + psdZ[k]
+
+            guard totalPower.isFinite, !totalPower.isNaN else {
+                continue
+            }
+
+            points.append(
+                PSDPoint(
+                    frequencyHz: Double(k) * df,
+                    power: totalPower
+                )
+            )
+        }
+
         return points
     }
 
-    /// 依據事件時間戳記更新最後震顫發作之日期與時間文字標籤
-    /// - Parameter date: 事件時間戳記
+    /// 提供舊版本畫面呼叫之相容性介面，重設最後震顫時間字串
+    /// - Parameter date: 觸發震顫之日期物件
     public func updateLastVibrationTime(from date: Date) {
-        var calendar = Calendar.current
-        calendar.timeZone = TimeZone(identifier: "Asia/Taipei") ?? .current
-
-        if calendar.isDateInToday(date) {
-            self.lastVibrationDate = "今天"
-        } else if calendar.isDateInYesterday(date) {
-            self.lastVibrationDate = "昨天"
-        } else {
-            self.lastVibrationDate = date.toString(format: "yyyy/MM/dd")
-        }
-        self.lastVibrationTime = date.toString(format: "HH:mm")
+        lastVibrationDate = "--"
+        lastVibrationTime = "--:--"
     }
 }

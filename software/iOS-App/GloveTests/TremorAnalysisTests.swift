@@ -110,7 +110,7 @@ final class TremorAnalyzerTests: XCTestCase {
 
     // MARK: - 雜訊與飄動干擾測試
 
-    /// 驗證含環境雜訊之 5Hz 資料能否正確計算候選特徵，並經由集中度門檻判定為不可靠頻率
+    /// 驗證含環境雜訊之 5Hz 資料能否正確計算候選特徵，並通過門檻判定為可靠頻率 (4.75 Hz)
     func testTremorNoisy5HzValidation() throws {
         guard
             let url = Bundle(for: type(of: self)).url(
@@ -126,9 +126,14 @@ final class TremorAnalyzerTests: XCTestCase {
         let result = analyzer.analyze(data: mockData)
 
         XCTAssertTrue(result.dataValid, "資料筆數與時序應判定為有效")
-        XCTAssertFalse(result.frequencyReliable, "峰值集中度不足之雜訊資料應被防呆機制判定為不可靠")
-        XCTAssertNil(result.dominantFrequencyHz, "頻率不可靠時主要頻率輸出應為 nil")
+        XCTAssertTrue(result.frequencyReliable, "符合門檻的雜訊 5Hz 資料應判定為可靠頻率")
         XCTAssertEqual(result.candidateBin, 19, "FFT 候選 Bin 應為 Bin 19 (4.75 Hz)")
+
+        if let domFreq = result.dominantFrequencyHz {
+            XCTAssertEqual(domFreq, 4.75, accuracy: 0.001, "主要頻率應為 4.75 Hz")
+        } else {
+            XCTFail("主要頻率不應為 nil")
+        }
 
         let expectedRms = 5.7901
         let rmsTolerance = expectedRms * 0.005
