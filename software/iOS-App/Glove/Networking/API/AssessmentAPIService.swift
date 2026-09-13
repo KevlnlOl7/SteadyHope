@@ -63,4 +63,27 @@ class AssessmentAPIService {
 
         return try await NetworkManager.shared.request(request)
     }
+    
+    /// 刪除指定評估紀錄
+    /// - Parameters:
+    ///   - recordID: 欲刪除之評估紀錄唯一識別碼
+    ///   - token: 身分驗證 Bearer 權杖字串
+    func deleteDailyAssessment(
+        recordID: Int,
+        token: String
+    ) async throws {
+        guard let url = URL(string: "\(baseURL)/\(recordID)") else {
+            throw NetworkError.invalidURL
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "DELETE"
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+
+        try await NetworkManager.shared.requestData(request)
+    }
+
+    func deleteAssessment(recordID: Int, token: String) async throws {
+        try await deleteDailyAssessment(recordID: recordID, token: token)
+    }
 }

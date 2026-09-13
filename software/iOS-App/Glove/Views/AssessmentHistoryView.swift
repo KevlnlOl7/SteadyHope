@@ -57,7 +57,7 @@ struct AssessmentHistoryView: View {
         .navigationBarTitleDisplayMode(.inline)
         .navigationDestination(isPresented: $showDetail) {
             if let record = selectedRecord {
-                AssessmentDetailView(record: record)
+                AssessmentDetailView(record: record, assessmentVM: viewModel)
             }
         }
         .onChange(of: queryMode) {

@@ -188,6 +188,33 @@ final class AssessmentViewModel: ObservableObject {
 
         self.isLoadingHistory = false
     }
+    
+    /// 刪除指定評估紀錄並同步更新本機歷史紀錄清單與日曆狀態
+    /// - Parameter recordID: 欲刪除之評估紀錄 ID
+    /// - Returns: 刪除成功回傳 true，失敗回傳 false
+    @discardableResult
+    func deleteAssessment(recordID: Int) async -> Bool {
+        do {
+            try await AssessmentRepository.shared.deleteAssessment(recordID: recordID)
+
+            for groupIndex in groupedHistoryRecords.indices {
+                groupedHistoryRecords[groupIndex].records.removeAll { $0.id == recordID }
+            }
+
+            groupedHistoryRecords.removeAll { $0.records.isEmpty }
+
+            await checkTodayAssessmentStatus()
+
+            await fetchAvailableRecordDates()
+
+            return true
+        } catch {
+            AppLog.error("刪除評估紀錄失敗: \(error.localizedDescription)")
+            self.errorMessage = error.localizedDescription
+            self.showErrorAlert = true
+            return false
+        }
+    }
 
     /// 清空目前於畫面上暫存呈現之歷史評估紀錄陣列
     func clearHistory() {

@@ -36,4 +36,16 @@ class AssessmentRepository {
 
         return try await apiService.fetchDailyAssessment(dateString: dateString, token: token)
     }
+    
+    /// 刪除指定評估紀錄
+    /// - Parameter recordID: 欲刪除之問卷紀錄唯一識別碼
+    func deleteAssessment(recordID: Int) async throws {
+        guard let token = AuthManager.shared.getToken() else {
+            throw NetworkError.unauthorized
+        }
+        try await AssessmentAPIService.shared.deleteDailyAssessment(
+            recordID: recordID,
+            token: token
+        )
+    }
 }

@@ -2,7 +2,12 @@ import SwiftUI
 
 struct AssessmentDetailView: View {
     let record: DailyAssessmentResponseDTO
+    @ObservedObject var assessmentVM: AssessmentViewModel
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var showDeleteConfirmation = false
+    @State private var isDeleting = false
 
     var body: some View {
         ScrollView {
@@ -110,6 +115,33 @@ struct AssessmentDetailView: View {
         .background(AppTheme.background(for: colorScheme))
         .navigationTitle("歷史紀錄詳情")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button(role: .destructive) {
+                    showDeleteConfirmation = true
+                } label: {
+                    Image(systemName: "trash")
+                        .foregroundColor(.red)
+                }
+                .disabled(isDeleting)
+            }
+        }
+        .confirmationDialog("確定要刪除此筆評估紀錄嗎？", isPresented: $showDeleteConfirmation, titleVisibility: .visible) {
+            Button("刪除紀錄", role: .destructive) {
+                guard let recordID = record.id else { return }
+                isDeleting = true
+                Task {
+                    let success = await assessmentVM.deleteAssessment(recordID: recordID)
+                    isDeleting = false
+                    if success {
+                        dismiss()
+                    }
+                }
+            }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("刪除後資料將無法復原。")
+        }
     }
 
     /// 各面向指標得分徽章元件
