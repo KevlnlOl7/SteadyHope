@@ -1,0 +1,1 @@
+session_id,subject_code,operator,recorded_at_utc,device_id,firmware_version,algorithm_version,gate_config_id,hand,imu_mount_location,imu_axis_x_direction,imu_axis_y_direction,imu_axis_z_direction,strap_setting,motor_state,notes

@@ -16,3 +16,31 @@ CC="${CC:-gcc}"
   -lm -o "$HERE/test_equivalence"
 
 "$HERE/test_equivalence" "$ROOT/golden"
+
+"$CC" -O2 -std=c11 -Wall -Wextra \
+  -I"$SRC/gating" \
+  "$HERE/test_tremor_gate.c" "$SRC/gating/tremor_gate.c" \
+  -lm -o "$HERE/test_tremor_gate"
+
+"$HERE/test_tremor_gate"
+
+"$CC" -O2 -std=c11 -Wall -Wextra \
+  -I"$SRC/gating" -I"$ROOT/test_vectors/gating_7hz_boundary" \
+  "$HERE/test_tremor_gate_7hz_boundary.c" "$SRC/gating/tremor_gate.c" \
+  -lm -o "$HERE/test_tremor_gate_7hz_boundary"
+
+"$HERE/test_tremor_gate_7hz_boundary"
+
+"$CC" -O2 -std=c11 -Wall -Wextra \
+  -I"$SRC/gating" -I"$ROOT/test_vectors/gating_amplitude_sweep" \
+  "$HERE/test_tremor_gate_amplitude_sweep.c" "$SRC/gating/tremor_gate.c" \
+  -lm -o "$HERE/test_tremor_gate_amplitude_sweep"
+
+"$HERE/test_tremor_gate_amplitude_sweep"
+
+"$CC" -O2 -std=c11 -Wall -Wextra \
+  -I"$SRC/gating" -I"$ROOT/test_vectors/gating_mixed_boundary" \
+  "$HERE/test_tremor_gate_mixed_boundary.c" "$SRC/gating/tremor_gate.c" \
+  -lm -o "$HERE/test_tremor_gate_mixed_boundary"
+
+"$HERE/test_tremor_gate_mixed_boundary"

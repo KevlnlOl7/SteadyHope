@@ -23,3 +23,9 @@ __pycache__/
 *.autosave
 *.slxc
 *.mex*
+
+# STM32CubeIDE local/generated state
+/firmware/**/Debug/
+/firmware/**/Release/
+/firmware/**/.settings/
+/.cubeide-workspaces/

@@ -1,0 +1,26 @@
+# Preserve the byte-exact STM32 gate handoff package so its SHA-256 manifest
+# remains valid after checkout on Windows or Unix.
+algorithms/handoff/stm32_gate_upgrade_20260822/** -text
+
+# Keep the authoritative gate pair identical across platforms as well.
+algorithms/handoff/src/gating/tremor_gate.c -text
+algorithms/handoff/src/gating/tremor_gate.h -text
+
+# Preserve the motor-control handoff sources and host fixtures byte-for-byte.
+algorithms/handoff/stm32_motor_control_20260823/** -text
+algorithms/handoff/src/actuator/** -text
+algorithms/handoff/src/control/motor_command_mapper.c -text
+algorithms/handoff/src/control/motor_command_mapper.h -text
+algorithms/handoff/src/control/suppression_control.c -text
+algorithms/handoff/src/control/suppression_control.h -text
+algorithms/handoff/test/run_actuator_tests.bat -text
+algorithms/handoff/test/run_actuator_tests.sh -text
+algorithms/handoff/test/fakes/** -text
+algorithms/handoff/test/test_motor_actuator_chain.c -text
+algorithms/handoff/test/test_motor_command_mapper.c -text
+algorithms/handoff/test/test_motor_position_guard.c -text
+algorithms/handoff/test/test_quadrature_encoder.c -text
+algorithms/handoff/test/test_stm32_tb6612_hal.c -text
+algorithms/handoff/test/test_suppression_control.c -text
+algorithms/handoff/test/test_suppression_pipeline.c -text
+algorithms/handoff/test/test_tb6612_driver.c -text

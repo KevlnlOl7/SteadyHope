@@ -5,7 +5,7 @@
 
 > 🔧 **要動手把程式碼放進 STM32CubeIDE 專案，看 [INTEGRATION.md](INTEGRATION.md)**（加檔案、include path、CM7/FPU、BNO055 raw gyro 讀法、100 Hz 時序、常見坑）。本檔是介面契約與驗證流程。
 
-兩個演算法：
+兩個顫抖估測器，加上一個獨立的馬達啟用判斷模組：
 
 | | BMFLC | eHWFLC-KF |
 |---|---|---|
@@ -15,6 +15,18 @@
 | 輸出 | `tremor_est` | `tremor_est` + `freq_hz` |
 
 > 兩者可同時跑、各自獨立，韌體可先用其中一個驗證流程，再比較。
+
+`src/gating/tremor_gate.c/.h` 是 V2 雙頻帶 gating：直接讀同一筆 raw gyro，
+比較 4–6 Hz 顫抖帶與 1–3 Hz 自主動作帶，輸出 `enabled`。它只決定馬達
+「能不能動」；馬達方向與輸出大小仍由 `tremor_est` 決定。設計與上板驗收見
+[GATING_DESIGN.md](GATING_DESIGN.md)。
+
+PWM 比例控制、N20 loaded bandwidth test、actuator 選型門檻與實測紀錄格式見
+[ACTUATOR_CONTROL.md](ACTUATOR_CONTROL.md)。目前 `control_sim.m` 實作是 P-only；取得
+真實 actuator gain／頻寬／延遲前，不應直接加入 `Ki/Kd` 或照抄模擬 `Kp`。
+目前已整合的 powered-bench 接線、Gate→演算法→PWM 路徑、單一調參入口與 CubeIDE build
+指令以 [`firmware/algo/README.md`](../../firmware/algo/README.md) 為準；encoder/SetZero 在此
+profile 為 telemetry-only，不是 PWM veto。
 
 ---
 
@@ -28,6 +40,11 @@ void   BMFLC_step_init(void);
 /* src/ehwflc/eHWFLC_KF_step.h */
 void   eHWFLC_KF_step(double signal_sample, double *tremor_est, double *freq_hz);
 void   eHWFLC_KF_step_init(void);
+
+/* src/gating/tremor_gate.h */
+TremorGateConfig TremorGate_DefaultConfig(void);
+void TremorGate_Init(TremorGate *gate, const TremorGateConfig *config);
+uint8_t TremorGate_Update(TremorGate *gate, double raw_gyro_dps);
 ```
 
 | 項目 | 契約 |
@@ -37,7 +54,8 @@ void   eHWFLC_KF_step_init(void);
 | **初始化** | 首次呼叫 `*_step` 會自動 init；要重置狀態（換使用者、重新開始）才需顯式呼叫 `*_init()`。 |
 | **狀態** | file-scope `static` → **單例，只能跑一軸**。多軸需多份實例或以 reentrant 模式重產生。 |
 | **輸出** `tremor_est` | 估測出的**顫抖分量**（°/s），即「要被抵銷的東西」。`voluntary = signal − tremor_est` 是要保留的自主動作。 |
-| **輸出** `freq_hz` | eHWFLC-KF 當前估測基頻（Hz），可用於監測/除錯。 |
+| **輸出** `freq_hz` | **已知不可靠，禁止用於 gating 或 App biomarker。**它可能被自主動作拖到 3 Hz 下限後無法追回顫抖頻率；保留此輸出只為相容既有 Coder API。頻率回報改用 raw gyro 的短窗 FFT 或 4–6 Hz 帶通過零率。 |
+| **gating 輸出** `enabled` | `uint8_t`；0 表示馬達必須停止，1 表示允許抑震控制。它不是 PWM duty，也不代表馬達方向。 |
 | 型別 / 記憶體 | 全程 `double`（M7 有 DP FPU）。無動態配置、無遞迴、堆疊用量小（< 1 KB）。 |
 
 ### 致動器接法（控制律由硬體組校）
@@ -137,9 +155,15 @@ uint32_t t0 = DWT->CYCCNT;
 eHWFLC_KF_step(sample, &tr, &fr);
 uint32_t cyc = DWT->CYCCNT - t0;   /* 時間(us) = cyc / (SystemCoreClock/1e6) */
 ```
-粗估每步 ~10–30 µs @ 480 MHz（含數十個 `sin`/`cos`），裕度很大，但請**實測**。
+不要用 clock 比例粗估耗時。請在實機記錄 clock、cache、build configuration 與輸入範圍，
+並確認最壞情況小於 10 ms；不同設定的量測不能直接互相代用（現有紀錄見
+[GATING_DESIGN.md](GATING_DESIGN.md) §2）。
 另：把 `golden/input.csv` 存成陣列在板上跑，輸出對 `golden/*.csv` 比對，
 確認 ARM build 也數值一致。
+
+再使用 `test_vectors/gating_frequency/` 的1～8 Hz固定向量，
+斷開馬達後注入同一個100 Hz tick。1–3與7–8 Hz應維持`enabled=0`，4–6 Hz應啟動後
+再於訊號停止時關閉。這是在驗證板上gating，不是以人工手抖取代標準訊號。
 
 ### Stage 3 — 閉迴路抑制（硬體）= 真正回答「演算法有沒有用」
 gyro（單軸 °/s, 100 Hz）→ `*_step` → `tremor_est` → 致動器反相。
@@ -160,10 +184,25 @@ handoff/
 ├── README.md                  ← 本檔（介面契約 + 驗證流程）
 ├── INTEGRATION.md             ← STM32CubeIDE 整合步驟教學（怎麼把 code 放進去）
 ├── BNO055_GYRO_SETUP.md       ← 感測器端專屬：切 raw gyro、設 400kHz、跑穩 100Hz、除錯表
+├── GATING_DESIGN.md           ← V2 gating 設計、限制與板上驗收流程
+├── ACTUATOR_CONTROL.md        ← PWM/P control、N20 頻寬驗證、actuator/第二顆 IMU 選型門檻
+├── TREMOR_FREQUENCY.md        ← STM32/BLE欄位、FFT/PSD與App主振幅圖定案規格
+├── APP_PSD_IMPLEMENTATION.md  ← App從BLE解析到FFT/PSD、RMS及圖表的逐步實作
+├── REAL_DATA_PROTOCOL.md      ← 實機100 Hz錄製情境、欄位與gating門檻校調
+├── STM32_ROBUSTNESS_TEST_PLAN.md ← 7 Hz、混合、timer、jitter與dropout板上交接
+├── SUPPRESSION_VALIDATION.md  ← PWM request與第二顆IMU Motor OFF/ON成效驗證
+├── templates/                 ← 離線/實機測試紀錄與版本追蹤空白表格
 ├── src/
 │   ├── bmflc/                  BMFLC C（ARM-safe，純 scalar；含自含 rtwtypes.h）
 │   ├── ehwflc/                 eHWFLC-KF C（ARM-safe，已重產生無 SSE2）
+│   ├── gating/                 V2 雙頻帶 gating C（不依賴 HAL、instance-based）
 │   └── README.md
+├── test_vectors/
+│   ├── gating_frequency/       1～8 Hz CSV、STM32 C陣列與逐筆golden trace
+│   ├── gating_7hz_boundary/    7 Hz／10、15、20 deg/s板上輸入與逐筆golden
+│   ├── gating_amplitude_sweep/ 1～8 Hz × 7振幅的56組板上輸入與逐筆golden
+│   ├── gating_mixed_boundary/  2 Hz＋5 Hz代表case板上輸入與逐筆golden
+│   └── gating_robustness/      完整振幅、混合、取樣率、jitter與掉點離線摘要
 ├── golden/
 │   ├── input.csv              確定性輸入（10 s @ 100 Hz）
 │   ├── golden_bmflc.csv       BMFLC 真值輸出
@@ -172,6 +211,10 @@ handoff/
 │   └── README.md
 └── test/
     ├── test_equivalence.c     等價性測試（讀 golden、跑 C、印 PASS/FAIL）
+    ├── test_tremor_gate.c     gating基本行為與八組固定頻率向量逐筆測試
+    ├── test_tremor_gate_7hz_boundary.c   7 Hz三振幅逐筆C/reference
+    ├── test_tremor_gate_amplitude_sweep.c 56組頻率×振幅逐筆C/reference
+    ├── test_tremor_gate_mixed_boundary.c 混合訊號逐筆C/reference
     ├── build_and_run.sh       PC build（gcc/clang）
     └── build_and_run.bat      PC build（MinGW）
 ```
@@ -182,3 +225,16 @@ handoff/
 - 顫抖帶 4–6 Hz、自主動作 ~2 Hz；BMFLC 的頻帶選擇性就是用來區分兩者。
 - `Copy/demo_c/demo_main.c` 是**另一份手寫 demo，不是交付參考**（內有死碼、且 50 Hz 模式
   仍套 100 Hz 係數）。權威來源是 `.m` 與 Coder 產生的 C。
+
+## 9. V2 gating 延伸離線模擬
+
+執行下列命令可重產生振幅、2 Hz + 5 Hz 混合訊號、95/100/105 Hz 取樣率、timer 取樣間隔誤差
+與資料掉點測試：
+
+```powershell
+python algorithms/validation/gating_robustness_sim.py
+python -m unittest discover -s algorithms/validation -p "test_gating_robustness_sim.py"
+```
+
+結果、判讀與已知限制見
+[`test_vectors/gating_robustness/README.md`](test_vectors/gating_robustness/README.md)。這些都是合成資料，不能當成實機抑震率或患者成效。
