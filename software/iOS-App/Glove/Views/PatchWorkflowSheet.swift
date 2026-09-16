@@ -1,0 +1,449 @@
+import PhotosUI
+import SwiftUI
+
+struct PatchWorkflowSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var colorScheme
+
+    @ObservedObject var medVM: MedicationViewModel
+
+    /// 使用者 ID
+    var planUserID: Int
+
+    /// 接收欲編輯的紀錄（若為 nil 代表為全新打卡）
+    var editingRecord: MedicationRecord? = nil
+
+    /// 紐普洛貼片規格選項
+    let strengthOptions = ["2mg", "4mg", "6mg", "8mg"]
+
+    /// 當前選取之貼片劑量規格
+    @State private var selectedStrength: String = "2mg"
+
+    /// 是否已撕除舊貼片之安全確認狀態
+    @State private var hasRemovedOldPatch: Bool = false
+
+    /// 當前選取之貼片部位
+    @State private var selectedRegion: PatchRegion?
+
+    /// 14 天內重複部位警告彈窗顯示狀態
+    @State private var show14DayWarning: Bool = false
+
+    /// 30 秒按壓倒數全螢幕檢視顯示狀態
+    @State private var showCountdownModal: Bool = false
+
+    /// 選取之皮膚狀況選項
+    @State private var selectedSkinCondition: String = "正常"
+
+    /// 暫存相片清單
+    @State private var tempImages: [UIImage] = []
+
+    /// 相簿選擇器項目清單
+    @State private var selectedMediaItems: [PhotosPickerItem] = []
+
+    /// 圖片預覽當前索引值
+    @State private var currentPageIndex: Int = 0
+
+    /// 全螢幕預覽圖片實例
+    @State private var previewImage: UIImage?
+
+    /// 是否啟用自訂皮膚狀況輸入
+    @State private var isCustomCondition: Bool = false
+
+    /// 自訂皮膚狀況描述文字
+    @State private var customSkinCondition: String = ""
+
+    /// 常見皮膚狀況預設選項清單
+    let skinOptions = ["正常", "微紅", "發癢", "起疹子", "脫落"]
+
+    /// 全螢幕圖片預覽綁定屬性
+    private var previewImageBinding: Binding<ImagePreviewItem?> {
+        Binding(
+            get: { previewImage.map { ImagePreviewItem(image: $0) } },
+            set: { previewImage = $0?.image }
+        )
+    }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: 20) {
+                    patchStrengthSection
+                    safetyCheckSection
+                    bodyRegionPickerSection
+                    skinConditionSection
+                    startPatchButton
+                }
+                .padding()
+            }
+            .background(AppTheme.background(for: colorScheme))
+            .navigationTitle(editingRecord != nil ? "編輯貼片紀錄" : "貼片打卡與紀錄")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("取消") {
+                        medVM.editingRecord = nil
+                        dismiss()
+                    }
+                    .foregroundColor(AppTheme.primary(for: colorScheme))
+                }
+            }
+            .alert("部位輪替提醒", isPresented: $show14DayWarning) {
+                Button("重新選擇部位", role: .cancel) {
+                    selectedRegion = nil
+                }
+                Button("仍要使用此部位", role: .destructive) {
+                    executeSaveOrCountdown()
+                }
+            } message: {
+                Text("貼片黏貼部位應輪流替換以減少對皮膚的刺激。系統偵測到您在 14 天內曾於此部位貼過，建議換到其他潔淨乾燥的皮膚表面。")
+            }
+            .fullScreenCover(isPresented: $showCountdownModal) {
+                PatchCountdownView {
+                    saveRecordAction()
+                    dismiss()
+                }
+                .background(BackgroundClearView())
+            }
+            .fullScreenCover(item: previewImageBinding) { item in
+                ImagePreview(image: item.image) {
+                    previewImage = nil
+                }
+                .background(BackgroundClearView())
+            }
+            .onAppear {
+                loadExistingDataIfNeeded()
+            }
+        }
+    }
+
+    /// 貼片劑量規格選擇卡片
+    private var patchStrengthSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 6) {
+                Image(systemName: "square.grid.2x2.fill")
+                    .foregroundColor(AppTheme.accent(for: colorScheme))
+                Text("Neupro 紐普洛穿皮貼片劑")
+                    .font(.subheadline.bold())
+                    .foregroundColor(AppTheme.textPrimary(for: colorScheme))
+            }
+
+            Text("請選擇今日貼片劑量規格：")
+                .font(.caption)
+                .foregroundColor(AppTheme.textSecondary(for: colorScheme))
+
+            HStack(spacing: 10) {
+                ForEach(strengthOptions, id: \.self) { strength in
+                    Button {
+                        selectedStrength = strength
+                    } label: {
+                        Text(strength)
+                            .font(.subheadline.bold())
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 8)
+                            .background(
+                                selectedStrength == strength
+                                    ? AppTheme.accent(for: colorScheme)
+                                    : AppTheme.textSecondary(for: colorScheme).opacity(0.12)
+                            )
+                            .foregroundColor(
+                                selectedStrength == strength ? .white : AppTheme.textPrimary(for: colorScheme)
+                            )
+                            .cornerRadius(8)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+        .padding()
+        .background(AppTheme.cardBackground(for: colorScheme))
+        .cornerRadius(14)
+    }
+
+    /// 帶入既有貼片舊資料邏輯
+    private func loadExistingDataIfNeeded() {
+        guard let record = editingRecord else { return }
+
+        // 帶入既有劑量規格
+        if let matched = strengthOptions.first(where: { record.name.contains($0) || record.dose.contains($0) }) {
+            selectedStrength = matched
+        }
+
+        // 確認撕除直接勾選
+        hasRemovedOldPatch = true
+
+        // 帶入既有部位
+        selectedRegion = record.patchRegion
+
+        // 帶入皮膚狀況
+        if let skin = record.skinCondition, !skin.isEmpty {
+            if skinOptions.contains(skin) {
+                selectedSkinCondition = skin
+                isCustomCondition = false
+            } else {
+                isCustomCondition = true
+                customSkinCondition = skin
+            }
+        }
+
+        // 帶入既有照片
+        let decodedImages = record.skinImageDataList.compactMap {
+            UIImage(data: $0)
+        }
+        tempImages = decodedImages
+    }
+
+    /// 執行儲存或倒數流程
+    private func executeSaveOrCountdown() {
+        if editingRecord != nil {
+            saveRecordAction()
+            dismiss()
+        } else {
+            showCountdownModal = true
+        }
+    }
+
+    /// 儲存更新或新增邏輯
+    private func saveRecordAction() {
+        guard let region = selectedRegion else { return }
+
+        if let record = editingRecord, let recordID = record.id {
+            medVM.updatePatchRecord(
+                recordID: recordID,
+                dose: selectedStrength,
+                originalDate: record.date,
+                region: region,
+                skinCondition: selectedSkinCondition,
+                isCustomCondition: isCustomCondition,
+                customCondition: customSkinCondition,
+                images: tempImages
+            )
+        } else {
+            medVM.savePatchRecord(
+                dose: selectedStrength,
+                region: region,
+                skinCondition: selectedSkinCondition,
+                isCustomCondition: isCustomCondition,
+                customCondition: customSkinCondition,
+                images: tempImages,
+                planUserID: planUserID
+            )
+        }
+    }
+
+    /// 撕除舊貼片安全核對卡片
+    private var safetyCheckSection: some View {
+        HStack(spacing: 12) {
+            Button {
+                withAnimation(.spring(response: 0.2)) {
+                    hasRemovedOldPatch.toggle()
+                }
+            } label: {
+                Image(
+                    systemName: hasRemovedOldPatch
+                        ? "checkmark.square.fill" : "square"
+                )
+                .font(.system(size: 28, weight: .bold))
+                .foregroundColor(hasRemovedOldPatch ? .green : AppTheme.textSecondary(for: colorScheme))
+            }
+            .buttonStyle(.plain)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("我已確認撕除昨天的舊貼片")
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundColor(hasRemovedOldPatch ? AppTheme.textPrimary(for: colorScheme) : .red)
+                Text("防止舊貼片殘留導致重複用藥劑量過高")
+                    .font(.caption)
+                    .foregroundColor(AppTheme.textSecondary(for: colorScheme))
+            }
+        }
+        .padding()
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            hasRemovedOldPatch
+                ? Color.green.opacity(0.08) : Color.red.opacity(0.08)
+        )
+        .cornerRadius(12)
+        .overlay(
+            RoundedRectangle(cornerRadius: 12).stroke(
+                hasRemovedOldPatch
+                    ? Color.green.opacity(0.3) : Color.red.opacity(0.3),
+                lineWidth: 1.5
+            )
+        )
+    }
+
+    /// 解剖部位選擇區塊（含 14 天內重複使用標記）
+    private var bodyRegionPickerSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("選擇今日黏貼部位：")
+                .font(.headline)
+                .foregroundColor(AppTheme.textPrimary(for: colorScheme))
+
+            LazyVGrid(
+                columns: [GridItem(.flexible()), GridItem(.flexible())],
+                spacing: 10
+            ) {
+                ForEach(PatchRegion.allCases, id: \.self) { region in
+                    let isRecentlyUsed = medVM.isRegionUsedInLast14Days(region)
+
+                    Button {
+                        selectedRegion = region
+                    } label: {
+                        HStack {
+                            Image(
+                                systemName: selectedRegion == region
+                                    ? "largecircle.fill.circle" : "circle"
+                            )
+                            Text(region.rawValue)
+                                .font(.subheadline.bold())
+
+                            Spacer()
+
+                            if isRecentlyUsed && selectedRegion != region {
+                                Text("14天內用過")
+                                    .font(.caption2)
+                                    .padding(.horizontal, 4)
+                                    .padding(.vertical, 2)
+                                    .background(AppTheme.accent(for: colorScheme).opacity(0.2))
+                                    .foregroundColor(AppTheme.accent(for: colorScheme))
+                                    .cornerRadius(4)
+                            }
+                        }
+                        .padding()
+                        .background(
+                            selectedRegion == region
+                                ? AppTheme.primary(for: colorScheme).opacity(0.12)
+                                : AppTheme.background(for: colorScheme)
+                        )
+                        .foregroundColor(
+                            selectedRegion == region ? AppTheme.primary(for: colorScheme) : AppTheme.textPrimary(for: colorScheme)
+                        )
+                        .cornerRadius(10)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 10).stroke(
+                                selectedRegion == region
+                                    ? AppTheme.primary(for: colorScheme) : Color.clear,
+                                lineWidth: 2
+                            )
+                        )
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+        .padding()
+        .background(AppTheme.cardBackground(for: colorScheme))
+        .cornerRadius(14)
+    }
+
+    /// 皮膚狀況評估與局部照片上傳區塊
+    private var skinConditionSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("皮膚狀況追蹤：")
+                .font(.headline)
+                .foregroundColor(AppTheme.textPrimary(for: colorScheme))
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(skinOptions, id: \.self) { option in
+                        Button {
+                            isCustomCondition = false
+                            selectedSkinCondition = option
+                        } label: {
+                            Text(option)
+                                .font(.subheadline.bold())
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 8)
+                                .background(
+                                    (!isCustomCondition && selectedSkinCondition == option)
+                                        ? AppTheme.primary(for: colorScheme)
+                                        : AppTheme.textSecondary(for: colorScheme).opacity(0.12)
+                                )
+                                .foregroundColor(
+                                    (!isCustomCondition && selectedSkinCondition == option)
+                                        ? .white
+                                        : AppTheme.textPrimary(for: colorScheme)
+                                )
+                                .cornerRadius(20)
+                        }
+                        .buttonStyle(.plain)
+                    }
+
+                    Button {
+                        isCustomCondition = true
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "pencil")
+                            Text("其他")
+                        }
+                        .font(.subheadline.bold())
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .background(
+                            isCustomCondition
+                                ? AppTheme.primary(for: colorScheme) : AppTheme.textSecondary(for: colorScheme).opacity(0.12)
+                        )
+                        .foregroundColor(isCustomCondition ? .white : AppTheme.textPrimary(for: colorScheme))
+                        .cornerRadius(20)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+
+            if isCustomCondition {
+                TextField("請輸入皮膚狀況（例如：過敏、紅腫發熱）", text: $customSkinCondition)
+                    .textFieldStyle(.roundedBorder)
+                    .foregroundColor(AppTheme.textPrimary(for: colorScheme))
+                    .padding(.top, 4)
+            }
+
+            Divider().padding(.vertical, 4)
+
+            Text("若有皮膚異常，可拍照記錄局部狀態（選填）")
+                .font(.caption)
+                .foregroundColor(AppTheme.textSecondary(for: colorScheme))
+
+            MediaManagementView(
+                tempSelectedImages: $tempImages,
+                selectedMediaItems: $selectedMediaItems,
+                currentPageIndex: $currentPageIndex,
+                previewImage: $previewImage
+            )
+        }
+        .padding()
+        .background(AppTheme.cardBackground(for: colorScheme))
+        .cornerRadius(14)
+    }
+
+    /// 開始貼片與倒數流程確認按鈕
+    private var startPatchButton: some View {
+        let isReady = hasRemovedOldPatch && selectedRegion != nil
+        let isEditing = editingRecord != nil
+
+        return Button {
+            if let region = selectedRegion,
+                medVM.isRegionUsedInLast14Days(region)
+                    && region != editingRecord?.patchRegion
+            {
+                show14DayWarning = true
+            } else {
+                executeSaveOrCountdown()
+            }
+        } label: {
+            HStack {
+                Image(
+                    systemName: isEditing
+                        ? "checkmark.circle.fill" : "hand.tap.fill"
+                )
+                Text(isEditing ? "儲存修改貼片紀錄" : "確認部位並開始 30 秒按壓")
+            }
+            .font(.headline)
+            .foregroundColor(.white)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 14)
+            .background(isReady ? AppTheme.primary(for: colorScheme) : AppTheme.textSecondary(for: colorScheme).opacity(0.4))
+            .cornerRadius(12)
+        }
+        .disabled(!isReady)
+    }
+}

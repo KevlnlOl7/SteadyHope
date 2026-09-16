@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <style>
+        /* A4 列印頁面與邊界設定 */
+        @page {
+            size: A4;
+            margin: 15mm 20mm;
+        }
+
+        /* 報告全域樣式與字體配置 */
+        body {
+            font-family: 'PingFang TC', 'Heiti TC', 'Microsoft JhengHei', sans-serif;
+            padding: 0;
+            margin: 0;
+            color: #333333;
+            background-color: #ffffff;
+            line-height: 1.5;
+            width: 100%;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+        }
+
+        /* 報告內容主要置中容器 */
+        .container {
+            width: 100%;
+            max-width: 800px;
+            margin: 0 auto;
+            box-sizing: border-box;
+        }
+
+        /* 頁面頂部患者基本資料與標題標頭區塊 */
+        .header {
+            border-bottom: 2px solid #eef2f5;
+            padding-bottom: 12px;
+            margin-bottom: 20px;
+            page-break-inside: avoid;
+            break-inside: avoid;
+        }
+
+        /* 報告大標題 */
+        h2 {
+            color: #1a365d;
+            margin: 0 0 10px 0;
+            font-size: 22px;
+            font-weight: 600;
+        }
+
+        /* 患者資訊橫列排版 */
+        .meta-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 13px;
+            color: #4a5568;
+            margin-bottom: 6px;
+            gap: 12px;
+        }
+
+        /* 單項基本資訊標籤與文字 */
+        .meta-item {
+            white-space: nowrap;
+        }
+
+        /* 各大紀錄分類區塊標題 */
+        .section-title {
+            color: #2b6cb0;
+            font-size: 15px;
+            font-weight: 600;
+            margin-top: 18px;
+            margin-bottom: 10px;
+            border-left: 4px solid #3182ce;
+            padding-left: 8px;
+            page-break-after: avoid;
+            break-after: avoid;
+        }
+
+        /* 內容區塊獨立容器，避免列印跨頁截斷 */
+        .content-block {
+            margin-bottom: 16px;
+            page-break-inside: avoid;
+            break-inside: avoid;
+        }
+
+        /* 圖表卡片容器背景與外框 */
+        .chart-row-card {
+            width: 100%;
+            background-color: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 10px 14px;
+            box-sizing: border-box;
+            margin-bottom: 12px;
+            page-break-inside: avoid;
+            break-inside: avoid;
+        }
+
+        /* 圖表卡片標題列與計量單位 */
+        .chart-card-title {
+            font-size: 12px;
+            font-weight: 600;
+            color: #2d3748;
+            margin-bottom: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+        }
+
+        /* 圖表顏色與線條圖例說明 */
+        .chart-legend {
+            font-size: 10px;
+            color: #718096;
+            margin-top: 5px;
+            line-height: 1.6;
+        }
+
+        /* 圖表資料來源與演算法註解說明方塊 */
+        .chart-note {
+            font-size: 10px;
+            color: #718096;
+            background: #ffffff;
+            border: 1px solid #edf2f7;
+            border-radius: 6px;
+            padding: 7px 9px;
+            margin-top: 6px;
+            line-height: 1.5;
+        }
+
+        /* 結構化資料表格配置 */
+        table.data-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 4px;
+            background-color: #ffffff;
+            table-layout: fixed;
+            page-break-inside: auto;
+            break-inside: auto;
+        }
+
+        /* 表格欄位與內容通用字體及對齊設定 */
+        table.data-table th,
+        table.data-table td {
+            padding: 8px 10px;
+            text-align: left;
+            font-size: 12px;
+            word-wrap: break-word;
+            overflow-wrap: anywhere;
+        }
+
+        /* 表格標題列背景與文字配色 */
+        table.data-table th {
+            background-color: #f7fafc;
+            color: #2b6cb0;
+            font-weight: 600;
+            border-bottom: 2px solid #e2e8f0;
+        }
+
+        /* 表格內容資料列分隔線與跨頁防截斷 */
+        table.data-table tr {
+            border-bottom: 1px solid #edf2f7;
+            page-break-inside: avoid;
+            break-inside: avoid;
+        }
+
+        table.data-table tr:last-child {
+            border-bottom: none;
+        }
+
+        /* 狀態等級徽章基礎樣式 */
+        .badge {
+            display: inline-block;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 10px;
+            font-weight: 600;
+            white-space: nowrap;
+        }
+
+        /* 重度異常狀態徽章樣式 */
+        .badge-severe {
+            background-color: #fed7d7;
+            color: #9b2c2c;
+        }
+
+        /* 中度異常狀態徽章樣式 */
+        .badge-moderate {
+            background-color: #feebc8;
+            color: #9c4221;
+        }
+
+        /* 輕度或正常狀態徽章樣式 */
+        .badge-mild {
+            background-color: #c6f6d5;
+            color: #22543d;
+        }
+
+        /* 活動情境標籤膠囊樣式 */
+        .tag-pill {
+            display: inline-block;
+            background-color: #edf2f7;
+            color: #4a5568;
+            padding: 1px 6px;
+            border-radius: 4px;
+            font-size: 11px;
+            word-break: break-word;
+        }
+
+        /* 症狀影音卡片雙欄排版容器 */
+        .symptom-container {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: space-between;
+            row-gap: 10px;
+        }
+
+        /* 單一症狀紀錄卡片樣式 */
+        .symptom-card {
+            width: 49%;
+            background-color: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 10px 12px;
+            box-sizing: border-box;
+            display: flex;
+            flex-direction: column;
+            page-break-inside: avoid;
+            break-inside: avoid;
+            margin-bottom: 0;
+        }
+
+        /* 症狀紀錄時間與分類標題列 */
+        .symptom-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            font-size: 11.5px;
+            color: #4a5568;
+            margin-bottom: 6px;
+            font-weight: 500;
+            gap: 8px;
+        }
+
+        /* 症狀文字描述區塊 */
+        .symptom-text {
+            font-size: 12px;
+            color: #2d3748;
+            line-height: 1.5;
+            margin-bottom: 6px;
+            word-break: break-word;
+            overflow-wrap: anywhere;
+            white-space: pre-wrap;
+        }
+
+        /* 症狀附加照片縮圖網格容器 */
+        .symptom-media-grid {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+            margin-top: auto;
+        }
+
+        /* 症狀縮圖圖片樣式 */
+        .symptom-img {
+            width: 60px;
+            height: 60px;
+            object-fit: cover;
+            border-radius: 6px;
+            border: 1px solid #cbd5e0;
+        }
+
+        /* 診間溝通備註文字框樣式 */
+        .note-box {
+            background-color: #f7fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            padding: 10px 12px;
+            font-size: 12px;
+            color: #2d3748;
+            line-height: 1.6;
+            word-wrap: break-word;
+            overflow-wrap: anywhere;
+            white-space: pre-wrap;
+        }
+
+        /* 基本資訊輔助表格排版 */
+        .meta-table {
+            width: 100%;
+            border-collapse: collapse;
+            table-layout: fixed;
+            background-color: transparent;
+        }
+
+        .meta-table td {
+            padding: 0;
+            font-size: 12px;
+            color: #2d3748;
+            word-break: break-word;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- 頁首：病患資訊與統計區間 -->
+        <div class="header">
+            <h2>日常健康綜合紀錄報告</h2>
+            <div class="meta-bar">
+                <div class="meta-item"><strong>患者姓名：</strong>{{userName}}</div>
+                <div class="meta-item"><strong>生日：</strong>{{userBirth}}</div>
+                <div class="meta-item"><strong>統計區間：</strong>{{startString}} ～ {{endString}}</div>
+            </div>
+        </div>
+
+        <!-- 手部震顫走勢與頻率圖表 -->
+        <div class="content-block">
+            <div class="section-title">手部震顫圖表</div>
+
+            <!-- RMS 震動強度趨勢圖卡片 -->
+            <div class="chart-row-card">
+                <div class="chart-card-title">
+                    <span>震動強度趨勢（RMS）</span>
+                    <span style="font-size:10px; color:#4299e1;">單位：deg/s</span>
+                </div>
+                {{rmsTrendSVG}}
+                <div class="chart-legend">
+                    <strong>圖例：</strong>藍色折線＝連續 RMS 震動強度走勢；紅色虛線＝0.20 deg/s 警戒門檻。
+                </div>
+                <div class="chart-note">
+                    RMS 走勢依選定期間內的連續資料繪製。為避免報告圖表過度擁擠，資料量較大時會保留原始走勢的重要高低變化後進行降採樣，不以每小時平均值取代原始波形。
+                </div>
+            </div>
+
+            <!-- 每小時主要震動頻率分析圖卡片 -->
+            <div class="chart-row-card">
+                <div class="chart-card-title">
+                    <span>每小時主要震動頻率</span>
+                    <span style="font-size:10px; color:#805ad5;">單位：Hz</span>
+                </div>
+                {{psdDetailSVG}}
+                <div class="chart-legend">
+                    <strong>圖例：</strong>紫色柱＝主要頻率落在 3–7 Hz；灰色柱＝主要頻率位於其他頻率範圍；灰色空心圓＝該時段有 RMS 資料但未取得可靠主要頻率；紫色背景＝典型震顫分析頻帶 3–7 Hz。
+                </div>
+                <div class="chart-note">
+                    主要震動頻率依每小時資料中的可用頻率分析結果呈現。若該時段存在 RMS 資料但未取得可靠的主要頻率，以灰色空心圓標示，避免與「完全沒有資料」混淆。
+                </div>
+            </div>
+
+            <!-- 當前資料時間限制備註 -->
+            <div class="chart-note">
+                圖表依選定統計期間內的震動資料製作。若統計結束日期為今天，資料與時間軸最多呈現至報告產生當下，不包含未來時間。
+            </div>
+        </div>
+
+        <!-- 手部震顫事件紀錄清單 -->
+        <div class="content-block">
+            <div class="section-title">手部震顫事件紀錄</div>
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th style="width:25%;">發作時間</th>
+                        <th style="width:20%;">強度 (RMS)</th>
+                        <th style="width:20%;">主要頻率</th>
+                        <th style="width:15%;">狀態等級</th>
+                        <th style="width:20%;">活動情境標籤</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {{tremorEventsRowsHTML}}
+                </tbody>
+            </table>
+        </div>
+
+        <!-- 區塊：症狀評估量表紀錄 -->
+        <div class="content-block">
+            <div class="section-title">日常症狀自我評估</div>
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th style="width:25%;">評估日期</th>
+                        <th style="width:20%;">總分</th>
+                        <th style="width:55%;">各向度得分 (情緒/日常/動作)</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {{assessmentRowsHTML}}
+                </tbody>
+            </table>
+            <div class="chart-note">
+                量表題目參考自台灣動作障礙學會，單題 0-4 分。因系統提供快速檢測與完整評估等不同模式，總分欄位以「實際得分 / 該次填寫題數之最高滿分」呈現。本表單純客觀記錄病患自我評估分數與向度分布，供臨床醫師問診參考。
+            </div>
+        </div>
+        
+        <!-- 日常生活表徵與突發症狀紀錄 -->
+        <div class="content-block">
+            <div class="section-title">日常生活表徵與症狀紀錄</div>
+            <div class="symptom-container">
+                {{symptomRowsHTML}}
+            </div>
+        </div>
+
+        <!-- 實際用藥與劑量紀錄清單 -->
+        <div class="content-block">
+            <div class="section-title">用藥與控制紀錄</div>
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th style="width:40%;">服藥時間</th>
+                        <th style="width:35%;">藥物名稱</th>
+                        <th style="width:25%;">劑量</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {{medicationRowsHTML}}
+                </tbody>
+            </table>
+        </div>
+
+        <!-- 血壓、血糖、體溫與體重等生理徵象監測紀錄 -->
+        <div class="content-block">
+            <div class="section-title">生理徵象監測紀錄</div>
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th style="width:25%;">量測時間</th>
+                        <th style="width:25%;">血壓 (mmHg)</th>
+                        <th style="width:20%;">血糖 (mg/dL)</th>
+                        <th style="width:15%;">體溫 (°C)</th>
+                        <th style="width:15%;">體重 (kg)</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {{vitalsRowsHTML}}
+                </tbody>
+            </table>
+        </div>
+
+        <!-- 醫師看診與診間溝通備忘錄 -->
+        {{consultationSectionHTML}}
+    </div>
+</body>
+</html>
