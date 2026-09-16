@@ -32,3 +32,14 @@ struct AIChatResponseDTO: Codable {
     let reply: String
     let createdAt: Date
 }
+
+/// 儲存看診前準備 Request DTO
+struct SaveConsultationPreparationRequestDTO: Codable {
+    let content: String
+}
+
+/// 取得看診前準備 Response DTO
+struct ConsultationPreparationResponseDTO: Codable {
+    let content: String
+    let updatedAt: Date?
+}

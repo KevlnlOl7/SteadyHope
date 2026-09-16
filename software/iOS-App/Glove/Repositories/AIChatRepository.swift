@@ -57,4 +57,16 @@ class AIChatRepository {
             throw NetworkError.decodeError
         }
     }
+    
+    /// 儲存看診前準備文字至資料庫
+    /// - Parameter content: 備忘內容
+    func saveConsultationPreparation(_ content: String) async throws {
+        try await aiChatService.saveConsultationPreparation(content: content)
+    }
+
+    /// 載入看診前準備內容（若無資料後端會回傳 content = ""）
+    /// - Returns: ConsultationPreparationResponseDTO
+    func fetchConsultationPreparation() async throws -> ConsultationPreparationResponseDTO {
+        return try await aiChatService.fetchConsultationPreparation()
+    }
 }

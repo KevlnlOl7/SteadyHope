@@ -91,11 +91,19 @@ final class ExportSettingsViewModel: ObservableObject {
         customReportFields.remove(atOffsets: offsets)
     }
 
-    /// 若使用者選取了「看病前準備」，將該準備事項文字快取至本機 UserDefaults
+    /// 若使用者選取了「看病前準備」，將該準備事項文字快取至本機 UserDefaults 與 DB
     func savePreparationToHome() {
         guard selectedReportTypes.contains("看病前準備") else { return }
         let trimmed = preparationBeforeVisit.trimmingCharacters(in: .whitespacesAndNewlines)
         UserDefaults.standard.set(trimmed, forKey: Self.homePreparationKey)
+        Task {
+            do {
+                try await aiRepository.saveConsultationPreparation(trimmed)
+                AppLog.debug("看病前準備已成功同步至伺服器資料庫")
+            } catch {
+                AppLog.error("看病前準備同步至伺服器失敗: \(error.localizedDescription)")
+            }
+        }
     }
 
     /// 向 AI 後端伺服器發送非同步請求以產生診間溝通摘要建議

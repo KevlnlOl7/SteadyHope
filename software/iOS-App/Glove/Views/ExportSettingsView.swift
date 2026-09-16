@@ -470,9 +470,7 @@ struct ExportSettingsView: View {
                                 minHeight: 80
                             )
                             .onChange(of: viewModel.preparationBeforeVisit) {
-                                if let saveMethod = (viewModel as AnyObject).value(forKey: "savePreparationToHome") as? () -> Void {
-                                    saveMethod()
-                                }
+                                viewModel.savePreparationToHome()
                             }
 
                             HStack(spacing: 4) {

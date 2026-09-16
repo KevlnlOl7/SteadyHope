@@ -80,4 +80,46 @@ class AIChatAPIService {
 
         return try await NetworkManager.shared.requestData(urlRequest)
     }
+    
+    /// 同步/儲存看診前準備至伺服器
+    /// - Parameter content: 看診前準備備忘文字內容
+    func saveConsultationPreparation(content: String) async throws {
+        guard let url = URL(string: "\(baseURL)/api/ai/consultation-preparation") else {
+            throw NetworkError.invalidURL
+        }
+
+        var urlRequest = URLRequest(url: url)
+        urlRequest.httpMethod = "PUT"
+        urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        if let token = AuthManager.shared.getToken() {
+            urlRequest.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+
+        let body = SaveConsultationPreparationRequestDTO(content: content)
+        do {
+            urlRequest.httpBody = try JSONEncoder().encode(body)
+        } catch {
+            throw NetworkError.encodingFailed
+        }
+
+        _ = try await NetworkManager.shared.requestData(urlRequest)
+    }
+
+    /// 取得看診前準備內容（首頁載入時呼叫）
+    /// - Returns: ConsultationPreparationResponseDTO
+    func fetchConsultationPreparation() async throws -> ConsultationPreparationResponseDTO {
+        guard let url = URL(string: "\(baseURL)/api/ai/consultation-preparation") else {
+            throw NetworkError.invalidURL
+        }
+
+        var urlRequest = URLRequest(url: url)
+        urlRequest.httpMethod = "GET"
+
+        if let token = AuthManager.shared.getToken() {
+            urlRequest.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+
+        return try await NetworkManager.shared.request(urlRequest, decoder: iso8601Decoder)
+    }
 }
