@@ -16,11 +16,8 @@
 extern I2C_HandleTypeDef hi2c4;
 #define bno_i2c (hi2c4)
 
-/* Populated by the CM7 startup probe; supports COM3/ADR low (0x28) and high
- * (0x29) without rebuilding the driver.  STM32 HAL expects the 7-bit address
- * shifted left by one. */
-extern uint16_t bno_i2c_address;
-#define P_BNO055                         (bno_i2c_address)
+
+#define P_BNO055 				    (0x28<<1)			/*!I2C Address of BNO055, which is 0x50*/
 #define BNO055_ID 					0xA0				/*!Chip ID of BNO055*/
 
 /*===========================================================================================================================*/

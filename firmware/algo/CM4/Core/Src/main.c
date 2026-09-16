@@ -14,9 +14,6 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#ifndef HSEM_ID_0
-#define HSEM_ID_0                       (0U)
-#endif
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -24,14 +21,6 @@
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
-/*
- * This Cube-generated project originally assigned display, storage, network,
- * and other Discovery-board peripherals to Cortex-M4.  They are deliberately
- * compiled out because CM4 is an idle companion in this firmware.  Keeping
- * unused generated peripheral initialization out avoids accidental ownership
- * and side effects on resources managed by CM7.
- */
-#if 0
 #if defined ( __ICCARM__ ) /*!< IAR Compiler */
 
 #pragma location=0x30040000
@@ -86,7 +75,6 @@ static void MX_LTDC_Init(void);
 static void MX_SAI2_Init(void);
 static void MX_SDMMC1_MMC_Init(void);
 static void MX_USB_OTG_FS_PCD_Init(void);
-#endif
 /* USER CODE BEGIN PFP */
 /* USER CODE END PFP */
 
@@ -104,18 +92,6 @@ int main(void)
   /* USER CODE END 1 */
 
 /* USER CODE BEGIN Boot_Mode_Sequence_1 */
-  /* Let Cortex-M7 release this semaphore after system clock initialization. */
-  __HAL_RCC_HSEM_CLK_ENABLE();
-  HAL_HSEM_ActivateNotification(__HAL_HSEM_SEMID_TO_MASK(HSEM_ID_0));
-
-  /* Keep the D2 domain stopped until Cortex-M7 completes shared setup. */
-  HAL_PWREx_ClearPendingEvent();
-  HAL_PWREx_EnterSTOPMode(PWR_MAINREGULATOR_ON,
-                          PWR_STOPENTRY_WFE,
-                          PWR_D2_DOMAIN);
-
-  /* Acknowledge the semaphore event that woke Cortex-M4. */
-  __HAL_HSEM_CLEAR_FLAG(__HAL_HSEM_SEMID_TO_MASK(HSEM_ID_0));
 /* USER CODE END Boot_Mode_Sequence_1 */
   /* MCU Configuration--------------------------------------------------------*/
 
@@ -128,19 +104,24 @@ int main(void)
   /* USER CODE BEGIN SysInit */
   /* USER CODE END SysInit */
 
-  /* Cortex-M4 is an idle companion in this firmware.  Do not initialize
-   * unused Discovery-board peripherals or take ownership away from CM7. */
+  /* Initialize all configured peripherals */
+  MX_GPIO_Init();
+  MX_ETH_Init();
+  MX_FDCAN1_Init();
+  MX_FDCAN2_Init();
+  MX_FMC_Init();
+  MX_LTDC_Init();
+  MX_SAI2_Init();
+  MX_SDMMC1_MMC_Init();
+  MX_USB_OTG_FS_PCD_Init();
   /* USER CODE BEGIN 2 */
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-  while (1)
-  {
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-  }
   /* USER CODE END 3 */
 }
 
@@ -149,7 +130,6 @@ int main(void)
   * @param None
   * @retval None
   */
-#if 0
 static void MX_ETH_Init(void)
 {
 
@@ -607,7 +587,6 @@ static void MX_GPIO_Init(void)
   HAL_GPIO_Init(GPIOD, &GPIO_InitStruct);
 
 }
-#endif
 
 /* USER CODE BEGIN 4 */
 /* USER CODE END 4 */
@@ -619,10 +598,6 @@ static void MX_GPIO_Init(void)
 void Error_Handler(void)
 {
   /* USER CODE BEGIN Error_Handler_Debug */
-  __disable_irq();
-  while (1)
-  {
-  }
   /* USER CODE END Error_Handler_Debug */
 }
 

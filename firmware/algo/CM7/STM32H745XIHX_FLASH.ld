@@ -57,7 +57,7 @@ MEMORY
 SECTIONS
 {
   /* The startup code into "FLASH" Rom type memory */
-  .isr_vector (READONLY) :
+  .isr_vector :
   {
     . = ALIGN(4);
     KEEP(*(.isr_vector)) /* Startup code */
@@ -65,7 +65,7 @@ SECTIONS
   } >FLASH
 
   /* The program code and other data into "FLASH" Rom type memory */
-  .text (READONLY) :
+  .text :
   {
     . = ALIGN(4);
     *(.text)           /* .text sections (code) */
@@ -82,7 +82,7 @@ SECTIONS
   } >FLASH
 
   /* Constant data into "FLASH" Rom type memory */
-  .rodata (READONLY) :
+  .rodata :
   {
     . = ALIGN(4);
     *(.rodata)         /* .rodata sections (constants, strings, etc.) */
@@ -90,13 +90,13 @@ SECTIONS
     . = ALIGN(4);
   } >FLASH
 
-  .ARM.extab (READONLY) : {
+  .ARM.extab   : { 
     . = ALIGN(4);
     *(.ARM.extab* .gnu.linkonce.armextab.*)
     . = ALIGN(4);
   } >FLASH
   
-  .ARM (READONLY) : {
+  .ARM : {
     . = ALIGN(4);
     __exidx_start = .;
     *(.ARM.exidx*)
@@ -104,7 +104,7 @@ SECTIONS
     . = ALIGN(4);
   } >FLASH
 
-  .preinit_array (READONLY) :
+  .preinit_array :
   {
     . = ALIGN(4);
     PROVIDE_HIDDEN (__preinit_array_start = .);
@@ -113,7 +113,7 @@ SECTIONS
     . = ALIGN(4);
   } >FLASH
   
-  .init_array (READONLY) :
+  .init_array :
   {
     . = ALIGN(4);
     PROVIDE_HIDDEN (__init_array_start = .);
@@ -123,7 +123,7 @@ SECTIONS
     . = ALIGN(4);
   } >FLASH
   
-  .fini_array (READONLY) :
+  .fini_array :
   {
     . = ALIGN(4);
     PROVIDE_HIDDEN (__fini_array_start = .);
