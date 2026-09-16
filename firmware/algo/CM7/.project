@@ -30,21 +30,6 @@
 	</natures>
 	<linkedResources>
 		<link>
-			<name>Handoff_Control</name>
-			<type>2</type>
-			<locationURI>PARENT-3-PROJECT_LOC/algorithms/handoff/src/control</locationURI>
-		</link>
-		<link>
-			<name>Handoff_Actuator</name>
-			<type>2</type>
-			<locationURI>PARENT-3-PROJECT_LOC/algorithms/handoff/src/actuator</locationURI>
-		</link>
-		<link>
-			<name>Handoff_STM32_Actuator</name>
-			<type>2</type>
-			<locationURI>PARENT-3-PROJECT_LOC/algorithms/handoff/stm32_motor_control_20260823/src/actuator</locationURI>
-		</link>
-		<link>
 			<name>Common</name>
 			<type>2</type>
 			<locationURI>PARENT-1-PROJECT_LOC/Common</locationURI>
@@ -53,6 +38,16 @@
 			<name>Drivers/STM32H7xx_HAL_Driver/stm32h7xx_hal.c</name>
 			<type>1</type>
 			<locationURI>PARENT-1-PROJECT_LOC/Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal.c</locationURI>
+		</link>
+		<link>
+			<name>Drivers/STM32H7xx_HAL_Driver/stm32h7xx_hal_adc.c</name>
+			<type>1</type>
+			<locationURI>PARENT-1-PROJECT_LOC/Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_adc.c</locationURI>
+		</link>
+		<link>
+			<name>Drivers/STM32H7xx_HAL_Driver/stm32h7xx_hal_adc_ex.c</name>
+			<type>1</type>
+			<locationURI>PARENT-1-PROJECT_LOC/Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_adc_ex.c</locationURI>
 		</link>
 		<link>
 			<name>Drivers/STM32H7xx_HAL_Driver/stm32h7xx_hal_cortex.c</name>

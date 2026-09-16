@@ -48,11 +48,8 @@
 									<listOptionValue builtIn="false" value="../../Drivers/STM32H7xx_HAL_Driver/Inc/Legacy"/>
 									<listOptionValue builtIn="false" value="../../Drivers/CMSIS/Device/ST/STM32H7xx/Include"/>
 									<listOptionValue builtIn="false" value="../../Drivers/CMSIS/Include"/>
-									<listOptionValue builtIn="false" value="../Core/Algo/bmflc"/>
-									<listOptionValue builtIn="false" value="../Core/Algo/ehwflc"/>
-									<listOptionValue builtIn="false" value="../../../../algorithms/handoff/src/control"/>
-									<listOptionValue builtIn="false" value="../../../../algorithms/handoff/src/actuator"/>
-									<listOptionValue builtIn="false" value="../../../../algorithms/handoff/stm32_motor_control_20260823/src/actuator"/>
+									<listOptionValue builtIn="false" value="&quot;C:\Users\banny\STM32CubeIDE\workspace_1.7.0\algo\CM7\Core\Src\bmflc&quot;"/>
+									<listOptionValue builtIn="false" value="&quot;C:\Users\banny\STM32CubeIDE\workspace_1.7.0\algo\CM7\Core\Src\ehwflc&quot;"/>
 								</option>
 								<inputType id="com.st.stm32cube.ide.mcu.gnu.managedbuild.tool.c.compiler.input.c.1084915758" superClass="com.st.stm32cube.ide.mcu.gnu.managedbuild.tool.c.compiler.input.c"/>
 							</tool>
@@ -98,11 +95,6 @@
 									<listOptionValue builtIn="false" value="../../Drivers/STM32H7xx_HAL_Driver/Inc/Legacy"/>
 									<listOptionValue builtIn="false" value="../../Drivers/CMSIS/Device/ST/STM32H7xx/Include"/>
 									<listOptionValue builtIn="false" value="../../Drivers/CMSIS/Include"/>
-									<listOptionValue builtIn="false" value="../Core/Algo/bmflc"/>
-									<listOptionValue builtIn="false" value="../Core/Algo/ehwflc"/>
-									<listOptionValue builtIn="false" value="../../../../algorithms/handoff/src/control"/>
-									<listOptionValue builtIn="false" value="../../../../algorithms/handoff/src/actuator"/>
-									<listOptionValue builtIn="false" value="../../../../algorithms/handoff/stm32_motor_control_20260823/src/actuator"/>
 								</option>
 								<inputType id="com.st.stm32cube.ide.mcu.gnu.managedbuild.tool.c.compiler.input.c.2135509564" superClass="com.st.stm32cube.ide.mcu.gnu.managedbuild.tool.c.compiler.input.c"/>
 							</tool>
@@ -123,9 +115,6 @@
 						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Common"/>
 						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Core"/>
 						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Drivers"/>
-						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Handoff_Actuator"/>
-						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Handoff_Control"/>
-						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Handoff_STM32_Actuator"/>
 					</sourceEntries>
 				</configuration>
 			</storageModule>
@@ -174,11 +163,12 @@
 									<listOptionValue builtIn="false" value="../../Drivers/STM32H7xx_HAL_Driver/Inc/Legacy"/>
 									<listOptionValue builtIn="false" value="../../Drivers/CMSIS/Device/ST/STM32H7xx/Include"/>
 									<listOptionValue builtIn="false" value="../../Drivers/CMSIS/Include"/>
-									<listOptionValue builtIn="false" value="../Core/Algo/bmflc"/>
-									<listOptionValue builtIn="false" value="../Core/Algo/ehwflc"/>
-									<listOptionValue builtIn="false" value="../../../../algorithms/handoff/src/control"/>
-									<listOptionValue builtIn="false" value="../../../../algorithms/handoff/src/actuator"/>
-									<listOptionValue builtIn="false" value="../../../../algorithms/handoff/stm32_motor_control_20260823/src/actuator"/>
+									<listOptionValue builtIn="false" value="&quot;${workspace_loc:C:\Users\banny\Desktop\SteadyHope\algorithms\handoff\src\bmflc}&quot;"/>
+									<listOptionValue builtIn="false" value="&quot;${workspace_loc:C:\Users\banny\Desktop\SteadyHope\algorithms\handoff\src\ehwflc}&quot;"/>
+									<listOptionValue builtIn="false" value="&quot;${workspace_loc:C:\Users\banny\STM32CubeIDE\workspace_1.7.0\algo\CM7\Core\Algo\bmflc}&quot;"/>
+									<listOptionValue builtIn="false" value="&quot;${workspace_loc:C:\Users\banny\STM32CubeIDE\workspace_1.7.0\algo\CM7\Core\Algo\ehwflc}&quot;"/>
+									<listOptionValue builtIn="false" value="&quot;C:\Users\banny\STM32CubeIDE\workspace_1.7.0\algo\CM7\Core\Src\bmflc&quot;"/>
+									<listOptionValue builtIn="false" value="&quot;C:\Users\banny\STM32CubeIDE\workspace_1.7.0\algo\CM7\Core\Src\ehwflc&quot;"/>
 								</option>
 								<inputType id="com.st.stm32cube.ide.mcu.gnu.managedbuild.tool.c.compiler.input.c.1605605457" superClass="com.st.stm32cube.ide.mcu.gnu.managedbuild.tool.c.compiler.input.c"/>
 							</tool>
@@ -224,11 +214,8 @@
 									<listOptionValue builtIn="false" value="../../Drivers/STM32H7xx_HAL_Driver/Inc/Legacy"/>
 									<listOptionValue builtIn="false" value="../../Drivers/CMSIS/Device/ST/STM32H7xx/Include"/>
 									<listOptionValue builtIn="false" value="../../Drivers/CMSIS/Include"/>
-									<listOptionValue builtIn="false" value="../Core/Algo/bmflc"/>
-									<listOptionValue builtIn="false" value="../Core/Algo/ehwflc"/>
-									<listOptionValue builtIn="false" value="../../../../algorithms/handoff/src/control"/>
-									<listOptionValue builtIn="false" value="../../../../algorithms/handoff/src/actuator"/>
-									<listOptionValue builtIn="false" value="../../../../algorithms/handoff/stm32_motor_control_20260823/src/actuator"/>
+									<listOptionValue builtIn="false" value="&quot;${workspace_loc:C:\Users\banny\STM32CubeIDE\workspace_1.7.0\algo\CM7\Core\Algo\bmflc}&quot;"/>
+									<listOptionValue builtIn="false" value="&quot;${workspace_loc:C:\Users\banny\STM32CubeIDE\workspace_1.7.0\algo\CM7\Core\Algo\ehwflc}&quot;"/>
 								</option>
 								<inputType id="com.st.stm32cube.ide.mcu.gnu.managedbuild.tool.c.compiler.input.c.1049807550" superClass="com.st.stm32cube.ide.mcu.gnu.managedbuild.tool.c.compiler.input.c"/>
 							</tool>
@@ -249,9 +236,6 @@
 						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Common"/>
 						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Core"/>
 						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Drivers"/>
-						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Handoff_Actuator"/>
-						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Handoff_Control"/>
-						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Handoff_STM32_Actuator"/>
 					</sourceEntries>
 				</configuration>
 			</storageModule>
