@@ -14,3 +14,18 @@ __pycache__/
 # Hardware
 *.bak
 *.tmp
+
+# MATLAB / MATLAB Coder 建置產物 (可再生，不入庫)
+# 錨定到已知路徑，避免誤 ignore 其他地方同名的 codegen/ 資料夾(如未來 firmware/codegen/)
+/algorithms/matlab/codegen/
+/algorithms/matlab/slprj/
+*.asv
+*.autosave
+*.slxc
+*.mex*
+
+# STM32CubeIDE local/generated state
+/firmware/**/Debug/
+/firmware/**/Release/
+/firmware/**/.settings/
+/.cubeide-workspaces/

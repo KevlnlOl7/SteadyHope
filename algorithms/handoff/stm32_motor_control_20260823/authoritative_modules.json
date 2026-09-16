@@ -1,0 +1,72 @@
+{
+  "schema_version": 1,
+  "canonical_main": "algorithms/handoff/stm32_motor_control_20260823/reference/main.c",
+  "sealed_shadow_reference": {
+    "path": "algorithms/handoff/stm32_gate_upgrade_20260822/reference/main.c",
+    "git_blob_sha1": "468f28802b57b5bd9f1fa7d4d51def4007bc2b7d"
+  },
+  "main_primary_headers": [
+    "suppression_control.h",
+    "motor_command_mapper.h",
+    "quadrature_encoder.h",
+    "motor_position_guard.h",
+    "tb6612_driver.h",
+    "stm32_tb6612_hal.h"
+  ],
+  "modules": [
+    {
+      "name": "bmflc",
+      "header": "algorithms/handoff/src/bmflc/BMFLC_step.h",
+      "source": "algorithms/handoff/src/bmflc/BMFLC_step.c",
+      "required_symbols": ["BMFLC_step"]
+    },
+    {
+      "name": "ehwflc_kf",
+      "header": "algorithms/handoff/src/ehwflc/eHWFLC_KF_step.h",
+      "source": "algorithms/handoff/src/ehwflc/eHWFLC_KF_step.c",
+      "required_symbols": ["eHWFLC_KF_step"]
+    },
+    {
+      "name": "tremor_gate",
+      "header": "algorithms/handoff/src/gating/tremor_gate.h",
+      "source": "algorithms/handoff/src/gating/tremor_gate.c",
+      "required_symbols": ["TremorGate_Init", "TremorGate_IsReady", "TremorGate_Update"]
+    },
+    {
+      "name": "suppression_control",
+      "header": "algorithms/handoff/src/control/suppression_control.h",
+      "source": "algorithms/handoff/src/control/suppression_control.c",
+      "required_symbols": ["SuppressionControl_Init", "SuppressionControl_Update", "SuppressionControl_Release"]
+    },
+    {
+      "name": "motor_command_mapper",
+      "header": "algorithms/handoff/src/control/motor_command_mapper.h",
+      "source": "algorithms/handoff/src/control/motor_command_mapper.c",
+      "required_symbols": ["MotorCommandMapper_Init", "MotorCommandMapper_Update"]
+    },
+    {
+      "name": "quadrature_encoder",
+      "header": "algorithms/handoff/src/actuator/quadrature_encoder.h",
+      "source": "algorithms/handoff/src/actuator/quadrature_encoder.c",
+      "required_symbols": ["QuadratureEncoder_Init", "QuadratureEncoder_OnEdge", "QuadratureEncoder_Snapshot"]
+    },
+    {
+      "name": "motor_position_guard",
+      "header": "algorithms/handoff/src/actuator/motor_position_guard.h",
+      "source": "algorithms/handoff/src/actuator/motor_position_guard.c",
+      "required_symbols": ["MotorPositionGuard_Init", "MotorPositionGuard_SetZero", "MotorPositionGuard_Update"]
+    },
+    {
+      "name": "tb6612_driver",
+      "header": "algorithms/handoff/src/actuator/tb6612_driver.h",
+      "source": "algorithms/handoff/src/actuator/tb6612_driver.c",
+      "required_symbols": ["TB6612Driver_Init", "TB6612Driver_Update"]
+    },
+    {
+      "name": "stm32_tb6612_hal",
+      "header": "algorithms/handoff/stm32_motor_control_20260823/src/actuator/stm32_tb6612_hal.h",
+      "source": "algorithms/handoff/stm32_motor_control_20260823/src/actuator/stm32_tb6612_hal.c",
+      "required_symbols": ["STM32_TB6612_HAL_Init", "STM32_TB6612_HAL_Apply", "STM32_TB6612_HAL_ForceSafe"]
+    }
+  ]
+}

@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "base_fixture": "tremor_5hz.csv",
+  "cases": [
+    {
+      "id": "insufficient_399_samples",
+      "mutation": "只保留前399筆",
+      "expected_data_valid": false,
+      "expected_frequency_reliable": false,
+      "app_display": "資料累積中／資料不足"
+    },
+    {
+      "id": "sequence_gap",
+      "mutation": "sequence 200之後全部加1",
+      "expected_data_valid": false,
+      "expected_frequency_reliable": false,
+      "app_display": "BLE可能掉包"
+    },
+    {
+      "id": "bad_sample_tick",
+      "mutation": "第200筆sample_tick_ms額外增加20 ms",
+      "expected_data_valid": false,
+      "expected_frequency_reliable": false,
+      "app_display": "取樣時間不穩定"
+    },
+    {
+      "id": "sensor_invalid",
+      "mutation": "第200筆sensor_valid設為0",
+      "expected_data_valid": false,
+      "expected_frequency_reliable": false,
+      "app_display": "感測器資料無效"
+    },
+    {
+      "id": "low_signal",
+      "mutation": "三軸全部設為0",
+      "expected_data_valid": true,
+      "expected_frequency_reliable": false,
+      "app_display": "目前沒有清楚的主要震顫頻率"
+    }
+  ]
+}

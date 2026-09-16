@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "sample_rate_hz": 100,
+  "raw_lsb_per_dps": 16,
+  "sample_count_per_vector": 700,
+  "scope": "Synthetic algorithm-injection test only; not human data.",
+  "cases": [
+    {
+      "test_case_id": "PURE_T15",
+      "voluntary_2hz_peak_dps": 0.0,
+      "tremor_5hz_peak_dps": 15.0,
+      "reference_did_enable": 1,
+      "delay_from_tone_start_ms": 410,
+      "enabled_samples_during_400_sample_tone": 359,
+      "enabled_fraction_during_tone": 0.8975,
+      "final_enabled": 0,
+      "purpose": "5 Hz單獨存在的baseline"
+    },
+    {
+      "test_case_id": "MIX_V10_T10",
+      "voluntary_2hz_peak_dps": 10.0,
+      "tremor_5hz_peak_dps": 10.0,
+      "reference_did_enable": 0,
+      "delay_from_tone_start_ms": "never",
+      "enabled_samples_during_400_sample_tone": 0,
+      "enabled_fraction_during_tone": 0.0,
+      "final_enabled": 0,
+      "purpose": "兩頻帶同振幅的比例邊界"
+    },
+    {
+      "test_case_id": "MIX_V10_T20",
+      "voluntary_2hz_peak_dps": 10.0,
+      "tremor_5hz_peak_dps": 20.0,
+      "reference_did_enable": 1,
+      "delay_from_tone_start_ms": 600,
+      "enabled_samples_during_400_sample_tone": 340,
+      "enabled_fraction_during_tone": 0.85,
+      "final_enabled": 0,
+      "purpose": "震顫強於自主動作"
+    },
+    {
+      "test_case_id": "MIX_V20_T20",
+      "voluntary_2hz_peak_dps": 20.0,
+      "tremor_5hz_peak_dps": 20.0,
+      "reference_did_enable": 0,
+      "delay_from_tone_start_ms": "never",
+      "enabled_samples_during_400_sample_tone": 0,
+      "enabled_fraction_during_tone": 0.0,
+      "final_enabled": 0,
+      "purpose": "強自主動作可能造成漏判"
+    }
+  ]
+}

@@ -1,0 +1,163 @@
+{
+  "schema_version": 1,
+  "package_id": "steadyhope-stm32-gate-upgrade-20260822",
+  "created_at": "2026-08-22T00:00:00+08:00",
+  "scope": "Hardened V2 gate motor-off shadow and STM32 equivalence test",
+  "target": {
+    "branch": "Ryan/stm32-motor-control",
+    "commit": "70f97bb685e30885544e10e4dc2f677267802cbc",
+    "commit_date": "2026-08-24",
+    "old_main_git_blob": "97085aea33569fbb2b989187ae2697e60a7565ce",
+    "shadow_main_git_blob": "468f28802b57b5bd9f1fa7d4d51def4007bc2b7d",
+    "reference_main_sha256": "36e753b23820bea390598336c7fd7966ae80647b9974485b3a002e68d393802d",
+    "old_gate_c_git_blob": "b170b7f0a8aa2c100f7699fbf967b8f4c250cf31",
+    "old_gate_h_git_blob": "2756f76bbd7276bbd9eb12ce56def267de4fa7bb"
+  },
+  "source_snapshot": {
+    "workspace_head": "9430394da040753a669db85708636ad8f359cfa3",
+    "workspace_was_dirty": true,
+    "config_id": "gate-v2-current-4to6-fs100-20260820",
+    "note": "The gate pair is a SHA-256-locked validated worktree snapshot, not a tagged firmware release."
+  },
+  "gate_config": {
+    "sample_rate_hz": 100,
+    "input_axis": "fixed gyro X in deg/s",
+    "tremor_band_hz": [4.0, 6.0],
+    "voluntary_band_hz": [1.0, 3.0],
+    "amp_on_dps": 6.0,
+    "amp_off_dps": 3.0,
+    "ratio_on": 0.55,
+    "ratio_off": 0.45,
+    "envelope_decay": 0.94,
+    "samples_on": 20,
+    "samples_off": 15,
+    "diagnostic_config_fingerprint_hex": "0x1DC5DEBD"
+  },
+  "authorization": {
+    "actuation_authority": "none",
+    "motor_power_connected": false,
+    "powered_human_use": false,
+    "clinical_claim": false,
+    "market_sale": false
+  },
+  "validation": {
+    "host_command": "run_host_tests.bat",
+    "host_result": "pass",
+    "boundary_rows": 14700,
+    "boundary_mismatch_count": 0,
+    "authority_violation_count": 0,
+    "fail_closed_smoke": "pass",
+    "host_gcc_fanalyzer": "pass",
+    "python_compile": "pass",
+    "ryan_patch_apply_check": "pass against detached exact 70f97bb source",
+    "reference_main_byte_equivalence": "pass against LF checkout of exact 70f97bb plus patch",
+    "reference_main_git_blob": "468f28802b57b5bd9f1fa7d4d51def4007bc2b7d",
+    "reference_main_sha256": "36e753b23820bea390598336c7fd7966ae80647b9974485b3a002e68d393802d",
+    "installer_dry_run": "pass against detached exact 70f97bb worktree",
+    "installer_apply_and_hash_check": "pass against detached exact 70f97bb worktree",
+    "stm32_target_run": "not_run"
+  },
+  "files": [
+    {
+      "path": "expected/expected_results.csv",
+      "bytes": 3164,
+      "sha256": "fc7be12f9c88d38477855ac6a811ab2075a0c8a1f56cc46dc47a824d779f6a0b"
+    },
+    {
+      "path": "expected/expected_trace.csv",
+      "bytes": 1809274,
+      "sha256": "b6750cc8b5c0f59e39a7355482c172e613aa00a1ecbf39ea608ab3feefa3f46d"
+    },
+    {
+      "path": "expected/source_vector_manifest.json",
+      "bytes": 14784,
+      "sha256": "04a33a2d69f73b860f48318c7d9536ef113e366ea8ba4f47788c995f8f6da940"
+    },
+    {
+      "path": "install_gate_only.ps1",
+      "bytes": 2939,
+      "sha256": "4b675035badba543c1604f96cd52f2d7da6b557f4159ebb51540baf4de2a6520"
+    },
+    {
+      "path": "QUICK_START_給瑋哲.md",
+      "bytes": 2302,
+      "sha256": "b27e37cbdf87632f9258a2eafd6ab24313b2532d954bc865ec4a04bf04ad84a2"
+    },
+    {
+      "path": "README.md",
+      "bytes": 7434,
+      "sha256": "e1d0c89656098b99be9c4868e46ab2233a9afccdd1ca3419ce9f5bd149a97411"
+    },
+    {
+      "path": "reference/main.c",
+      "bytes": 55281,
+      "sha256": "36e753b23820bea390598336c7fd7966ae80647b9974485b3a002e68d393802d"
+    },
+    {
+      "path": "run_host_tests.bat",
+      "bytes": 930,
+      "sha256": "5cd6eead272aa5e668c47868497b9100ac734828125158e4cc81f8555b96dad6"
+    },
+    {
+      "path": "ryan_70f97bb_shadow_only.patch",
+      "bytes": 3370,
+      "sha256": "34136664e35eec1a5b45764f8f3d23087334c845737759d4de48a58143f14b92"
+    },
+    {
+      "path": "src/gating/tremor_gate.c",
+      "bytes": 13668,
+      "sha256": "2ae990dcafe06db927e9607fc7070eecc9479ed03888c0c28052daf6fdccac81"
+    },
+    {
+      "path": "src/gating/tremor_gate.h",
+      "bytes": 1775,
+      "sha256": "f9e10ed377b8e640d3d249614a1a71d7623e295e11f57fde134e6da476ae22c5"
+    },
+    {
+      "path": "src/shadow/gate_shadow_adapter.c",
+      "bytes": 4386,
+      "sha256": "1f998d479b8219d85be3340dac38c0121394cbc39d052d34b1c7e3900168f90a"
+    },
+    {
+      "path": "src/shadow/gate_shadow_adapter.h",
+      "bytes": 1764,
+      "sha256": "989838a619cebf99cc84c37862449fa2a0abe2e9ef37dfc61e1bdfc4a32e6773"
+    },
+    {
+      "path": "target_test/gate_boundary_runner.c",
+      "bytes": 2170,
+      "sha256": "8685c1a261daac477a02d32aaf4a76ca2deb05a96d1c26a0b5cbf59a5be51cdd"
+    },
+    {
+      "path": "target_test/gate_boundary_runner.h",
+      "bytes": 1080,
+      "sha256": "6176c6ebf351251dfa477f60a40a62648889f2070b769aa5035854ea83439b8f"
+    },
+    {
+      "path": "target_test/gating_6to7_boundary_vectors.h",
+      "bytes": 123480,
+      "sha256": "c5c4bef6edf3fb0473d2debeffa3b779795e8571324bb5d74d7b982fc4101337"
+    },
+    {
+      "path": "test/test_gate_upgrade.c",
+      "bytes": 5237,
+      "sha256": "d41a22c302cfb4de83c07776c6d46636053940c85937e532c61ef9f1d7968c48"
+    },
+    {
+      "path": "tools/compare_stm32_gate_log.py",
+      "bytes": 9085,
+      "sha256": "61459b0c5ee1512e485fcb243ded2fba086563365e6939509c9420fb8cb4c9b6"
+    },
+    {
+      "path": "verify_package.ps1",
+      "bytes": 1890,
+      "sha256": "8b5517340904da04de5703c5eb46564937e75e63181511fe1a1b4655096f21dc"
+    }
+  ],
+  "limitations": [
+    "The STM32 target trace has not yet been captured.",
+    "The package does not authorize motor actuation or human use.",
+    "A passing trace proves implementation equivalence only, not clinical accuracy or suppression efficacy.",
+    "The 4-6 Hz filter has roll-off; 7 Hz at 20 deg/s is an expected current boundary activation."
+  ]
+}
