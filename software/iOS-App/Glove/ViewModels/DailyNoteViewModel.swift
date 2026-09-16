@@ -55,18 +55,41 @@ final class DailyNoteViewModel: ObservableObject {
         self.loginVM = loginVM
     }
 
-    /// 送出與儲存校驗：病患文字與心情二擇一，照護者留言文字必填
+    /// 判斷特定便利貼是否由當前登入使用者所發布
+    /// - Parameter note: 欲比對之便利貼實體
+    /// - Returns: 若為當前使用者發布則回傳 true，否則回傳 false
+    func isMyNote(_ note: DailyNote) -> Bool {
+        if let currentUserID = loginVM.userData?.userID, currentUserID != 0, note.userID != 0 {
+            return note.userID == currentUserID
+        }
+        // 舊資料若尚未記錄 userID，則採用名稱作為備援比對
+        print("[發送前檢查] 登入者ID: \(loginVM.userData?.userID ?? 0), 名字: \(loginVM.userData?.userName ?? "nil"), currentUserRole: \(currentUserRole)")
+        return note.sender == currentUserRole
+    }
+
+    /// 取得便利貼介面應顯示的發布者姓名
+    /// - Parameter note: 目標便利貼實體
+    /// - Returns: 若為自身發布則回傳最新使用者姓名，否則回傳原紀錄姓名
+    func senderDisplayName(for note: DailyNote) -> String {
+        if isMyNote(note) {
+            return loginVM.userData?.userName ?? note.sender
+        }
+        return note.sender
+    }
+
+    /// 驗證新增便利貼表單內容是否符合發送資格
     var canSendNote: Bool {
         let trimmed = newNoteText.trimmingCharacters(in: .whitespacesAndNewlines)
         return isPatient ? (!trimmed.isEmpty || sheetSelectedMoodName != nil) : !trimmed.isEmpty
     }
 
+    /// 驗證編輯便利貼表單內容是否符合儲存資格
     var canSaveEditedNote: Bool {
         let trimmed = editNoteText.trimmingCharacters(in: .whitespacesAndNewlines)
         return isPatient ? (!trimmed.isEmpty || editSelectedMoodName != nil) : !trimmed.isEmpty
     }
 
-    /// 今日所有填寫心情的便利貼紀錄，並依時間由舊至新排序
+    /// 取得今天所有具備心情標籤的便利貼紀錄，並按建立時間由舊至新排序
     var todaysDailiesWithMood: [DailyNote] {
         let calendar = Calendar.current
         return notes.filter {
@@ -149,8 +172,8 @@ final class DailyNoteViewModel: ObservableObject {
         isLoadingData = false
     }
 
-    /// 發送新便利貼（優先寫入本機與更新 UI，隨後同步至伺服器）
-    /// - Parameter modelContext: SwiftData 資料庫操作上下文
+    /// 發送新建立之便利貼，寫入本機資料庫並非同步上傳至伺服器
+    /// - Parameter modelContext: SwiftData 容器操作環境
     @MainActor
     func sendNote(modelContext: ModelContext) async {
         guard canSendNote else { return }
@@ -158,6 +181,7 @@ final class DailyNoteViewModel: ObservableObject {
         let trimmedContent = newNoteText.trimmingCharacters(in: .whitespacesAndNewlines)
 
         let newDaily = DailyNote(
+            userID: loginVM.userData?.userID ?? 0,
             content: trimmedContent,
             date: Date(),
             colorHex: noteColor.toHex() ?? "#FFF0CC",
@@ -316,9 +340,11 @@ final class DailyNoteViewModel: ObservableObject {
         }
     }
 
-    /// 根據心情中文名稱取得對應的主題色
-    /// - Parameter name: 心情名稱（開心、平靜、疲憊、不舒服）
-    /// - Returns: 對應的心情標籤色彩
+    /// 依據心情名稱與外觀模式取得對應之色彩
+    /// - Parameters:
+    ///   - name: 心情中文名稱
+    ///   - colorScheme: 系統目前的外觀色彩模式
+    /// - Returns: 對應之 Color 實體
     func getMoodColor(for name: String, colorScheme: ColorScheme = .light) -> Color {
         if colorScheme == .dark {
             switch name {
@@ -339,7 +365,11 @@ final class DailyNoteViewModel: ObservableObject {
         }
     }
 
-    /// 取得便利貼在不同色彩模式下的底色
+    /// 根據便利貼之 Hex 色碼與外觀色彩模式計算卡片背景色
+    /// - Parameters:
+    ///   - hex: 儲存之十六進位色彩字串
+    ///   - colorScheme: 系統目前的外觀色彩模式
+    /// - Returns: 對應的卡片背景 Color 實體
     func getNoteCardColor(for hex: String, colorScheme: ColorScheme) -> Color {
         let cleanedHex = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted).uppercased()
 
@@ -357,18 +387,24 @@ final class DailyNoteViewModel: ObservableObject {
                 return Color(hex: "424A54")
             }
         } else {
-            // 淺色模式維持原本預設底色
             switch cleanedHex {
-            case "725B3E": return Color(red: 1.0, green: 0.94, blue: 0.8)
-            case "3D566E": return Color(red: 0.9, green: 0.96, blue: 1.0)
-            case "3D5A46": return Color(red: 0.92, green: 0.98, blue: 0.93)
-            case "69485B": return Color(red: 0.98, green: 0.92, blue: 0.95)
-            default: return Color(hex: hex)
+            case "FFF0CC", "FFEEC2", "FFF4D6", "725B3E":
+                return Color(red: 1.0, green: 0.94, blue: 0.8)
+            case "E6F5FF", "E5F5FF", "DDF0FF", "3D566E":
+                return Color(red: 0.9, green: 0.96, blue: 1.0)
+            case "EBFBEB", "E8FAE8", "E2FBE5", "3D5A46":
+                return Color(red: 0.92, green: 0.98, blue: 0.93)
+            case "FAEBFA", "F9EBF9", "FBE7F2", "69485B":
+                return Color(red: 0.98, green: 0.92, blue: 0.95)
+            default:
+                return Color(hex: hex)
             }
         }
     }
 
-    /// 提供表單選色器對應之色彩陣列
+    /// 依據外觀色彩模式提供便利貼表單選色器之色彩陣列
+    /// - Parameter colorScheme: 系統目前的外觀色彩模式
+    /// - Returns: 供選色之 Color 陣列
     func notePalette(for colorScheme: ColorScheme) -> [Color] {
         if colorScheme == .dark {
             return [

@@ -46,19 +46,8 @@ class DailyNoteRepository {
             throw NetworkError.serverError(reason: "認證憑證過期，請重新登入")
         }
 
-        let responseDTOs = try await service.getAllRecords(token: token)
-
-        return responseDTOs.map { dto in
-            DailyNote(
-                id: dto.id,
-                content: dto.content,
-                date: dto.date,
-                colorHex: dto.colorHex,
-                sender: dto.sender,
-                moodName: dto.moodName,
-                isCaregiverOnly: dto.isCaregiverOnly
-            )
-        }
+        let dtos = try await DailyNoteAPIService.shared.getAllRecords(token: token)
+            return dtos.map { $0.toModel() }
     }
 
     /// 從伺服器刪除指定識別碼的每日紀錄

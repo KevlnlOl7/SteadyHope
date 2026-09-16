@@ -4,7 +4,10 @@ import SwiftData
 @Model
 class DailyNote {
     /// 紀錄唯一識別碼
-    var id: String
+    @Attribute(.unique) var id: String
+    
+    /// 發布此紀錄之使用者識別碼
+    var userID: Int
     
     /// 使用者留言內容
     var content: String
@@ -27,6 +30,7 @@ class DailyNote {
     /// 初始化每日貼貼紀錄模型
     /// - Parameters:
     ///   - id: 紀錄唯一識別碼（預設為 UUID 字串）
+    ///   - userID: 發布者之使用者識別碼（預設為 0）
     ///   - content: 使用者留言內容
     ///   - date: 紀錄時間（預設為目前時間）
     ///   - colorHex: 卡片代表顏色 Hex 色碼
@@ -34,6 +38,7 @@ class DailyNote {
     ///   - moodName: 心情狀態名稱
     init(
         id: String = UUID().uuidString,
+        userID: Int = 0,
         content: String,
         date: Date = Date(),
         colorHex: String,
@@ -42,6 +47,7 @@ class DailyNote {
         isCaregiverOnly: Bool? = false
     ) {
         self.id = id
+        self.userID = userID
         self.content = content
         self.date = date
         self.colorHex = colorHex

@@ -438,17 +438,17 @@ struct DailyNoteCardView: View {
             Spacer()
 
             HStack {
-                Text(item.sender)
+                Text(viewModel.senderDisplayName(for: item))
                     .font(.system(size: 10, weight: .bold))
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)
                     .background(
-                        item.sender == viewModel.currentUserRole
+                        viewModel.isMyNote(item)
                             ? AppTheme.accent(for: colorScheme).opacity(colorScheme == .dark ? 0.35 : 0.2)
                             : AppTheme.primary(for: colorScheme).opacity(colorScheme == .dark ? 0.3 : 0.18)
                     )
                     .foregroundColor(
-                        item.sender == viewModel.currentUserRole
+                        viewModel.isMyNote(item)
                             ? AppTheme.accent(for: colorScheme)
                             : AppTheme.primary(for: colorScheme)
                     )
@@ -485,17 +485,17 @@ struct DailyNoteDetailPopup: View {
             HStack(alignment: .center) {
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 6) {
-                        Text(item.sender)
+                        Text(viewModel.senderDisplayName(for: item))
                             .font(.system(size: 14, weight: .bold))
                             .padding(.horizontal, 8)
                             .padding(.vertical, 2)
                             .background(
-                                item.sender == viewModel.currentUserRole
+                                viewModel.isMyNote(item)
                                     ? AppTheme.accent(for: colorScheme).opacity(colorScheme == .dark ? 0.35 : 0.2)
                                     : AppTheme.primary(for: colorScheme).opacity(colorScheme == .dark ? 0.3 : 0.18)
                             )
                             .foregroundColor(
-                                item.sender == viewModel.currentUserRole
+                                viewModel.isMyNote(item)
                                     ? AppTheme.accent(for: colorScheme)
                                     : AppTheme.primary(for: colorScheme)
                             )
@@ -545,7 +545,7 @@ struct DailyNoteDetailPopup: View {
             }
 
             /// 操作按鈕 (僅限本人發送之便籤)
-            if item.sender == viewModel.currentUserRole {
+            if viewModel.isMyNote(item) {
                 HStack(spacing: 12) {
                     Button {
                         viewModel.startEditing(item)

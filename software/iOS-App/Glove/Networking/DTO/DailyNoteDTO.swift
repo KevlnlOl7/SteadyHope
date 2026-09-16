@@ -21,4 +21,17 @@ struct DailyRecordResponseDTO: Codable {
     let sender: String
     let moodName: String?
     let isCaregiverOnly: Bool?
+    
+    func toModel() -> DailyNote {
+        DailyNote(
+            id: self.id,
+            userID: self.userID,
+            content: self.content,
+            date: self.date,
+            colorHex: self.colorHex,
+            sender: self.sender,
+            moodName: self.moodName,
+            isCaregiverOnly: self.isCaregiverOnly
+        )
+    }
 }
