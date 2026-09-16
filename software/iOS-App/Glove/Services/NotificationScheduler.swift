@@ -45,8 +45,12 @@ class NotificationScheduler {
     }
     
     /// 排程每日固定用藥通知
-    private func scheduleMedicationNotifications(planVM: MedicationPlanViewModel) {
+    func scheduleMedicationNotifications(planVM: MedicationPlanViewModel) {
+        let center = UNUserNotificationCenter.current()
+
         for plan in planVM.planList {
+            guard let planID = plan.id else { continue }
+
             for timeStr in plan.timeArray {
                 let parts = timeStr.split(separator: ":").compactMap { Int($0) }
                 guard parts.count == 2 else { continue }
@@ -55,7 +59,8 @@ class NotificationScheduler {
 
                 let content = UNMutableNotificationContent()
                 content.title = "用藥提醒"
-                content.body = "現在是服藥時間，請記得服用：\(plan.name) \(plan.dose)"
+                let doseText = plan.dose.isEmpty ? "" : " (\(plan.dose))"
+                content.body = "現在是服藥時間，請記得服用：\(plan.name)\(doseText)"
                 content.sound = .default
 
                 var dateComponents = DateComponents()
@@ -63,12 +68,13 @@ class NotificationScheduler {
                 dateComponents.minute = minute
 
                 let trigger = UNCalendarNotificationTrigger(dateMatching: dateComponents, repeats: true)
+                let identifier = "plan_\(planID)_\(timeStr)"
                 let request = UNNotificationRequest(
-                    identifier: "med_\(plan.id ?? 0)_\(timeStr)",
+                    identifier: identifier,
                     content: content,
                     trigger: trigger
                 )
-                UNUserNotificationCenter.current().add(request)
+                center.add(request)
             }
         }
     }
@@ -149,8 +155,42 @@ class NotificationScheduler {
         UNUserNotificationCenter.current().add(request)
     }
 
-    /// 當日完成填寫評估後，取消當天提醒避免重複打擾
-    func cancelTodayAssessmentReminderIfCompleted() {
-        UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: ["daily_assessment_reminder"])
+    /// 當日完成填寫評估後，取消今天提醒，並重新設定由明日開始生效的循環推播
+    func cancelTodayAssessmentReminderIfCompleted(reminderTime: Date = Date()) {
+        let center = UNUserNotificationCenter.current()
+        // 移除當前循環
+        center.removePendingNotificationRequests(withIdentifiers: ["daily_assessment_reminder"])
+
+        // 重新預約每日定時提醒（明日同時間繼續生效）
+        let calendar = Calendar.current
+        let hour = calendar.component(.hour, from: reminderTime)
+        let minute = calendar.component(.minute, from: reminderTime)
+
+        let content = UNMutableNotificationContent()
+        content.title = "症狀評估提醒"
+        content.body = "今天還沒填寫健康快篩喔！花 1 分鐘記錄今天的身體狀態，協助追蹤病情變化。"
+        content.sound = .default
+
+        var dateComponents = DateComponents()
+        dateComponents.hour = hour
+        dateComponents.minute = minute
+
+        let trigger = UNCalendarNotificationTrigger(dateMatching: dateComponents, repeats: true)
+        let request = UNNotificationRequest(
+            identifier: "daily_assessment_reminder",
+            content: content,
+            trigger: trigger
+        )
+        center.add(request)
+    }
+    
+    /// 移除所有用藥計畫推播
+    func clearAllMedicationNotifications() async {
+        let center = UNUserNotificationCenter.current()
+        let pending = await center.pendingNotificationRequests()
+        let idsToRemove = pending
+            .map(\.identifier)
+            .filter { $0.hasPrefix("plan_") || $0.hasPrefix("med_") }
+        center.removePendingNotificationRequests(withIdentifiers: idsToRemove)
     }
 }

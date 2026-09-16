@@ -187,7 +187,13 @@ final class MedicationViewModel: ObservableObject {
                 if success {
                     let dateString = inputDate.toString(format: "yyyy-MM-dd")
                     await loadRecords(for: dateString)
-                    scheduleNotification(for: newRecord)
+                    if let savedRecord = medicationList.first(where: {
+                        $0.name == newRecord.name &&
+                        $0.dose == newRecord.dose &&
+                        Calendar.current.isDate($0.date, inSameDayAs: newRecord.date)
+                    }) {
+                        scheduleNotification(for: savedRecord)
+                    }
                     clearInputs()
                 }
             } catch {

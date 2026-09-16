@@ -1,5 +1,6 @@
 import Combine
 import Foundation
+import UserNotifications
 
 @MainActor
 final class MedicationPlanViewModel: ObservableObject {
@@ -29,6 +30,10 @@ final class MedicationPlanViewModel: ObservableObject {
         do {
             let fetchedPlans = try await planRepository.getAllPlans()
             self.planList = fetchedPlans
+
+            // 先清理舊用藥通知，再依最新清單重新註冊
+            await NotificationScheduler.shared.clearAllMedicationNotifications()
+            NotificationScheduler.shared.scheduleMedicationNotifications(planVM: self)
         } catch {
             AppLog.error("讀取排程失敗: \(error)")
         }
@@ -109,17 +114,23 @@ final class MedicationPlanViewModel: ObservableObject {
             return
         }
 
+        planList.remove(at: index)
+        if editingPlanIndex == index {
+            resetPlanForm()
+        }
+
         Task {
             do {
                 let success = try await planRepository.deletePlan(id: planID)
                 if success {
-                    planList.remove(at: index)
-                    if editingPlanIndex == index {
-                        resetPlanForm()
-                    }
+                    await loadAllPlans()
+                } else {
+                    // 刪除失敗時重新拉取伺服器資料復原畫面
+                    await loadAllPlans()
                 }
             } catch {
                 AppLog.error("刪除排程失敗: \(error)")
+                await loadAllPlans()
             }
         }
     }
