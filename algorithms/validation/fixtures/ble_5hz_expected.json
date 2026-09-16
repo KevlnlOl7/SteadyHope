@@ -1,0 +1,35 @@
+{
+  "schema": "little-endian <IIhhhBB",
+  "record_size_bytes": 16,
+  "record_count": 400,
+  "payload_size_bytes": 6400,
+  "first_record": {
+    "sequence": 0,
+    "sample_tick_ms": 0,
+    "gyro_x_raw": 0,
+    "gyro_y_raw": 69,
+    "gyro_z_raw": 48,
+    "gyro_x_dps": 0.0,
+    "gyro_y_dps": 4.3125,
+    "gyro_z_dps": 3.0,
+    "sensor_valid": 1,
+    "motor_enabled": 0
+  },
+  "last_record": {
+    "sequence": 399,
+    "sample_tick_ms": 3990,
+    "gyro_x_raw": -51,
+    "gyro_y_raw": 43,
+    "gyro_z_raw": 44,
+    "gyro_x_dps": -3.1875,
+    "gyro_y_dps": 2.6875,
+    "gyro_z_dps": 2.75,
+    "sensor_valid": 1,
+    "motor_enabled": 0
+  },
+  "data_valid": true,
+  "frequency_reliable": true,
+  "dominant_frequency_hz": 5.0,
+  "tremor_band_power_4_6_dps2": 72.45867630278765,
+  "tremor_band_rms_4_6_dps": 8.512266226028627
+}

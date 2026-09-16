@@ -1,0 +1,276 @@
+# -*- coding: utf-8 -*-
+"""產生2 Hz自主動作＋5 Hz震顫的STM32代表性混合輸入測試包。"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+import argparse
+import csv
+import json
+import math
+from pathlib import Path
+
+from tremor_gate_reference import TremorGateReference
+
+
+FS_HZ = 100
+REST_BEFORE_SECONDS = 1
+TONE_SECONDS = 4
+REST_AFTER_SECONDS = 2
+SAMPLE_COUNT = FS_HZ * (
+    REST_BEFORE_SECONDS + TONE_SECONDS + REST_AFTER_SECONDS
+)
+RAW_LSB_PER_DPS = 16
+
+
+@dataclass(frozen=True)
+class MixedCase:
+    case_id: str
+    voluntary_2hz_peak_dps: float
+    tremor_5hz_peak_dps: float
+    purpose: str
+
+
+CASES = (
+    MixedCase("PURE_T15", 0.0, 15.0, "5 Hz單獨存在的baseline"),
+    MixedCase("MIX_V10_T10", 10.0, 10.0, "兩頻帶同振幅的比例邊界"),
+    MixedCase("MIX_V10_T20", 10.0, 20.0, "震顫強於自主動作"),
+    MixedCase("MIX_V20_T20", 20.0, 20.0, "強自主動作可能造成漏判"),
+)
+
+
+def make_vector(case: MixedCase) -> list[int]:
+    tone_start = REST_BEFORE_SECONDS * FS_HZ
+    tone_end = tone_start + TONE_SECONDS * FS_HZ
+    samples: list[int] = []
+    for index in range(SAMPLE_COUNT):
+        if tone_start <= index < tone_end:
+            tone_time = (index - tone_start) / FS_HZ
+            dps = (
+                case.voluntary_2hz_peak_dps
+                * math.sin(2.0 * math.pi * 2.0 * tone_time)
+                + case.tremor_5hz_peak_dps
+                * math.sin(2.0 * math.pi * 5.0 * tone_time + 0.7)
+            )
+        else:
+            dps = 0.0
+        raw = int(round(dps * RAW_LSB_PER_DPS))
+        if not -32768 <= raw <= 32767:
+            raise ValueError("測試向量超出int16範圍")
+        samples.append(raw)
+    return samples
+
+
+def run_reference(
+    vectors: dict[str, list[int]],
+) -> dict[str, list[dict[str, float | int | str]]]:
+    traces: dict[str, list[dict[str, float | int | str]]] = {}
+    for case in CASES:
+        gate = TremorGateReference()
+        rows: list[dict[str, float | int | str]] = []
+        for sample_index, raw in enumerate(vectors[case.case_id]):
+            gyro_x_dps = raw / RAW_LSB_PER_DPS
+            gate.update(gyro_x_dps)
+            row: dict[str, float | int | str] = {
+                "test_case_id": case.case_id,
+                "voluntary_2hz_peak_dps": case.voluntary_2hz_peak_dps,
+                "tremor_5hz_peak_dps": case.tremor_5hz_peak_dps,
+                "sample_index": sample_index,
+                "sample_tick_ms": sample_index * 10,
+                "gyro_x_raw_lsb": raw,
+                "gyro_x_dps": gyro_x_dps,
+            }
+            row.update(gate.snapshot())
+            rows.append(row)
+        traces[case.case_id] = rows
+    return traces
+
+
+def summarize(
+    traces: dict[str, list[dict[str, float | int | str]]],
+) -> list[dict[str, float | int | str]]:
+    tone_start = REST_BEFORE_SECONDS * FS_HZ
+    tone_end = tone_start + TONE_SECONDS * FS_HZ
+    result: list[dict[str, float | int | str]] = []
+    for case in CASES:
+        rows = traces[case.case_id]
+        first = next(
+            (int(row["sample_index"]) for row in rows if int(row["enabled"])),
+            None,
+        )
+        enabled_count = sum(
+            int(rows[index]["enabled"]) for index in range(tone_start, tone_end)
+        )
+        result.append({
+            "test_case_id": case.case_id,
+            "voluntary_2hz_peak_dps": case.voluntary_2hz_peak_dps,
+            "tremor_5hz_peak_dps": case.tremor_5hz_peak_dps,
+            "reference_did_enable": int(first is not None),
+            "delay_from_tone_start_ms": (
+                "never" if first is None else (first - tone_start) * 10
+            ),
+            "enabled_samples_during_400_sample_tone": enabled_count,
+            "enabled_fraction_during_tone": enabled_count / 400.0,
+            "final_enabled": int(rows[-1]["enabled"]),
+            "purpose": case.purpose,
+        })
+    return result
+
+
+def _format_c_array(values: list[int], indent: str = "        ") -> str:
+    lines: list[str] = []
+    for start in range(0, len(values), 16):
+        chunk = values[start:start + 16]
+        suffix = "," if start + 16 < len(values) else ""
+        lines.append(indent + ", ".join(str(value) for value in chunk) + suffix)
+    return "\n".join(lines)
+
+
+def write_header(
+    path: Path,
+    vectors: dict[str, list[int]],
+    traces: dict[str, list[dict[str, float | int | str]]],
+) -> None:
+    ids = ", ".join(f'"{case.case_id}"' for case in CASES)
+    voluntary = ", ".join(
+        f"{case.voluntary_2hz_peak_dps:.1f}F" for case in CASES
+    )
+    tremor = ", ".join(f"{case.tremor_5hz_peak_dps:.1f}F" for case in CASES)
+    raw_rows = []
+    expected_rows = []
+    did_enable = []
+    for case in CASES:
+        raw_rows.append(
+            "    {\n" + _format_c_array(vectors[case.case_id]) + "\n    }"
+        )
+        enabled = [int(row["enabled"]) for row in traces[case.case_id]]
+        expected_rows.append(
+            "    {\n" + _format_c_array(enabled) + "\n    }"
+        )
+        did_enable.append("1" if any(enabled) else "0")
+    contents = f"""/* Auto-generated by generate_gating_mixed_boundary_vectors.py.
+ * Synthetic algorithm-injection data only; not human tremor data.
+ */
+#ifndef STEADYHOPE_GATING_MIXED_BOUNDARY_VECTORS_H
+#define STEADYHOPE_GATING_MIXED_BOUNDARY_VECTORS_H
+
+#include <stdint.h>
+
+#define GATING_MIXED_VECTOR_COUNT {len(CASES)}U
+#define GATING_MIXED_SAMPLE_COUNT {SAMPLE_COUNT}U
+#define GATING_MIXED_FS_HZ {FS_HZ}U
+#define GATING_MIXED_RAW_LSB_PER_DPS {RAW_LSB_PER_DPS}.0
+
+static const char *const GATING_MIXED_CASE_IDS[GATING_MIXED_VECTOR_COUNT] = {{
+    {ids}
+}};
+static const float
+GATING_MIXED_VOLUNTARY_2HZ_DPS[GATING_MIXED_VECTOR_COUNT] = {{{voluntary}}};
+static const float
+GATING_MIXED_TREMOR_5HZ_DPS[GATING_MIXED_VECTOR_COUNT] = {{{tremor}}};
+static const uint8_t
+GATING_MIXED_REFERENCE_DID_ENABLE[GATING_MIXED_VECTOR_COUNT] = {{
+    {', '.join(did_enable)}
+}};
+
+static const int16_t
+GATING_MIXED_GYRO_X_RAW_LSB[GATING_MIXED_VECTOR_COUNT][GATING_MIXED_SAMPLE_COUNT] = {{
+{',\n'.join(raw_rows)}
+}};
+static const uint8_t
+GATING_MIXED_EXPECTED_ENABLED[GATING_MIXED_VECTOR_COUNT][GATING_MIXED_SAMPLE_COUNT] = {{
+{',\n'.join(expected_rows)}
+}};
+
+#endif
+"""
+    path.write_text(contents, encoding="utf-8", newline="\n")
+
+
+def write_vector_csv(path: Path, case: MixedCase, samples: list[int]) -> None:
+    tone_start = REST_BEFORE_SECONDS * FS_HZ
+    tone_end = tone_start + TONE_SECONDS * FS_HZ
+    with path.open("w", encoding="utf-8", newline="") as stream:
+        writer = csv.writer(stream, lineterminator="\n")
+        writer.writerow([
+            "test_case_id", "sequence", "sample_tick_ms",
+            "gyro_x_raw_lsb", "gyro_x_dps", "segment",
+        ])
+        for index, raw in enumerate(samples):
+            segment = (
+                "rest_before" if index < tone_start
+                else "mixed_tone" if index < tone_end
+                else "rest_after"
+            )
+            writer.writerow([
+                case.case_id, index, index * 10, raw,
+                f"{raw / RAW_LSB_PER_DPS:.4f}", segment,
+            ])
+
+
+def write_trace(
+    path: Path,
+    traces: dict[str, list[dict[str, float | int | str]]],
+) -> None:
+    fields = [
+        "test_case_id", "voluntary_2hz_peak_dps", "tremor_5hz_peak_dps",
+        "sample_index", "sample_tick_ms", "gyro_x_raw_lsb", "gyro_x_dps",
+        "tremor_envelope", "voluntary_envelope", "tremor_ratio",
+        "on_count", "off_count", "enabled",
+    ]
+    with path.open("w", encoding="utf-8", newline="") as stream:
+        writer = csv.DictWriter(stream, fieldnames=fields, lineterminator="\n")
+        writer.writeheader()
+        for case in CASES:
+            writer.writerows(traces[case.case_id])
+
+
+def write_rows(path: Path, rows: list[dict[str, object]]) -> None:
+    with path.open("w", encoding="utf-8", newline="") as stream:
+        writer = csv.DictWriter(stream, fieldnames=list(rows[0]), lineterminator="\n")
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def generate(output_dir: Path) -> None:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    vectors = {case.case_id: make_vector(case) for case in CASES}
+    traces = run_reference(vectors)
+    summaries = summarize(traces)
+    for case in CASES:
+        write_vector_csv(
+            output_dir / f"{case.case_id.lower()}.csv",
+            case,
+            vectors[case.case_id],
+        )
+    write_header(output_dir / "gating_mixed_boundary_vectors.h", vectors, traces)
+    write_trace(output_dir / "expected_trace.csv", traces)
+    write_rows(output_dir / "expected_results.csv", summaries)
+    (output_dir / "manifest.json").write_text(
+        json.dumps({
+            "schema_version": 1,
+            "sample_rate_hz": FS_HZ,
+            "raw_lsb_per_dps": RAW_LSB_PER_DPS,
+            "sample_count_per_vector": SAMPLE_COUNT,
+            "scope": "Synthetic algorithm-injection test only; not human data.",
+            "cases": summaries,
+        }, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+
+
+def main() -> None:
+    output_dir = (
+        Path(__file__).resolve().parents[1]
+        / "handoff" / "test_vectors" / "gating_mixed_boundary"
+    )
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--output-dir", type=Path, default=output_dir)
+    args = parser.parse_args()
+    generate(args.output_dir)
+    print(f"generated {len(CASES)} mixed vectors in {args.output_dir}")
+
+
+if __name__ == "__main__":
+    main()
