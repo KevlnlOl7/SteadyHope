@@ -220,8 +220,7 @@ typedef char BatteryStatus_t_must_be_4_bytes[
  * Therefore: 720 / 70 = 10.285714 counts/mm.
  *
  * Physical home (power-on) free cable length = 400 mm.
- * Tremor target removes 230 mm of free cable, so from the 400 mm mechanical
- * Home the nominal target free length becomes 170 mm.
+ * Tremor target removes 200 mm of free cable, so target free length = 200 mm.
  *
  * IMPORTANT: before reset/power-on, mechanically place the cable at the known
  * 400 mm starting length.  After boot the encoder counter is allowed to keep
@@ -229,16 +228,7 @@ typedef char BatteryStatus_t_must_be_4_bytes[
 #define LENGTH_MIN_MM                       0.0f
 #define LENGTH_MAX_MM                       900.0f
 #define INITIAL_CABLE_LENGTH_MM             400.0f
-/* Physical power-on/original cable length.  A 0x06 App baseline may temporarily
- * move away from this position, but the first completed AUTO tremor event
- * returns here before normal AUTO cycles continue. */
-#define ORIGINAL_CABLE_LENGTH_MM            INITIAL_CABLE_LENGTH_MM
-
-/* AUTO tremor take-up distance.
- * Previous setting: 200 mm ~= 2057 counts ~= 2.86 output-shaft revolutions.
- * New setting:      230 mm ~= 2366 counts ~= 3.29 output-shaft revolutions.
- * This gives about 0.43 additional output-shaft revolution of take-up. */
-#define TREMOR_PULL_LENGTH_MM               230.0f
+#define TREMOR_PULL_LENGTH_MM               200.0f
 #define TREMOR_TARGET_CABLE_LENGTH_MM       \
     (INITIAL_CABLE_LENGTH_MM - TREMOR_PULL_LENGTH_MM)
 
@@ -247,24 +237,8 @@ typedef char BatteryStatus_t_must_be_4_bytes[
 #define ENCODER_COUNTS_PER_MM               \
     (ENCODER_COUNTS_PER_OUTPUT_REV / SPOOL_CABLE_PER_REV_MM)
 
-/* 230 mm * 720 / 70 = 2365.71 counts -> 2366 counts.
- * Diagnostic/reference value; the active controller derives the request from
- * TREMOR_PULL_LENGTH_MM through Encoder_MmToCounts(). */
-#define TREMOR_PULL_COUNTS                  2366L
-
-/*
- * Retained-tension return policy:
- *   - The first real AUTO tremor pull releases only 25% (1/4) of the ACTUAL
- *     encoder distance that was wound.
- *   - The remaining 75% becomes the new retained-tension baseline.
- *   - Later AUTO tremor cycles return fully to that retained baseline, so the
- *     cable does NOT become progressively tighter after every tremor event.
- *
- * Example for a full 2366-count pull:
- *   first return = ceil(2366 / 4) = 592 counts.
- */
-#define TREMOR_FIRST_RETURN_NUMERATOR       1L
-#define TREMOR_FIRST_RETURN_DENOMINATOR     4L
+/* 200 mm * 720 / 70 = 2057.14 counts -> 2057 counts. */
+#define TREMOR_PULL_COUNTS                  2057L
 
 /* Encoder count polarity is deliberately NOT used to decide distance.
  * Motion completion uses ABS(current_count - move_start_count), so the encoder
@@ -446,26 +420,6 @@ volatile float queuedBaselineLengthMm = INITIAL_CABLE_LENGTH_MM;
 volatile uint8_t queuedBaselinePending = 0U;
 volatile uint32_t queuedLengthRequestCount = 0U;
 volatile uint32_t queuedBaselineRequestCount = 0U;
-
-/* Retained-tension first-AUTO policy.
- * A completed 0x06 baseline command re-arms the policy, but AUTO itself does
- * not move the motor.  On the first actual tremor pull, RETURN releases only
- * one quarter (25%) of the actual pulled encoder distance.  The remaining 75%
- * becomes the new baseline.  Every later tremor cycle returns fully to this
- * retained baseline.
- *
- * The legacy firstAutoReturn* variable names are kept so existing Debug watch
- * lists remain usable.  firstAutoReturnActive now means that the current
- * RETURN is establishing the 75%-retained baseline. */
-volatile uint8_t firstAutoReturnArmOnBaselineComplete = 0U;
-volatile uint8_t firstAutoReturnToOriginalPending = 0U;
-volatile uint8_t firstAutoReturnActive = 0U;
-volatile int32_t originalCableHomeCount = 0;
-volatile uint32_t firstAutoReturnCompleteCount = 0U;
-
-/* 0 = next real AUTO pull will establish the retained baseline with 25% return.
- * 1 = retained baseline is already established; later cycles return fully to it. */
-volatile uint8_t tremorRetainedBaselineEstablished = 0U;
 
 /* Generic encoder-distance motion diagnostics.  All position moves use
  * abs(encoder_count - positionMoveStartCount) as the travelled distance. */
@@ -1246,13 +1200,6 @@ static uint8_t Control_ApplyCommand(uint8_t command, int16_t value)
       queuedBaselineLengthMm = (float)value;
       queuedBaselineRequestCount++;
 
-      /* The newly requested 0x06 baseline becomes the temporary pre-first-AUTO
-       * Home only after its physical adjustment is complete.  AUTO itself will
-       * never command a return to 400 mm. */
-      firstAutoReturnToOriginalPending = 0U;
-      firstAutoReturnArmOnBaselineComplete = 1U;
-      tremorRetainedBaselineEstablished = 0U;
-
       if (tremorPositionState == TREMOR_POSITION_IDLE)
       {
         appRequestedLengthMm = queuedBaselineLengthMm;
@@ -1272,12 +1219,6 @@ static uint8_t Control_ApplyCommand(uint8_t command, int16_t value)
           baseCableLengthMm = currentLengthMm;
           lengthErrorMm = 0.0f;
           lengthAdjustPending = 0U;
-
-          if (firstAutoReturnArmOnBaselineComplete != 0U)
-          {
-            firstAutoReturnToOriginalPending = 1U;
-            firstAutoReturnArmOnBaselineComplete = 0U;
-          }
         }
       }
       else
@@ -1630,12 +1571,6 @@ static void App_PromoteQueuedAdjustment(uint8_t resumeHolding)
       baseCableLengthMm = currentLengthMm;
       lengthErrorMm = 0.0f;
       lengthAdjustPending = 0U;
-
-      if (firstAutoReturnArmOnBaselineComplete != 0U)
-      {
-        firstAutoReturnToOriginalPending = 1U;
-        firstAutoReturnArmOnBaselineComplete = 0U;
-      }
     }
     return;
   }
@@ -1697,12 +1632,6 @@ static void TremorPositionController_Init(void)
   queuedBaselinePending = 0U;
   queuedLengthRequestCount = 0U;
   queuedBaselineRequestCount = 0U;
-  firstAutoReturnArmOnBaselineComplete = 0U;
-  firstAutoReturnToOriginalPending = 0U;
-  firstAutoReturnActive = 0U;
-  originalCableHomeCount = encoder_count;
-  firstAutoReturnCompleteCount = 0U;
-  tremorRetainedBaselineEstablished = 0U;
 }
 
 static uint8_t TremorPositionController_Update(
@@ -1802,45 +1731,11 @@ static uint8_t TremorPositionController_Update(
       {
         tremorActualPulledCounts = positionMoveTravelCounts;
         positionMoveStartCount = currentCount;
+        positionMoveRequestedCounts = tremorActualPulledCounts;
         positionMoveTravelCounts = 0;
         positionMoveStartLengthMm = currentLengthMm;
         positionMoveLengthDirection = 1; /* RELEASE lengthens cable. */
-
-        if ((tremorRetainedBaselineEstablished == 0U) &&
-            (tremorActualPulledCounts > 0))
-        {
-          /* First real AUTO pull: release only 25% (1/4) of the ACTUAL distance
-           * that was wound.  Round upward when needed so a very small pull can
-           * still return safely.  The remaining 75% becomes the new retained-
-           * tension baseline when RETURN completes. */
-          positionMoveRequestedCounts =
-              (int32_t)(
-                  ((int64_t)tremorActualPulledCounts *
-                   (int64_t)TREMOR_FIRST_RETURN_NUMERATOR +
-                   ((int64_t)TREMOR_FIRST_RETURN_DENOMINATOR - 1LL)) /
-                  (int64_t)TREMOR_FIRST_RETURN_DENOMINATOR
-              );
-
-          targetLengthMm =
-              currentLengthMm +
-              ((float)positionMoveRequestedCounts / ENCODER_COUNTS_PER_MM);
-
-          if (targetLengthMm > LENGTH_MAX_MM)
-          {
-            targetLengthMm = LENGTH_MAX_MM;
-          }
-
-          firstAutoReturnActive = 1U;
-        }
-        else
-        {
-          /* Retained baseline already exists: later tremor cycles undo the
-           * complete actual pull and return to that same baseline. */
-          positionMoveRequestedCounts = tremorActualPulledCounts;
-          targetLengthMm = baseCableLengthMm;
-          firstAutoReturnActive = 0U;
-        }
-
+        targetLengthMm = baseCableLengthMm;
         tremorTargetCount = tremorHomeCount;
         tremorPositionState = TREMOR_POSITION_RETURNING;
         return 0U;
@@ -1870,42 +1765,11 @@ static uint8_t TremorPositionController_Update(
         tremorActualPulledCounts =
             Encoder_AbsDeltaCounts(currentCount, tremorHomeCount);
         positionMoveStartCount = currentCount;
+        positionMoveRequestedCounts = tremorActualPulledCounts;
         positionMoveTravelCounts = 0;
         positionMoveStartLengthMm = currentLengthMm;
         positionMoveLengthDirection = 1; /* RELEASE */
-
-        if ((tremorRetainedBaselineEstablished == 0U) &&
-            (tremorActualPulledCounts > 0))
-        {
-          /* First completed AUTO pull: RETURN only 25% (1/4) of the actual take-up.
-           * The unreleased 75% is intentionally retained as baseline tension. */
-          positionMoveRequestedCounts =
-              (int32_t)(
-                  ((int64_t)tremorActualPulledCounts *
-                   (int64_t)TREMOR_FIRST_RETURN_NUMERATOR +
-                   ((int64_t)TREMOR_FIRST_RETURN_DENOMINATOR - 1LL)) /
-                  (int64_t)TREMOR_FIRST_RETURN_DENOMINATOR
-              );
-
-          targetLengthMm =
-              currentLengthMm +
-              ((float)positionMoveRequestedCounts / ENCODER_COUNTS_PER_MM);
-
-          if (targetLengthMm > LENGTH_MAX_MM)
-          {
-            targetLengthMm = LENGTH_MAX_MM;
-          }
-
-          firstAutoReturnActive = 1U;
-        }
-        else
-        {
-          /* Later cycles return fully to the retained baseline. */
-          positionMoveRequestedCounts = tremorActualPulledCounts;
-          targetLengthMm = baseCableLengthMm;
-          firstAutoReturnActive = 0U;
-        }
-
+        targetLengthMm = baseCableLengthMm;
         tremorTargetCount = tremorHomeCount;
         tremorPositionState = TREMOR_POSITION_RETURNING;
         return 0U;
@@ -1935,33 +1799,12 @@ static uint8_t TremorPositionController_Update(
 
       if (positionMoveTravelCounts >= positionMoveRequestedCounts)
       {
-        if (firstAutoReturnActive != 0U)
-        {
-          /* The first partial RETURN has finished.  Keep the unreleased 75% as
-           * the new baseline so future cycles do not ratchet tighter. */
-          currentLengthMm = targetLengthMm;
-          baseCableLengthMm = currentLengthMm;
-          appRequestedLengthMm = currentLengthMm;
-          targetLengthMm = currentLengthMm;
-          lengthErrorMm = 0.0f;
-
-          tremorRetainedBaselineEstablished = 1U;
-          firstAutoReturnToOriginalPending = 0U;
-          firstAutoReturnArmOnBaselineComplete = 0U;
-          firstAutoReturnActive = 0U;
-          firstAutoReturnCompleteCount++;
-        }
-        else
-        {
-          /* Normal later-cycle RETURN: go fully back to retained baseline. */
-          currentLengthMm = baseCableLengthMm;
-          targetLengthMm = baseCableLengthMm;
-        }
-
+        currentLengthMm = baseCableLengthMm;
         tremorPositionState = TREMOR_POSITION_IDLE;
         tremorHomeCount = currentCount;
         tremorTargetCount = currentCount;
         tremorPositionErrorCounts = 0;
+        targetLengthMm = baseCableLengthMm;
         lengthAdjustActive = 0U;
         tremorReturnCompleteCount++;
         return 0U;
@@ -2009,15 +1852,6 @@ static uint8_t TremorPositionController_Update(
           tremorHomeCount = currentCount;
           tremorTargetCount = currentCount;
           tremorPositionState = TREMOR_POSITION_IDLE;
-
-          /* Only a completed 0x06 baseline calibration arms the one-time
-           * first-AUTO return.  Ordinary 0x02..0x05 fine tuning keeps the
-           * existing behavior and does not create a new special cycle. */
-          if (firstAutoReturnArmOnBaselineComplete != 0U)
-          {
-            firstAutoReturnToOriginalPending = 1U;
-            firstAutoReturnArmOnBaselineComplete = 0U;
-          }
         }
 
         return 0U;
