@@ -51,3 +51,15 @@ struct UpdateProfileRequestDTO: Codable {
     var newPassword: String?
     var avatarData: Data?
 }
+
+/// 發送忘記密碼驗證碼 Request
+struct ForgotPasswordRequestDTO: Encodable {
+    let email: String
+}
+
+/// 驗證驗證碼並重設密碼 Request
+struct ResetPasswordWithCodeRequestDTO: Encodable {
+    let email: String
+    let code: String
+    let newPassword: String
+}

@@ -9,6 +9,7 @@ struct LoginView: View {
     @State private var email = ""
     @State private var password = ""
     @State private var hasAttemptedLogin = false
+    @State private var showForgotPassword: Bool = false
     
     private var isEmailValid: Bool {
         Validator.validateEmail(email) == nil
@@ -143,6 +144,17 @@ struct LoginView: View {
                             .cornerRadius(12)
                         }
                         .disabled(loginVM.isLoading || !canSubmit)
+                        
+                        Button {
+                            showForgotPassword = true
+                        } label: {
+                            Text("忘記密碼？")
+                                .font(.subheadline)
+                                .foregroundColor(AppTheme.primary(for: colorScheme))
+                        }
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .padding(.top, 16)
+            
                     }
                     
                     Spacer()
@@ -165,6 +177,9 @@ struct LoginView: View {
                 .onTapGesture {
                     self.hideKeyboard()
                 }
+            }
+            .sheet(isPresented: $showForgotPassword) {
+                ForgotPasswordView()
             }
             .navigationBarTitleDisplayMode(.inline)
         }

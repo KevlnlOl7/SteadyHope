@@ -73,4 +73,14 @@ class AuthRepository {
         /// 解碼成 UserDataDTO，若解析失敗則回傳 nil
         return try? decoder.decode(UserDataDTO.self, from: data)
     }
+    
+    /// 發送重設密碼驗證碼
+    func sendForgotPasswordCode(email: String) async throws {
+        try await authService.sendForgotPasswordCode(email: email)
+    }
+    
+    /// 驗證代碼並設定新密碼
+    func resetPasswordWithCode(email: String, code: String, newPassword: String) async throws {
+        try await authService.resetPasswordWithCode(email: email, code: code, newPassword: newPassword)
+    }
 }

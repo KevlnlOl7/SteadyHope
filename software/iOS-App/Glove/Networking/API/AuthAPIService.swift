@@ -83,4 +83,85 @@ class AuthAPIService {
 
         return try await NetworkManager.shared.requestData(urlRequest)
     }
+    
+    /// 階段一：發送驗證碼至信箱
+    /// - Parameter email: 使用者信箱
+    func sendForgotPasswordCode(email: String) async throws {
+        guard let url = URL(string: "\(APIConfig.baseURL)/users/forgot-password") else {
+            throw NetworkError.invalidURL
+        }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        
+        let body = ForgotPasswordRequestDTO(email: email.trimmingCharacters(in: .whitespacesAndNewlines))
+        do {
+            request.httpBody = try JSONEncoder().encode(body)
+        } catch {
+            throw NetworkError.encodingFailed
+        }
+        
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw NetworkError.serverError(reason: "伺服器無回應")
+        }
+        
+        guard httpResponse.statusCode == 200 else {
+            if let errObj = try? JSONDecoder().decode([String: String].self, from: data),
+               let reason = errObj["reason"] {
+                throw NetworkError.serverError(reason: reason)
+            }
+            throw NetworkError.serverError(reason: "驗證碼發送失敗，請確認信箱是否正確")
+        }
+    }
+    
+    /// 階段二：驗證代碼並重設密碼
+    /// - Parameters:
+    ///   - email: 使用者信箱
+    ///   - code: 6位數驗證碼
+    ///   - newPassword: 新密碼
+    func resetPasswordWithCode(email: String, code: String, newPassword: String) async throws {
+        guard let url = URL(string: "\(APIConfig.baseURL)/users/reset-password") else {
+            throw NetworkError.invalidURL
+        }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        
+        let payload = ResetPasswordWithCodeRequestDTO(
+            email: email.trimmingCharacters(in: .whitespacesAndNewlines),
+            code: code.trimmingCharacters(in: .whitespacesAndNewlines),
+            newPassword: newPassword
+        )
+        
+        do {
+            request.httpBody = try JSONEncoder().encode(payload)
+        } catch {
+            throw NetworkError.encodingFailed
+        }
+        
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw NetworkError.serverError(reason: "伺服器無回應")
+        }
+        
+        guard httpResponse.statusCode == 200 else {
+            if let errObj = try? JSONDecoder().decode([String: String].self, from: data),
+               let reason = errObj["reason"] {
+                throw NetworkError.serverError(reason: reason)
+            }
+            switch httpResponse.statusCode {
+            case 400:
+                throw NetworkError.serverError(reason: "密碼強度不足，需至少8碼且包含大小寫英文字母")
+            case 401:
+                throw NetworkError.serverError(reason: "驗證碼錯誤或已逾期")
+            case 404:
+                throw NetworkError.serverError(reason: "查無此帳號")
+            default:
+                throw NetworkError.serverError(reason: "密碼重設失敗，請確認資料正確性")
+            }
+        }
+    }
 }

@@ -27,6 +27,7 @@ struct EditProfileView: View {
     @State private var isLoading: Bool = false
     @State private var errorMessage: String?
     @State private var showSuccessAlert: Bool = false
+    @State private var showForgotPassword: Bool = false
     
     private let diseaseStages = ["未知", "初期", "中期", "後期"]
     private let authRepo = AuthRepository()
@@ -93,6 +94,9 @@ struct EditProfileView: View {
         .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $showDatePickerSheet) {
             datePickerSheetView
+        }
+        .sheet(isPresented: $showForgotPassword) {
+            ForgotPasswordView()
         }
         .onChange(of: selectedPhotoItem) { _, newItem in
             guard let newItem else { return }
@@ -361,6 +365,17 @@ struct EditProfileView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.top, 2)
                 }
+                
+                // 加入忘記密碼按鈕
+                Button {
+                    showForgotPassword = true
+                } label: {
+                    Text("忘記密碼？")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(AppTheme.primary(for: colorScheme))
+                }
+                .frame(maxWidth: .infinity, alignment: .center)
+                .padding(.top, 8)
             }
         }
         .padding(18)
